@@ -62,3 +62,37 @@ jobs:
       # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
+      - name: Cache FFmpeg (Android static)
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: android/ffmpeg-android
+          key: ffmpeg-android-${{ hashFiles('scripts/build_ffmpeg_android.sh') }}
+
+      - name: Build FFmpeg (Android static)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: NDK_DIR="$ANDROID_HOME/ndk/27.0.12077973" WORK_DIR="$RUNNER_TEMP/ffwork" bash scripts/build_ffmpeg_android.sh
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble APK
+        run: gradle -p android assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vkrender-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk

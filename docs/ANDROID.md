@@ -123,30 +123,38 @@ animating at 30 fps with surface recycling (6 buffers cycling, drops only at
 warm-up). Screenshot evidence in the M7 notes; real-device verification is a
 backlog item.
 
-## 6. Sync model (current)
+## 6. Sync model
 
-Producer side: the blocking `AImageReader_acquireNextImage` (used after the
-codec reports the frame rendered) returns an image whose content is complete.
-Consumer side: `FrameConsumed` after the renderer's fences prove its reads
-retired — same design as Linux. The upgrade path (also backlog) is
-`AImageReader_acquireNextImageAsync`'s acquire fence fd → 
-`VK_KHR_external_semaphore_fd` (SYNC_FD) wait in the sampling submit, and
-returning release fences with `AImage_deleteAsync`.
+Producer side: `AImageReader_acquireNextImageAsync` hands over each image
+immediately with an **acquire fence fd**; the fence rides to the renderer as
+SCM_RIGHTS data on the `FrameReady` message. The renderer waits on it just
+before sampling — sync_file fds are pollable, so this needs no Vulkan
+extension (a `SYNC_FD` semaphore import is a drop-in refinement if ever
+needed) and the decoder never blocks on frame readiness. Skipped frames'
+fences are closed unread. Consumer side: `FrameConsumed` after the renderer's
+fences prove its reads retired — same design as Linux. Remaining refinement:
+release fences via `AImage_deleteAsync` for the consumed direction.
 
-## 7. Known limitations / backlog
+## 7. Lifecycle (hardened in M7.1)
 
-- Real-device verification (colors, hardware codecs, arm64).
-- Emulator color mis-routing (gfxstream YV12) — cosmetic, emulator-only.
-- Fence-fd explicit sync (§6).
-- Renderer lifecycle: `APP_CMD_TERM_WINDOW`/rotation handling is minimal
-  (swapchain recreate on OUT_OF_DATE only); no foreground-service persistence
-  for the decoder.
-- **Screen-off freezes the pipeline** (observed in practice): when the display
-  sleeps, the activity leaves the foreground and Android's cached-app freezer
-  suspends *both* processes (the decoder is a plain background service).
-  After a long freeze the RTSP session is dead server-side and does not
-  self-recover on wake — restart the app. During development,
-  `adb shell svc power stayon true` avoids it. The durable fixes — a
-  foreground service for the decoder and freeze/thaw-aware reconnect — are
-  part of the lifecycle work in the M7.1 backlog.
-- CI: no APK job yet (needs NDK + Gradle caching in Actions).
+- The decoder runs as a **foreground service** (`dataSync` type, persistent
+  notification): the cached-app freezer no longer suspends it on screen-off.
+  Verified: decode continued at full rate through a 90 s screen-off cycle.
+- A wall-clock watchdog (`AVIOInterruptCB`) aborts any demux call exceeding
+  its deadline — after a freeze/thaw of the *renderer-visible* kind or a
+  server-side session death, the decoder falls into its normal
+  reconnect-with-backoff path instead of hanging on a stale socket.
+- While the activity is paused the renderer keeps pumping IPC and
+  consume-discards frames (closing their fences), so the decoder's buffer
+  ring never starves; on wake the activity's replacement `ANativeWindow` is
+  detected and the Vulkan surface + swapchain are rebuilt (verified across
+  sleep/wake).
+
+## 8. Known limitations / backlog
+
+- Real-device verification (colors, hardware codecs, arm64) —
+  [#5](https://github.com/jsuppe/vkrender/issues/5).
+- Emulator color mis-routing (gfxstream YV12) — cosmetic, emulator-only (§5).
+- Release-fence direction of §6.
+- Rotation is handled as a window replacement (surface rebuild); no
+  orientation-specific handling beyond that.

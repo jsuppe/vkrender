@@ -13,6 +13,8 @@
 #include <android/hardware_buffer.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
+#include <poll.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <cstdio>
@@ -148,6 +150,7 @@ void android_main(android_app* app) {
     std::optional<uint64_t> pendingConsumedSignal;
     uint64_t frameIndex = 0;
     int64_t lastDialNs = 0;
+    ANativeWindow* vkWindow = app->window; // the window vk's surface was built on
 
     auto adoptFrame = [&](const vkr::proto::FrameReadyMsg& fr) {
         currentSlot = (int64_t)fr.slot;
@@ -160,10 +163,19 @@ void android_main(android_app* app) {
         // Android event pump
         android_poll_source* source = nullptr;
         int events = 0;
-        while (ALooper_pollOnce(0, nullptr, &events, (void**)&source) >= 0 && source)
+        while (ALooper_pollOnce(state.windowReady ? 0 : 100, nullptr, &events,
+                                (void**)&source) >= 0 &&
+               source)
             source->process(app, source);
         if (state.destroyed) break;
-        if (!state.windowReady) continue;
+
+        // The activity can come back with a new ANativeWindow (screen off/on,
+        // task switch): rebuild surface + swapchain on the new one.
+        if (state.windowReady && app->window != vkWindow) {
+            VKR_LOG("renderer: window replaced, recreating surface");
+            if (!vk.recreateSurface(app->window)) break;
+            vkWindow = app->window;
+        }
 
         // (Re)dial the decoder service.
         if (!ch.connected() && nowNs() - lastDialNs > 1000000000ll) {
@@ -175,8 +187,16 @@ void android_main(android_app* app) {
             }
         }
 
-        // Message pump: latest-frame-wins.
+        // Message pump: latest-frame-wins. Runs while paused too, so the
+        // decoder's surface ring never starves; paused frames are consumed
+        // and discarded immediately (we never touch their buffers).
         std::optional<vkr::proto::FrameReadyMsg> newest;
+        int newestFence = -1;
+        auto dropNewest = [&]() {
+            if (newestFence >= 0) close(newestFence);
+            newestFence = -1;
+            newest.reset();
+        };
         while (auto msg = ch.tryRecv()) {
             switch (msg->type) {
                 case vkr::proto::MsgType::PoolDesc:
@@ -188,7 +208,7 @@ void android_main(android_app* app) {
                         currentReady = 0;
                         lastConsumedSignal = 0;
                         pendingConsumedSignal.reset();
-                        newest.reset();
+                        dropNewest();
                         if (!pool.create(vk, *d)) return;
                         passNeedsBind = true;
                     }
@@ -215,20 +235,50 @@ void android_main(android_app* app) {
                     }
                     break;
                 case vkr::proto::MsgType::FrameReady:
-                    if (const auto* fr = msg->as<vkr::proto::FrameReadyMsg>()) newest = *fr;
+                    if (const auto* fr = msg->as<vkr::proto::FrameReadyMsg>()) {
+                        if (!state.windowReady) {
+                            // Paused: release straight back to the decoder.
+                            for (int fd : msg->fds) close(fd);
+                            vkr::proto::FrameConsumedMsg fc{};
+                            fc.readyValue = fr->readyValue;
+                            ch.send(vkr::proto::MsgType::FrameConsumed, fc);
+                        } else {
+                            dropNewest(); // skipped frame: close its fence
+                            newest = *fr;
+                            newestFence = msg->fds.empty() ? -1 : msg->fds[0];
+                        }
+                    }
                     break;
                 case vkr::proto::MsgType::StreamReset:
                     vkDeviceWaitIdle(vk.device);
                     pass.unbindPool(vk);
                     pool.destroy(vk);
                     currentSlot = -1;
-                    newest.reset();
+                    dropNewest();
                     break;
                 default:
                     break;
             }
         }
-        if (newest && pool.valid()) adoptFrame(*newest);
+        if (!state.windowReady) {
+            dropNewest();
+            continue;
+        }
+        if (newest && pool.valid()) {
+            adoptFrame(*newest);
+            // Producer sync: the decode write is complete when the acquire
+            // fence signals. sync_file fds are pollable; by adoption time the
+            // fence is normally long signaled.
+            if (newestFence >= 0) {
+                pollfd pf{newestFence, POLLIN, 0};
+                if (poll(&pf, 1, 1000) <= 0)
+                    VKR_WARN("renderer: acquire fence wait timed out");
+                close(newestFence);
+                newestFence = -1;
+            }
+        } else {
+            dropNewest();
+        }
 
         // Render
         FrameSync& f = frames[frameIndex % kFramesInFlight];

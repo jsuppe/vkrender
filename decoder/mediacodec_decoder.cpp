@@ -3,6 +3,9 @@
 #include <android/hardware_buffer.h>
 #include <media/NdkImage.h>
 #include <sys/system_properties.h>
+#include <unistd.h>
+
+#include <ctime>
 #include <media/NdkImageReader.h>
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
@@ -51,6 +54,15 @@ bool MediaCodecDecoder::openStream(const std::string& url) {
 
     fmt_ = avformat_alloc_context();
     fmt_->flags |= AVFMT_FLAG_NOBUFFER | AVFMT_FLAG_FLUSH_PACKETS;
+    // Watchdog: abort any demux call that exceeds its wall-clock deadline
+    // (socket timeouts alone don't recover from a freeze/thaw cycle - the
+    // session is dead server-side but the socket can look merely idle).
+    fmt_->interrupt_callback.opaque = this;
+    fmt_->interrupt_callback.callback = [](void* opaque) -> int {
+        auto* self = (MediaCodecDecoder*)opaque;
+        return time(nullptr) > self->readDeadlineSec_ ? 1 : 0;
+    };
+    readDeadlineSec_ = time(nullptr) + 15; // open + probe budget
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "rtsp_transport", "tcp", 0);
     av_dict_set(&opts, "timeout", "5000000", 0);
@@ -199,7 +211,8 @@ bool MediaCodecDecoder::backoffWait(IpcChannel& ch, uint32_t ms) {
     return true;
 }
 
-bool MediaCodecDecoder::submitImage(AImage* image, int64_t ptsUs, IpcChannel& ch) {
+bool MediaCodecDecoder::submitImage(AImage* image, int64_t ptsUs, int acquireFence,
+                                    IpcChannel& ch) {
     int32_t w = 0, h = 0;
     AImage_getWidth(image, &w);
     AImage_getHeight(image, &h);
@@ -270,7 +283,9 @@ bool MediaCodecDecoder::submitImage(AImage* image, int64_t ptsUs, IpcChannel& ch
     msg.readyValue = readyCounter_;
     msg.ptsNs = ptsUs >= 0 ? ptsUs * 1000 : -1;
     ++sentFrames_;
-    return ch.send(proto::MsgType::FrameReady, msg);
+    // The acquire fence rides along as SCM_RIGHTS data; -1 means already done.
+    return acquireFence >= 0 ? ch.send(proto::MsgType::FrameReady, msg, &acquireFence, 1)
+                             : ch.send(proto::MsgType::FrameReady, msg);
 }
 
 // Pull all ready output frames out of the codec.
@@ -291,12 +306,15 @@ bool MediaCodecDecoder::drainDecoder(IpcChannel& ch) {
             VKR_LOG("decoder: codec output frame %llu (pts %lld us)",
                     (unsigned long long)decodedFrames_, (long long)info.presentationTimeUs);
 
-        // ...where we acquire it as an AImage. Queueing to the surface is
-        // asynchronous, so poll briefly.
+        // ...where we acquire it as an AImage. The async variant hands back an
+        // acquire fence fd instead of blocking until the content is ready;
+        // the fence travels to the renderer with FrameReady (explicit
+        // producer->consumer sync, no CPU wait in the decoder).
         AImage* image = nullptr;
+        int acquireFence = -1;
         media_status_t ms = AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE;
         for (int tries = 0; tries < 50 && !image; ++tries) {
-            ms = AImageReader_acquireNextImage(reader_, &image);
+            ms = AImageReader_acquireNextImageAsync(reader_, &image, &acquireFence);
             if (ms == AMEDIA_OK && image) break;
             image = nullptr;
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -307,7 +325,9 @@ bool MediaCodecDecoder::drainDecoder(IpcChannel& ch) {
                          (unsigned long long)acquireFailures_);
             continue;
         }
-        if (!submitImage(image, info.presentationTimeUs, ch)) return false;
+        bool ok = submitImage(image, info.presentationTimeUs, acquireFence, ch);
+        if (acquireFence >= 0) close(acquireFence); // socket send duplicated it
+        if (!ok) return false;
     }
 }
 
@@ -335,6 +355,7 @@ int MediaCodecDecoder::run(const std::string& url, IpcChannel& ch) {
             rendererAlive = pollRenderer(ch);
             if (!rendererAlive) break;
 
+            readDeadlineSec_ = time(nullptr) + 8;
             int err = av_read_frame(fmt_, pkt);
             if (err == AVERROR(EAGAIN)) continue;
             if (err < 0) {

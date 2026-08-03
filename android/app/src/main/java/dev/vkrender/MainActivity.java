@@ -22,7 +22,7 @@ public class MainActivity extends NativeActivity {
         if (url == null) url = "rtsp://10.0.2.2:8554/test";
         Intent svc = new Intent(this, DecoderService.class);
         svc.putExtra("url", url);
-        startService(svc);
+        startForegroundService(svc);
         super.onCreate(savedInstanceState);
     }
 }

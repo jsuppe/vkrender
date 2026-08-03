@@ -82,9 +82,23 @@ goldfish hardware-codec shim stalls (auto-fallback to the software codec on
 `ro.boot.qemu`), and gfxstream mis-routes chroma for YV12 external formats
 (colors shift; structure/animation correct).
 
-Backlog (M7.1): real-device verification (colors + hardware codecs + arm64);
-fence-fd explicit sync (acquire/release fences ↔ SYNC_FD semaphores);
-renderer lifecycle polish (rotation, foreground service); CI APK job.
+M7.1 hardening (2026-08-03):
+- [x] Decoder runs as a **foreground service** (`dataSync` type) — survives
+      screen-off; verified decoding continuously through a 90 s sleep cycle.
+- [x] Freeze/thaw watchdog: wall-clock deadline via `AVIOInterruptCB` aborts
+      stale demux reads after a thaw and drops into the normal reconnect path.
+- [x] Producer sync upgraded to **acquire fence fds**
+      (`AImageReader_acquireNextImageAsync` → fence over SCM_RIGHTS with
+      `FrameReady` → renderer waits via pollable sync_file, no Vulkan
+      extension dependency, no decoder-side CPU wait).
+- [x] Renderer lifecycle: IPC pump continues while paused (frames are
+      consumed-and-discarded so the decoder ring never starves), and the
+      surface/swapchain rebuild on window replacement — verified across
+      sleep/wake.
+- [x] CI `android` job: NDK + cached FFmpeg static build + Gradle, APK artifact.
+- [ ] Real-device verification remains open
+      ([#5](https://github.com/jsuppe/vkrender/issues/5)): colors (emulator
+      gfxstream chroma quirk), hardware codecs, arm64.
 
 ## Later / ideas
 

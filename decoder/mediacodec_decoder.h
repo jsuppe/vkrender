@@ -41,7 +41,7 @@ private:
     bool openStream(const std::string& url);
     void closeStream();
     bool drainDecoder(IpcChannel& ch);
-    bool submitImage(AImage* image, int64_t ptsUs, IpcChannel& ch);
+    bool submitImage(AImage* image, int64_t ptsUs, int acquireFence, IpcChannel& ch);
     bool pollRenderer(IpcChannel& ch);
     bool backoffWait(IpcChannel& ch, uint32_t ms);
     void releaseConsumed(uint64_t consumedValue);
@@ -51,6 +51,11 @@ private:
     AVFormatContext* fmt_ = nullptr;
     AVBSFContext* bsf_ = nullptr; // annex-b conversion when stream is avcC
     int videoStream_ = -1;
+    // Wall-clock deadline for the current blocking demux call. Wall time (not
+    // monotonic) on purpose: after a process freeze/thaw the clock jumps
+    // forward past the deadline and the stale read aborts immediately,
+    // dropping into the normal reconnect path.
+    int64_t readDeadlineSec_ = 0;
 
     AMediaCodec* codec_ = nullptr;
     AImageReader* reader_ = nullptr;

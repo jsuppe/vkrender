@@ -20,6 +20,11 @@ public:
     bool init(uint32_t width, uint32_t height, const char* title, bool headless = false);
     void destroy();
     bool recreateSwapchain();
+#ifdef __ANDROID__
+    // Rebuilds surface + swapchain on a replacement ANativeWindow (the
+    // activity gets a new one after screen-off/task-switch cycles).
+    bool recreateSurface(void* newWindow);
+#endif
 
     bool headless = false;
 

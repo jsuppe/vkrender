@@ -366,6 +366,28 @@ void VkContext::destroySwapchain() {
     swapImages.clear();
 }
 
+#ifdef __ANDROID__
+bool VkContext::recreateSurface(void* newWindow) {
+    vkDeviceWaitIdle(device);
+    destroySwapchain();
+    if (swapchain) {
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        swapchain = VK_NULL_HANDLE;
+    }
+    if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
+    surface = VK_NULL_HANDLE;
+    nativeWindow = newWindow;
+
+    VkAndroidSurfaceCreateInfoKHR asci{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    asci.window = (ANativeWindow*)nativeWindow;
+    if (vkCreateAndroidSurfaceKHR(instance, &asci, nullptr, &surface) != VK_SUCCESS) {
+        VKR_ERR("vkCreateAndroidSurfaceKHR (recreate) failed");
+        return false;
+    }
+    return createSwapchain();
+}
+#endif
+
 bool VkContext::recreateSwapchain() {
     if (headless) return true;
     vkDeviceWaitIdle(device);
