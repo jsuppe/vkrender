@@ -11,14 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The prebuilt FFmpeg zip (~70 MB) is the only non-FetchContent download;
-      # cache it so CI doesn't hit the BtbN release on every run.
-      - name: Cache FFmpeg prebuilt
-        uses: actions/cache@v4
-        with:
-          path: build/ffmpeg-prebuilt/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip
-          key: ffmpeg-n7.1-latest-win64-gpl-shared
-
       # No pinned generator: the runner image ships whichever Visual Studio
       # is current, and CMake's default picks it up.
       - name: Cache GStreamer MSIs
@@ -102,16 +94,18 @@ jobs:
       - name: Install NDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
-      - name: Cache FFmpeg (Android static)
-        id: ffmpeg-cache
+      # The 1.5 GB universal tarball is pruned to the ~130 MB/ABI static-link
+      # closure before caching (scripts/fetch_gstreamer_android.sh).
+      - name: Cache GStreamer Android prebuilts (pruned)
+        id: gst-android-cache
         uses: actions/cache@v4
         with:
-          path: android/ffmpeg-android
-          key: ffmpeg-android-${{ hashFiles('scripts/build_ffmpeg_android.sh') }}
+          path: android/gstreamer-android
+          key: gstreamer-android-1.26.11-${{ hashFiles('scripts/fetch_gstreamer_android.sh') }}
 
-      - name: Build FFmpeg (Android static)
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        run: NDK_DIR="$ANDROID_HOME/ndk/27.0.12077973" WORK_DIR="$RUNNER_TEMP/ffwork" bash scripts/build_ffmpeg_android.sh
+      - name: Fetch GStreamer Android prebuilts
+        if: steps.gst-android-cache.outputs.cache-hit != 'true'
+        run: WORK_DIR="$RUNNER_TEMP/gstwork" bash scripts/fetch_gstreamer_android.sh
 
       - uses: gradle/actions/setup-gradle@v4
 

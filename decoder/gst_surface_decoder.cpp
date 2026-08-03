@@ -34,7 +34,6 @@ namespace {
 
 void gstLogToLogcat(GstDebugCategory* category, GstDebugLevel level, const gchar* file,
                     const gchar*, gint line, GObject*, GstDebugMessage* message, gpointer) {
-    if (level > GST_LEVEL_WARNING) return;
     __android_log_print(level <= GST_LEVEL_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_WARN,
                         "vkrender-gst", "%s:%d %s: %s", file, line,
                         category ? gst_debug_category_get_name(category) : "?",
@@ -55,33 +54,53 @@ void gstInitOnce() {
     GST_PLUGIN_STATIC_REGISTER(playback);
     GST_PLUGIN_STATIC_REGISTER(typefindfunctions);
     GST_PLUGIN_STATIC_REGISTER(videoparsersbad);
-    gst_debug_remove_default_log_function();
+    gst_debug_remove_log_function(gst_debug_log_default);
     gst_debug_add_log_function(gstLogToLogcat, nullptr, nullptr);
+    gst_debug_set_default_threshold(GST_LEVEL_WARNING);
+    for (const char* f : {"rtspsrc", "rtpbin", "rtpjitterbuffer", "rtph264depay", "rtph265depay",
+                          "h264parse", "h265parse", "parsebin", "appsink", "typefind"}) {
+        GstElementFactory* factory = gst_element_factory_find(f);
+        if (!factory)
+            VKR_ERR("gst: element '%s' MISSING from registry", f);
+        else
+            gst_object_unref(factory);
+    }
     done = true;
-}
-
-// parsebin plugs the parser dynamically; force periodic in-band SPS/PPS so
-// MediaCodec can start (and restart) from any point.
-void onDeepElementAdded(GstBin*, GstBin*, GstElement* element, gpointer) {
-    gchar* name = gst_element_get_name(element);
-    if (name && (strstr(name, "h264parse") || strstr(name, "h265parse")))
-        g_object_set(element, "config-interval", -1, nullptr);
-    g_free(name);
 }
 
 } // namespace
 
 bool GstSurfaceDecoder::buildPipeline(const std::string& url) {
     GError* err = nullptr;
+    // parsebin's exposed pad sits behind an internal capsfilter pinned to
+    // whatever the parser first negotiated (alignment=nal for RTP input), so
+    // it cannot be linked straight to an au-only appsink. Instead we leave it
+    // unlinked here and bridge it in onParsebinPad() through our own outer
+    // h26xparse, which is free to re-align nal -> au for MediaCodec.
     std::string desc = "rtspsrc name=src protocols=tcp latency=100 location=" + url +
-                       " ! parsebin ! appsink name=sink max-buffers=8 drop=false sync=false";
+                       " ! parsebin name=parse  appsink name=sink max-buffers=8 drop=false"
+                       " sync=false";
     pipeline_ = gst_parse_launch(desc.c_str(), &err);
     if (!pipeline_ || err) {
         VKR_ERR("gst_parse_launch failed: %s", err ? err->message : "?");
         if (err) g_error_free(err);
         return false;
     }
-    g_signal_connect(pipeline_, "deep-element-added", G_CALLBACK(onDeepElementAdded), nullptr);
+    if (GstElement* parse = gst_bin_get_by_name(GST_BIN(pipeline_), "parse")) {
+        g_signal_connect(parse, "pad-added",
+                         G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer self) {
+                             static_cast<GstSurfaceDecoder*>(self)->onParsebinPad(pad);
+                         }),
+                         this);
+        g_signal_connect(parse, "unknown-type",
+                         G_CALLBACK(+[](GstElement*, GstPad*, GstCaps* caps, gpointer) {
+                             gchar* s = gst_caps_to_string(caps);
+                             VKR_ERR("decoder: parsebin unknown-type: %s", s ? s : "?");
+                             g_free(s);
+                         }),
+                         nullptr);
+        gst_object_unref(parse);
+    }
     appsink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "sink");
     GstCaps* caps = gst_caps_from_string(
         "video/x-h264, stream-format=byte-stream, alignment=au; "
@@ -95,6 +114,47 @@ bool GstSurfaceDecoder::buildPipeline(const std::string& url) {
         return false;
     }
     return true;
+}
+
+// A parsebin stream appeared: plug the matching outer parser (config-interval
+// -1 keeps SPS/PPS in-band so MediaCodec can start/restart from any point)
+// and complete the chain to the appsink.
+void GstSurfaceDecoder::onParsebinPad(GstPad* pad) {
+    GstCaps* caps = gst_pad_get_current_caps(pad);
+    if (!caps) caps = gst_pad_query_caps(pad, nullptr);
+    const GstStructure* s = caps && gst_caps_get_size(caps) ? gst_caps_get_structure(caps, 0)
+                                                            : nullptr;
+    const char* name = s ? gst_structure_get_name(s) : "";
+    gchar* capsStr = caps ? gst_caps_to_string(caps) : nullptr;
+    VKR_LOG("decoder: parsebin stream: %.120s", capsStr ? capsStr : "(no caps)");
+    g_free(capsStr);
+
+    const char* parserFactory = nullptr;
+    if (g_str_equal(name, "video/x-h264"))
+        parserFactory = "h264parse";
+    else if (g_str_equal(name, "video/x-h265"))
+        parserFactory = "h265parse";
+    if (caps) gst_caps_unref(caps);
+    if (!parserFactory) {
+        VKR_WARN("decoder: ignoring non-h26x stream (%s)", name);
+        return;
+    }
+
+    GstElement* parser = gst_element_factory_make(parserFactory, nullptr);
+    if (!parser) {
+        VKR_ERR("decoder: %s unavailable", parserFactory);
+        return;
+    }
+    g_object_set(parser, "config-interval", -1, nullptr);
+    gst_bin_add(GST_BIN(pipeline_), parser);
+    gst_element_sync_state_with_parent(parser);
+
+    GstPad* parserSink = gst_element_get_static_pad(parser, "sink");
+    GstPadLinkReturn lr = gst_pad_link(pad, parserSink);
+    gst_object_unref(parserSink);
+    if (lr != GST_PAD_LINK_OK || !gst_element_link(parser, appsink_))
+        VKR_ERR("decoder: failed to bridge parsebin -> %s -> appsink (link %d)", parserFactory,
+                lr);
 }
 
 void GstSurfaceDecoder::teardownPipeline() {
@@ -230,10 +290,13 @@ int GstSurfaceDecoder::run(const std::string& url, ANativeWindow* window) {
         while (streamOk && !surfaceDead_) {
             if (GstMessage* m = gst_bus_pop_filtered(bus_, GST_MESSAGE_ERROR)) {
                 GError* e = nullptr;
-                gst_message_parse_error(m, &e, nullptr);
-                VKR_LOG("decoder: stream interrupted (%s), decoded=%llu", e ? e->message : "?",
+                gchar* dbg = nullptr;
+                gst_message_parse_error(m, &e, &dbg);
+                VKR_LOG("decoder: stream interrupted (%s | %s), decoded=%llu",
+                        e ? e->message : "?", dbg ? dbg : "-",
                         (unsigned long long)decodedFrames_);
                 if (e) g_error_free(e);
+                g_free(dbg);
                 gst_message_unref(m);
                 streamOk = false;
                 break;

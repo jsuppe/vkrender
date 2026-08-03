@@ -9,10 +9,13 @@ at all), and **Android** (MediaCodec → AHardwareBuffer sharing between an
 activity and a service in separate processes). Platform deep-dives:
 [docs/LINUX.md](docs/LINUX.md) · [docs/ANDROID.md](docs/ANDROID.md).
 
+All decode pipelines are built on **GStreamer** (M9); the decode element
+itself stays platform-native (D3D11 decoders, VA-API, MediaCodec).
+
 ```
 ┌────────── vkdecoder ─────────────┐         ┌────────── vkrenderer ────────────┐
-│ FFmpeg avformat (RTSP)           │         │ GLFW + Vulkan 1.3 (volk)         │
-│ FFmpeg avcodec + D3D11VA (NVDEC) │  named  │ VkImage imported from NT handle  │
+│ GStreamer rtspsrc → decodebin3   │         │ GLFW + Vulkan 1.3 (volk)         │
+│  → d3d11 decoders (our device)   │  named  │ VkImage imported from NT handle  │
 │ VideoProcessorBlt:               │  pipe   │ (VK_KHR_external_memory_win32,   │
 │   decode surface → shared BGRA   │ ──────► │  D3D11_TEXTURE, dedicated alloc) │
 │   texture ring (default 4 slots) │         │ Timeline-semaphore sync          │
@@ -63,19 +66,20 @@ renderer) should work there.
 No Vulkan SDK required on either OS — Vulkan-Headers, volk, GLFW and glslang
 are fetched by CMake.
 
-**Windows** (VS 2022 C++ workload, CMake 3.24+; prebuilt FFmpeg downloads at
-configure time):
+**Windows** (VS 2022 C++ workload, CMake 3.24+, and the GStreamer MSVC
+x86_64 **runtime + devel** MSIs from gstreamer.freedesktop.org):
 
 ```bash
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel
 ```
 
-**Linux** (FFmpeg ≥ 6.1 + libva from the distro; full details, NVIDIA setup,
-and no-sudo bootstrap in [docs/LINUX.md](docs/LINUX.md)):
+**Linux** (GStreamer ≥ 1.22 + libva from the distro; full details, NVIDIA
+setup, and no-sudo bootstrap in [docs/LINUX.md](docs/LINUX.md)):
 
 ```bash
-sudo apt install cmake g++ pkg-config libavformat-dev libavcodec-dev libavutil-dev \
+sudo apt install cmake g++ pkg-config libgstreamer1.0-dev \
+  libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
   libva-dev libdrm-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel && ctest --test-dir build
@@ -98,9 +102,9 @@ Options: `--pipe <name>` on both ends to run multiple instances;
 `--pacing latest|pts` on the renderer (default `latest` = lowest latency,
 `pts` = smooth clock-anchored playback).
 
-Codecs: H.264 and H.265 (8-bit and 10-bit) verified via D3D11VA; 10-bit
-sources are shared as RGB10A2. AV1 should work on AV1-capable GPUs but is
-untested (FFmpeg cannot publish AV1 over RTSP for a local loop test).
+Codecs: H.264 and H.265 (8-bit and 10-bit) verified via the D3D11 hardware
+decoders; 10-bit sources are shared as RGB10A2. AV1 should work on
+AV1-capable GPUs but is untested (no AV1-over-RTSP local loop test).
 
 Both processes are resilient: the decoder auto-reconnects to the RTSP source
 with backoff and serves renderer restarts; the renderer redials a restarted
@@ -112,8 +116,8 @@ outage.
 The design is latest-frame-wins end to end: the pool is a recycling ring
 (depth adds drop-resistance headroom, **not** display latency), the renderer
 always adopts the newest decoded frame and skips stale ones, presentation
-uses MAILBOX when the driver offers it, and the FFmpeg receive path runs
-unbuffered with a 100 ms jitter cap. Residual latency comes from the encoder
+uses MAILBOX when the driver offers it, and the RTSP receive path runs
+with a 100 ms jitter cap (`rtspsrc latency=100`). Residual latency comes from the encoder
 (disable B-frames at the source) and one vsync of display timing. Details in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#5-latency-design).
 
@@ -123,7 +127,7 @@ unbuffered with a 100 ms jitter cap. Residual latency comes from the encoder
 # terminal 1: RTSP server (https://github.com/bluenviron/mediamtx)
 mediamtx.exe
 
-# terminal 2: publish a test pattern (ffmpeg.exe from build/ffmpeg-prebuilt/*/bin)
+# terminal 2: publish a test pattern (any ffmpeg CLI build)
 ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=30 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -f rtsp rtsp://127.0.0.1:8554/test
 ```
 
@@ -142,13 +146,15 @@ Validation layers are enabled automatically in Debug builds when
 ## Layout
 
 ```
-common/    protocol + named-pipe IPC (platform-agnostic API, win32 backend)
-decoder/   FFmpeg RTSP + D3D11VA decode, shared pool, fences  (vkdecoder.exe)
-renderer/  Vulkan context, external-memory import, video pass (vkrenderer.exe)
-cmake/     prebuilt FFmpeg download/import targets
+common/    protocol + IPC (named pipe on Windows, SEQPACKET UDS on POSIX)
+decoder/   GStreamer RTSP + platform decode, shared pool, fences (vkdecoder)
+renderer/  Vulkan context, external-memory import, video pass   (vkrenderer)
+android/   Gradle project: renderer activity + decoder service (see docs/ANDROID.md)
+scripts/   Android GStreamer prebuilt fetch/prune, legacy FFmpeg cross-build
 ```
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) — Windows hardening (M5), Linux VAAPI/dma-buf
-backend (M6), Android MediaCodec/AHardwareBuffer backend (M7).
+See [ROADMAP.md](ROADMAP.md) — all milestones through M9 (GStreamer decode
+pipelines on Windows, Linux, and Android) are complete; the backlog and
+future ideas live there and in the GitHub issues.

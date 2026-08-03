@@ -11,7 +11,8 @@ struct ANativeWindow;
 namespace vkr {
 
 // M9 Android decoder: GStreamer handles transport/demux/parsing
-// (rtspsrc -> parsebin -> appsink emitting byte-stream access units), and
+// (rtspsrc -> parsebin, bridged through an outer h26xparse into an appsink
+// emitting au-aligned byte-stream access units), and
 // platform AMediaCodec decodes directly INTO the renderer-provided Surface
 // (M8 architecture - BufferQueue carries the frames; GStreamer's own
 // amcvideodec cannot target a foreign AImageReader surface without an extra
@@ -24,6 +25,7 @@ public:
 
 private:
     bool buildPipeline(const std::string& url);
+    void onParsebinPad(GstPad* pad);
     void teardownPipeline();
     bool ensureCodec(GstCaps* caps, ANativeWindow* window);
     void closeCodec();

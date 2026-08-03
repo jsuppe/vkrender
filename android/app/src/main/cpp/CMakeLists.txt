@@ -28,6 +28,16 @@ if(NOT EXISTS ${GST_ANDROID}/lib/pkgconfig/gstreamer-1.0.pc)
                         "${GST_ANDROID}. Extract the universal tarball there.")
 endif()
 
+# Host pkg-config: on Windows dev machines, reuse the one from the GStreamer
+# desktop devel install.
+if(CMAKE_HOST_WIN32 AND NOT DEFINED PKG_CONFIG_EXECUTABLE)
+    foreach(_pc "C:/Program Files/gstreamer/1.0/msvc_x86_64/bin/pkg-config.exe"
+                "C:/gstreamer/1.0/msvc_x86_64/bin/pkg-config.exe")
+        if(EXISTS "${_pc}")
+            set(PKG_CONFIG_EXECUTABLE "${_pc}")
+        endif()
+    endforeach()
+endif()
 find_package(PkgConfig REQUIRED)
 if(CMAKE_HOST_WIN32)
     set(ENV{PKG_CONFIG_LIBDIR}
@@ -59,7 +69,10 @@ target_include_directories(vkrender_native PRIVATE
 
 # Static gstreamer archives have circular deps; group them for the linker.
 list(TRANSFORM GSTA_STATIC_LIBRARIES PREPEND "-l")
-target_link_directories(vkrender_native PRIVATE ${GSTA_STATIC_LIBRARY_DIRS})
+target_link_directories(vkrender_native PRIVATE
+    ${GSTA_STATIC_LIBRARY_DIRS}
+    ${GST_ANDROID}/lib
+    ${GST_ANDROID}/lib/gstreamer-1.0)
 target_link_options(vkrender_native PRIVATE
     "-Wl,--start-group" ${GSTA_STATIC_LIBRARIES} "-Wl,--end-group")
 

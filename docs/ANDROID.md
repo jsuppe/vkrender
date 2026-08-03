@@ -16,8 +16,8 @@ One APK, **two OS processes**:
 │ DecoderService (foreground service) │    │ MainActivity : NativeActivity    │
 │  binds RendererService ────────────────► │ RendererService (AIDL):          │
 │  ◄─── Surface (Parcelable) ─────────│    │   returns the reader's Surface   │
-│  └ decoder_jni → SurfaceDecoder     │    │  └ android_main.cpp              │
-│ FFmpeg avformat (RTSP demux only)   │ Buf │ owns AImageReader (GPU_SAMPLED) │
+│  └ decoder_jni → GstSurfaceDecoder  │    │  └ android_main.cpp              │
+│ GStreamer rtspsrc→parsebin (demux)  │ Buf │ owns AImageReader (GPU_SAMPLED) │
 │ AMediaCodec decodes INTO the        │ferQ │ per vsync: acquireLatestImage → │
 │  renderer's Surface;                │ueue │  AHardwareBuffer → Vulkan import │
 │  releaseOutputBuffer = delivery     │───► │  (cached per buffer) → sample    │
@@ -30,8 +30,8 @@ One APK, **two OS processes**:
   `ANativeWindow_toSurface`. Because *any* Surface producer works —
   MediaCodec, camera, another app if the service were exported with
   permission gating — the renderer is effectively a video compositor service.
-- **Decode** ([decoder/surface_decoder.cpp](../decoder/surface_decoder.cpp)):
-  FFmpeg avformat demux (minimal static build, §3) feeds `AMediaCodec`
+- **Decode** ([decoder/gst_surface_decoder.cpp](../decoder/gst_surface_decoder.cpp)):
+  GStreamer transport/demux (static prebuilts, §3) feeds `AMediaCodec`
   configured directly with the renderer's Surface.
   `releaseOutputBuffer(render=true)` *is* frame delivery — timestamped into
   the BufferQueue. Backpressure is automatic: if the consumer holds all
@@ -57,7 +57,7 @@ BufferQueue provides all of it.
 ## 2. Building
 
 Prereqs: Android SDK (API 34+ platform, build-tools), NDK r27, CMake 3.22 in
-the SDK, JDK 17+, and the prebuilt FFmpeg static libs (§3).
+the SDK, JDK 17+, and the GStreamer Android prebuilts (§3).
 
 ```bash
 # android/local.properties must point at your SDK: sdk.dir=...
@@ -73,22 +73,33 @@ regenerate from a desktop build's `build/shaders/`).
 
 ## 3. GStreamer for Android (M9 transport/demux)
 
-Transport, demux and parsing run on GStreamer
-(`rtspsrc → parsebin → appsink` emitting byte-stream access units; parsebin's
-dynamically-plugged h264/h265parse gets `config-interval=-1` so SPS/PPS stay
-in-band for MediaCodec). The decode element remains platform `AMediaCodec`
-into the renderer's Surface — GStreamer's `amcvideodec` wraps the same codec
-but cannot target a foreign AImageReader surface without an extra GL copy.
+Transport, demux and parsing run on GStreamer: `rtspsrc → parsebin`, whose
+exposed pad is bridged through an **outer `h264parse`/`h265parse`** (chosen
+from the pad caps, `config-interval=-1` so SPS/PPS stay in-band for restarts)
+into an appsink demanding `byte-stream, alignment=au`. The outer parser is not
+redundant: parsebin pins its exposed pad behind an internal capsfilter locked
+to whatever its inner parser first negotiated — for RTP input that is
+`alignment=nal`, which an au-only appsink cannot link (rtspsrc then fails with
+`not-linked`). A parser outside that capsfilter is free to re-align NAL → AU,
+which is what MediaCodec wants (one access unit per input buffer). The decode
+element remains platform `AMediaCodec` into the renderer's Surface —
+GStreamer's `amcvideodec` wraps the same codec but cannot target a foreign
+AImageReader surface without an extra GL copy.
 
-Dependencies come from the **official GStreamer Android universal prebuilts**:
-download `gstreamer-1.0-android-universal-<ver>.tar.xz` from
-gstreamer.freedesktop.org and extract the `arm64-v8a` and `x86_64` trees to
-`android/gstreamer-android/<abi>/` (gitignored). The CMake build resolves the
-static libraries and their transitive dependencies via the prebuilts'
-pkg-config metadata (host `pkg-config` required — the GStreamer Windows devel
-install or any Linux distro provides one) and links the needed plugins
-statically (`coreelements app rtsp rtp rtpmanager udp tcp playback
-typefindfunctions videoparsersbad`), registered via
+Dependencies come from the **official GStreamer Android universal prebuilts**.
+Either run [scripts/fetch_gstreamer_android.sh](../scripts/fetch_gstreamer_android.sh)
+(Linux/WSL/Git-Bash; downloads the 1.5 GB universal tarball and prunes each
+ABI to the ~130 MB static-link closure — this is also what CI caches), or
+manually download `gstreamer-1.0-android-universal-<ver>.tar.xz` from
+gstreamer.freedesktop.org and extract the `arm64` and `x86_64` trees to
+`android/gstreamer-android/{arm64-v8a,x86_64}/` (gitignored; note the tarball
+names the 64-bit ARM dir `arm64` — rename it, and on Windows the
+`libpng.pc → libpng16.pc` symlink extracts broken — copy the file). The CMake
+build resolves the static libraries and their transitive dependencies via the
+prebuilts' relocatable pkg-config metadata (host `pkg-config` required — the
+GStreamer Windows devel install or any Linux distro provides one) and links
+the needed plugins statically (`coreelements app rtsp rtp rtpmanager udp tcp
+playback typefindfunctions videoparsersbad`), registered via
 `GST_PLUGIN_STATIC_REGISTER` at init. GStreamer warnings/errors route to
 logcat under the `vkrender-gst` tag.
 
@@ -116,10 +127,12 @@ adb shell am start -n dev.vkrender/.MainActivity --es url rtsp://10.0.2.2:8556/t
 adb logcat -s vkrender:*        # pipeline logs from both processes
 ```
 
-Expected logs: `decoder: stream: video/avc WxH` → `stream header sent` →
+Expected logs: `decoder: connecting to ... (gstreamer)` →
+`decoder: parsebin stream: video/x-h264...` →
+`decoder: stream: video/avc WxH -> renderer surface (gstreamer transport)` →
 `renderer: imported AHardwareBuffer surface key=... (N total, zero-copy)`
-(one per distinct buffer, then they cycle) → continuous
-`codec output frame N` counters.
+(one per distinct buffer, then they cycle) → the 5-second
+`renderer: N adoptions / M presents` telemetry (adoptions ≈ stream fps × 5).
 
 ## 5. Emulator vs real devices
 

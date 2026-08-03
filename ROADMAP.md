@@ -119,7 +119,7 @@ Surface producer (camera, other apps with permission gating) can feed it.
 Details: [docs/ANDROID.md](docs/ANDROID.md). Closed
 [#7](https://github.com/jsuppe/vkrender/issues/7).
 
-## M9 — GStreamer decode pipelines (in progress, 2026-08-03)
+## M9 — GStreamer decode pipelines (done, 2026-08-03)
 
 Replacing FFmpeg with GStreamer end-to-end (motivation: team familiarity).
 
@@ -135,13 +135,19 @@ Replacing FFmpeg with GStreamer end-to-end (motivation: team familiarity).
       end-to-end on the RTX 5090**: 30 fps exact, correct colors. Requires
       the GStreamer MSVC runtime+devel MSIs (CMake reports clearly; CI
       installs silently).
-- [ ] **Android**: swap the transport/demux layer to GStreamer prebuilts
-      (`rtspsrc → depay → parse → appsink`) feeding the M8
-      MediaCodec-into-renderer-Surface path (decode element stays platform
-      MediaCodec: `amcvideodec` cannot target a foreign AImageReader surface
-      without an extra GL copy).
-- FFmpeg remains only as: the Android demux (until the above), and the
-  desktop test-stream publisher CLI (dev tooling, not product).
+- [x] **Android**: transport/demux swapped to static GStreamer prebuilts
+      (`rtspsrc → parsebin` bridged through an outer `h26xparse` to an
+      au-aligned appsink — parsebin's internal capsfilter pins its exposed
+      pad to `alignment=nal`, so a direct link to an au-only appsink fails
+      `not-linked`) feeding the M8 MediaCodec-into-renderer-Surface path
+      (decode element stays platform MediaCodec: `amcvideodec` cannot target
+      a foreign AImageReader surface without an extra GL copy). **Verified on
+      the TCL tablet (hardware codec, ~150 adoptions/5 s = exact 30 fps,
+      13-buffer zero-copy pool) and the API 36 emulator** (software-codec
+      fallback). CI builds the APK against a pruned ~130 MB/ABI prebuilt
+      cache ([scripts/fetch_gstreamer_android.sh](scripts/fetch_gstreamer_android.sh)).
+- FFmpeg now remains only as the desktop test-stream publisher CLI (dev
+  tooling, not product).
 
 ## Later / ideas
 
