@@ -49,13 +49,17 @@ bool VideoPass::init(VkContext& vk, const std::string& shaderDir) {
 
 bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     unbindPool(vk);
+    planar_ = pool.planar;
+    pcMatrix_ = pool.matrix == proto::Matrix::BT709 ? 1 : 0;
+    pcFullRange_ = pool.range == proto::Range::Full ? 1 : 0;
 
-    // For NV12 streams the sampler carries the YCbCr conversion (filters must
-    // match its chromaFilter); RGB streams use a plain sampler.
+    // Combined mode: one binding whose immutable sampler carries the YCbCr
+    // conversion (NV12) or is plain (RGB). Planar mode: two bindings (R8 luma
+    // + R8G8 chroma) with a plain sampler and YUV math in the shader.
     VkSamplerYcbcrConversionInfo convInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
     convInfo.conversion = pool.conversion;
     VkSamplerCreateInfo sci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    if (pool.conversion) sci.pNext = &convInfo;
+    if (pool.conversion && !planar_) sci.pNext = &convInfo;
     sci.magFilter = VK_FILTER_LINEAR;
     sci.minFilter = VK_FILTER_LINEAR;
     sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -63,26 +67,35 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     if (vkCreateSampler(vk.device, &sci, nullptr, &sampler_) != VK_SUCCESS) return false;
 
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    binding.pImmutableSamplers = &sampler_;
+    const uint32_t bindingCount = planar_ ? 2 : 1;
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    for (uint32_t i = 0; i < bindingCount; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[i].pImmutableSamplers = &sampler_;
+    }
     VkDescriptorSetLayoutCreateInfo dslci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dslci.bindingCount = 1;
-    dslci.pBindings = &binding;
+    dslci.bindingCount = bindingCount;
+    dslci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(vk.device, &dslci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
+    VkPushConstantRange pcRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 2 * sizeof(int32_t)};
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     plci.setLayoutCount = 1;
     plci.pSetLayouts = &setLayout_;
+    if (planar_) {
+        plci.pushConstantRangeCount = 1;
+        plci.pPushConstantRanges = &pcRange;
+    }
     if (vkCreatePipelineLayout(vk.device, &plci, nullptr, &pipelineLayout_) != VK_SUCCESS)
         return false;
 
     VkShaderModule vert = loadShader(vk.device, shaderDir_ + "/fullscreen.vert.spv");
-    VkShaderModule frag = loadShader(vk.device, shaderDir_ + "/video_ycbcr.frag.spv");
+    VkShaderModule frag = loadShader(
+        vk.device, shaderDir_ + (planar_ ? "/nv12_planar.frag.spv" : "/video_ycbcr.frag.spv"));
     if (!vert || !frag) return false;
 
     VkPipelineShaderStageCreateInfo stages[2]{};
@@ -143,7 +156,8 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
         return false;
     }
 
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, proto::kMaxSurfaces};
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                  proto::kMaxSurfaces * 2};
     VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpci.maxSets = proto::kMaxSurfaces;
     dpci.poolSizeCount = 1;
@@ -171,14 +185,19 @@ bool VideoPass::addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t k
         VKR_ERR("descriptor allocation failed (surface %u)", key);
         return false;
     }
-    VkDescriptorImageInfo img{VK_NULL_HANDLE, slot->view, VK_IMAGE_LAYOUT_GENERAL};
-    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    write.dstSet = set;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &img;
-    vkUpdateDescriptorSets(vk.device, 1, &write, 0, nullptr);
+    const uint32_t viewCount = planar_ ? 2 : 1;
+    VkDescriptorImageInfo imgs[2]{};
+    VkWriteDescriptorSet writes[2]{};
+    for (uint32_t i = 0; i < viewCount; ++i) {
+        imgs[i] = {VK_NULL_HANDLE, slot->view[i], VK_IMAGE_LAYOUT_GENERAL};
+        writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        writes[i].dstSet = set;
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo = &imgs[i];
+    }
+    vkUpdateDescriptorSets(vk.device, viewCount, writes, 0, nullptr);
     sets_.emplace(key, set);
     return true;
 }
@@ -209,20 +228,24 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
     // GENERAL both ways: transitioning from UNDEFINED would legally discard
     // the decoder's pixels.
     if (haveVideo && !noExternalBarrier) {
-        VkImageMemoryBarrier2 acquire{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        acquire.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-        acquire.srcAccessMask = VK_ACCESS_2_NONE;
-        acquire.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        acquire.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-        acquire.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        acquire.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        acquire.srcQueueFamilyIndex = kExternalQueueFamily;
-        acquire.dstQueueFamilyIndex = queueFamily;
-        acquire.image = slot->image;
-        acquire.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkImageMemoryBarrier2 acquire[2]{};
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < 2 && slot->image[i]; ++i, ++n) {
+            acquire[i] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            acquire[i].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            acquire[i].srcAccessMask = VK_ACCESS_2_NONE;
+            acquire[i].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            acquire[i].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            acquire[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            acquire[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            acquire[i].srcQueueFamilyIndex = kExternalQueueFamily;
+            acquire[i].dstQueueFamilyIndex = queueFamily;
+            acquire[i].image = slot->image[i];
+            acquire[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        }
         VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &acquire;
+        dep.imageMemoryBarrierCount = n;
+        dep.pImageMemoryBarriers = acquire;
         vkCmdPipelineBarrier2(cmd, &dep);
     }
 
@@ -253,26 +276,35 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &setIt->second, 0, nullptr);
+        if (planar_) {
+            int32_t pc[2] = {pcMatrix_, pcFullRange_};
+            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc),
+                               pc);
+        }
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
     vkCmdEndRendering(cmd);
 
     if (haveVideo && !noExternalBarrier) {
-        VkImageMemoryBarrier2 release{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        release.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        release.srcAccessMask = VK_ACCESS_2_NONE; // reads need no flush
-        release.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-        release.dstAccessMask = VK_ACCESS_2_NONE;
-        release.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        release.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        release.srcQueueFamilyIndex = queueFamily;
-        release.dstQueueFamilyIndex = kExternalQueueFamily;
-        release.image = slot->image;
-        release.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkImageMemoryBarrier2 release[2]{};
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < 2 && slot->image[i]; ++i, ++n) {
+            release[i] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            release[i].srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            release[i].srcAccessMask = VK_ACCESS_2_NONE; // reads need no flush
+            release[i].dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+            release[i].dstAccessMask = VK_ACCESS_2_NONE;
+            release[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            release[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            release[i].srcQueueFamilyIndex = queueFamily;
+            release[i].dstQueueFamilyIndex = kExternalQueueFamily;
+            release[i].image = slot->image[i];
+            release[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        }
         VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &release;
+        dep.imageMemoryBarrierCount = n;
+        dep.pImageMemoryBarriers = release;
         vkCmdPipelineBarrier2(cmd, &dep);
     }
 }

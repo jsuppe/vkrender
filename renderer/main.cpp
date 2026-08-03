@@ -226,6 +226,9 @@ int main(int argc, char** argv) {
     }
 
     vkr::ExternalVideoPool pool;
+    // Linux: the pipeline can only be built once the first surface reveals
+    // whether the modifier needs planar-mode sampling; Windows binds at once.
+    bool passNeedsBind = false;
     int64_t currentSlot = -1; // slot key, -1 = none
     uint64_t currentReady = 0;
     uint64_t lastConsumedSignal = 0;
@@ -303,9 +306,15 @@ int main(int argc, char** argv) {
                         pool.destroy(vk);
                         resetStreamState();
                         newest.reset();
-                        if (!pool.create(vk, *d) || !pass.bindPool(vk, pool)) {
+                        if (!pool.create(vk, *d)) {
                             VKR_ERR("failed to import shared pool");
                             return 1;
+                        }
+                        if (!pool.slots.empty()) { // Windows: slots came with PoolDesc
+                            if (!pass.bindPool(vk, pool)) return 1;
+                            passNeedsBind = false;
+                        } else {
+                            passNeedsBind = true;
                         }
                         setTitle("vkrender - zero-copy stream");
                     }
@@ -313,9 +322,17 @@ int main(int argc, char** argv) {
                 }
                 case vkr::proto::MsgType::SurfaceDesc: {
                     if (const auto* d = msg->as<vkr::proto::SurfaceDescMsg>()) {
-                        if (!pool.addSurface(vk, *d, msg->fds.data(), msg->fds.size()) ||
-                            !pass.addSlot(vk, pool, d->slotKey)) {
+                        if (!pool.addSurface(vk, *d, msg->fds.data(), msg->fds.size())) {
                             VKR_ERR("failed to import surface %u", d->slotKey);
+                            return 1;
+                        }
+                        // First surface decided combined-vs-planar sampling;
+                        // build the pipeline now, then per-slot descriptors.
+                        bool ok = passNeedsBind ? pass.bindPool(vk, pool)
+                                                : pass.addSlot(vk, pool, d->slotKey);
+                        passNeedsBind = false;
+                        if (!ok) {
+                            VKR_ERR("failed to bind surface %u", d->slotKey);
                             return 1;
                         }
                     }

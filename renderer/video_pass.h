@@ -46,6 +46,9 @@ private:
     VkPipeline pipeline_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::unordered_map<uint32_t, VkDescriptorSet> sets_;
+    bool planar_ = false;    // per-plane R8/R8G8 sampling with shader YUV
+    int32_t pcMatrix_ = 1;   // push constants for the planar shader
+    int32_t pcFullRange_ = 0;
 };
 
 } // namespace vkr

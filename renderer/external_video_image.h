@@ -30,11 +30,13 @@ namespace vkr {
 class ExternalVideoPool {
 public:
     struct Slot {
-        VkImage image = VK_NULL_HANDLE;
-        // One allocation on Windows / single-object dma-bufs; one per plane
-        // for disjoint multi-object dma-bufs (nvidia-vaapi-driver).
+        // Combined mode: image[0]/view[0] is the whole (multi-planar or RGB)
+        // image. Planar mode (Linux, when the driver cannot sample the
+        // exported modifier as multi-planar NV12 - e.g. NVIDIA block-linear):
+        // image[0]=luma as R8, image[1]=chroma as R8G8.
+        VkImage image[2] = {};
+        VkImageView view[2] = {};
         VkDeviceMemory memory[4] = {};
-        VkImageView view = VK_NULL_HANDLE;
     };
 
     // Windows: full import of a PoolDesc (textures + fences).
@@ -57,6 +59,10 @@ public:
 
     std::unordered_map<uint32_t, Slot> slots;
     bool headerValid = false;
+    // Decided on the first imported surface (needs the actual modifier):
+    // false = combined NV12/RGB image with YCbCr conversion sampling,
+    // true = per-plane R8+R8G8 images, YUV->RGB in the fragment shader.
+    bool planar = false;
     VkFormat format = VK_FORMAT_UNDEFINED;
     VkSamplerYcbcrConversion conversion = VK_NULL_HANDLE;
     VkSemaphore readySem = VK_NULL_HANDLE;    // Windows: decoder signals
