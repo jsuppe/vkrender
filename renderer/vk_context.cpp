@@ -1,0 +1,286 @@
+#include "vk_context.h"
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#include <algorithm>
+#include <cstring>
+
+#include "log.h"
+
+namespace vkr {
+
+namespace {
+
+const char* kDeviceExtensions[] = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+    VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
+};
+
+bool hasAllExtensions(VkPhysicalDevice dev) {
+    uint32_t count = 0;
+    vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, nullptr);
+    std::vector<VkExtensionProperties> props(count);
+    vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, props.data());
+    for (const char* want : kDeviceExtensions) {
+        bool found = false;
+        for (const auto& p : props)
+            if (!strcmp(p.extensionName, want)) { found = true; break; }
+        if (!found) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
+    if (!glfwInit()) {
+        VKR_ERR("glfwInit failed");
+        return false;
+    }
+    if (!glfwVulkanSupported()) {
+        VKR_ERR("GLFW reports no Vulkan support (is vulkan-1.dll present?)");
+        return false;
+    }
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    window = glfwCreateWindow((int)width, (int)height, title, nullptr, nullptr);
+    if (!window) {
+        VKR_ERR("glfwCreateWindow failed");
+        return false;
+    }
+
+    if (volkInitialize() != VK_SUCCESS) {
+        VKR_ERR("volkInitialize failed - Vulkan loader not found");
+        return false;
+    }
+
+    // Validation layer is only present if a Vulkan SDK (or the layer package)
+    // is installed; enable opportunistically in that case.
+    uint32_t layerCount = 0;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    std::vector<VkLayerProperties> layers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+    for (const auto& l : layers)
+        if (!strcmp(l.layerName, "VK_LAYER_KHRONOS_validation")) validation_ = true;
+#ifdef NDEBUG
+    validation_ = false;
+#endif
+
+    uint32_t glfwExtCount = 0;
+    const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+    std::vector<const char*> instExts(glfwExts, glfwExts + glfwExtCount);
+
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    app.pApplicationName = "vkrenderer";
+    app.apiVersion = VK_API_VERSION_1_3;
+
+    const char* valLayer = "VK_LAYER_KHRONOS_validation";
+    VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    ici.pApplicationInfo = &app;
+    ici.enabledExtensionCount = (uint32_t)instExts.size();
+    ici.ppEnabledExtensionNames = instExts.data();
+    if (validation_) {
+        ici.enabledLayerCount = 1;
+        ici.ppEnabledLayerNames = &valLayer;
+        VKR_LOG("renderer: validation layer enabled");
+    }
+    if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS) {
+        VKR_ERR("vkCreateInstance failed");
+        return false;
+    }
+    volkLoadInstance(instance);
+
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        VKR_ERR("glfwCreateWindowSurface failed");
+        return false;
+    }
+
+    // Pick a physical device: needs the interop extensions, Vulkan 1.3, and
+    // present support. Prefer discrete GPUs.
+    uint32_t devCount = 0;
+    vkEnumeratePhysicalDevices(instance, &devCount, nullptr);
+    std::vector<VkPhysicalDevice> devs(devCount);
+    vkEnumeratePhysicalDevices(instance, &devCount, devs.data());
+
+    int bestScore = -1;
+    for (VkPhysicalDevice d : devs) {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(d, &props);
+        if (props.apiVersion < VK_API_VERSION_1_3 || !hasAllExtensions(d)) continue;
+
+        uint32_t qCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(d, &qCount, nullptr);
+        std::vector<VkQueueFamilyProperties> qProps(qCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(d, &qCount, qProps.data());
+        int family = -1;
+        for (uint32_t i = 0; i < qCount; ++i) {
+            VkBool32 present = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(d, i, surface, &present);
+            if ((qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) { family = (int)i; break; }
+        }
+        if (family < 0) continue;
+
+        int score = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 2 : 1;
+        if (score > bestScore) {
+            bestScore = score;
+            phys = d;
+            queueFamily = (uint32_t)family;
+        }
+    }
+    if (!phys) {
+        VKR_ERR("no Vulkan 1.3 device with win32 external memory/semaphore + present support");
+        return false;
+    }
+
+    VkPhysicalDeviceVulkan11Properties props11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
+    VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props2.pNext = &props11;
+    vkGetPhysicalDeviceProperties2(phys, &props2);
+    luidValid = props11.deviceLUIDValid == VK_TRUE;
+    memcpy(deviceLUID, props11.deviceLUID, sizeof(deviceLUID));
+    VKR_LOG("renderer: device: %s (LUID %s)", props2.properties.deviceName,
+            luidValid ? "valid" : "invalid");
+
+    float prio = 1.0f;
+    VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+    qci.queueFamilyIndex = queueFamily;
+    qci.queueCount = 1;
+    qci.pQueuePriorities = &prio;
+
+    VkPhysicalDeviceVulkan13Features feat13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    feat13.dynamicRendering = VK_TRUE;
+    feat13.synchronization2 = VK_TRUE;
+    VkPhysicalDeviceVulkan12Features feat12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    feat12.timelineSemaphore = VK_TRUE;
+    feat12.pNext = &feat13;
+    VkPhysicalDeviceVulkan11Features feat11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    feat11.samplerYcbcrConversion = VK_TRUE;
+    feat11.pNext = &feat12;
+    VkPhysicalDeviceFeatures2 feat2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    feat2.pNext = &feat11;
+
+    VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    dci.pNext = &feat2;
+    dci.queueCreateInfoCount = 1;
+    dci.pQueueCreateInfos = &qci;
+    dci.enabledExtensionCount = (uint32_t)(sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));
+    dci.ppEnabledExtensionNames = kDeviceExtensions;
+    if (vkCreateDevice(phys, &dci, nullptr, &device) != VK_SUCCESS) {
+        VKR_ERR("vkCreateDevice failed");
+        return false;
+    }
+    volkLoadDevice(device);
+    vkGetDeviceQueue(device, queueFamily, 0, &queue);
+
+    return createSwapchain();
+}
+
+bool VkContext::createSwapchain() {
+    VkSurfaceCapabilitiesKHR caps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, surface, &caps);
+
+    uint32_t fmtCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surface, &fmtCount, nullptr);
+    std::vector<VkSurfaceFormatKHR> formats(fmtCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surface, &fmtCount, formats.data());
+    VkSurfaceFormatKHR chosen = formats[0];
+    for (const auto& f : formats) {
+        // Video is already gamma-encoded; UNORM target writes it through as-is.
+        if (f.format == VK_FORMAT_B8G8R8A8_UNORM &&
+            f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { chosen = f; break; }
+    }
+    swapFormat = chosen.format;
+
+    int fbw = 0, fbh = 0;
+    glfwGetFramebufferSize(window, &fbw, &fbh);
+    swapExtent = caps.currentExtent;
+    if (swapExtent.width == UINT32_MAX) {
+        swapExtent.width = std::clamp((uint32_t)fbw, caps.minImageExtent.width, caps.maxImageExtent.width);
+        swapExtent.height = std::clamp((uint32_t)fbh, caps.minImageExtent.height, caps.maxImageExtent.height);
+    }
+    if (swapExtent.width == 0 || swapExtent.height == 0) return false; // minimized
+
+    // MAILBOX when available: newest-image-wins presentation without tearing,
+    // so a late frame never queues behind stale ones (lowest display latency).
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    uint32_t pmCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, nullptr);
+    std::vector<VkPresentModeKHR> modes(pmCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, modes.data());
+    for (VkPresentModeKHR m : modes)
+        if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
+
+    uint32_t imageCount = caps.minImageCount + 1;
+    if (caps.maxImageCount && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
+
+    VkSwapchainCreateInfoKHR sci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    sci.surface = surface;
+    sci.minImageCount = imageCount;
+    sci.imageFormat = chosen.format;
+    sci.imageColorSpace = chosen.colorSpace;
+    sci.imageExtent = swapExtent;
+    sci.imageArrayLayers = 1;
+    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    sci.preTransform = caps.currentTransform;
+    sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    sci.presentMode = presentMode;
+    sci.clipped = VK_TRUE;
+    sci.oldSwapchain = swapchain;
+
+    VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
+    if (vkCreateSwapchainKHR(device, &sci, nullptr, &newSwapchain) != VK_SUCCESS) {
+        VKR_ERR("vkCreateSwapchainKHR failed");
+        return false;
+    }
+    destroySwapchain();
+    swapchain = newSwapchain;
+
+    uint32_t count = 0;
+    vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
+    swapImages.resize(count);
+    vkGetSwapchainImagesKHR(device, swapchain, &count, swapImages.data());
+    swapViews.resize(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        ivci.image = swapImages[i];
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        ivci.format = swapFormat;
+        ivci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        if (vkCreateImageView(device, &ivci, nullptr, &swapViews[i]) != VK_SUCCESS) return false;
+    }
+    return true;
+}
+
+void VkContext::destroySwapchain() {
+    for (VkImageView v : swapViews) vkDestroyImageView(device, v, nullptr);
+    swapViews.clear();
+    swapImages.clear();
+    // note: the old VkSwapchainKHR itself is destroyed by the caller pattern:
+    // createSwapchain passes it as oldSwapchain, then we destroy it here.
+}
+
+bool VkContext::recreateSwapchain() {
+    vkDeviceWaitIdle(device);
+    VkSwapchainKHR old = swapchain;
+    bool ok = createSwapchain();
+    if (ok && old && old != swapchain) vkDestroySwapchainKHR(device, old, nullptr);
+    return ok;
+}
+
+void VkContext::destroy() {
+    if (device) {
+        vkDeviceWaitIdle(device);
+        destroySwapchain();
+        if (swapchain) vkDestroySwapchainKHR(device, swapchain, nullptr);
+        vkDestroyDevice(device, nullptr);
+        device = VK_NULL_HANDLE;
+    }
+    if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
+    if (instance) vkDestroyInstance(instance, nullptr);
+    if (window) glfwDestroyWindow(window);
+    glfwTerminate();
+}
+
+} // namespace vkr
