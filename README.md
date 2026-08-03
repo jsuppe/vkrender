@@ -3,9 +3,11 @@
 Two cooperating processes that share decoded video frames through GPU memory,
 with **zero copies between processes**: the texture the decoder writes is the
 exact same GPU allocation the renderer samples. Runs on **Windows**
-(D3D11VA → NT-handle sharing) and **Linux** (VAAPI → dma-buf sharing — where
-the renderer samples the decoder's decode surfaces directly, with no
-conversion pass at all). Linux specifics: [docs/LINUX.md](docs/LINUX.md).
+(D3D11VA → NT-handle sharing), **Linux** (VAAPI → dma-buf sharing — the
+renderer samples the decoder's decode surfaces directly, no conversion pass
+at all), and **Android** (MediaCodec → AHardwareBuffer sharing between an
+activity and a service in separate processes). Platform deep-dives:
+[docs/LINUX.md](docs/LINUX.md) · [docs/ANDROID.md](docs/ANDROID.md).
 
 ```
 ┌────────── vkdecoder ─────────────┐         ┌────────── vkrenderer ────────────┐

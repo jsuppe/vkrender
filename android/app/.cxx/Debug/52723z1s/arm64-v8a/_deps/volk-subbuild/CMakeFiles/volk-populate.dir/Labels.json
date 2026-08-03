@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/volk-populate"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/volk-populate.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/volk-populate-complete.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-build.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-configure.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-download.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-install.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-patch.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-test.rule"
+		},
+		{
+			"file" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/volk-populate-prefix/src/volk-populate-stamp/volk-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"volk-populate"
+		],
+		"name" : "volk-populate"
+	}
+}

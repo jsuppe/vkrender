@@ -1,0 +1,21 @@
+# ninja log v5
+1	129	8074739038607308	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-mkdir	b3231f18fa52e81d
+1	129	8074739038607308	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-mkdir	b3231f18fa52e81d
+129	4898	8074739086295881	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-download	c4279c71618b24a7
+129	4898	8074739086295881	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-download	c4279c71618b24a7
+4909	5017	0	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-update	bcb6ea705361be1a
+4909	5017	0	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-update	bcb6ea705361be1a
+5017	5059	8074739087907578	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-patch	5c44596851c38370
+5017	5059	8074739087907578	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-patch	5c44596851c38370
+5059	5099	8074739088317570	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-configure	62b8d193b2a8184a
+5059	5099	8074739088317570	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-configure	62b8d193b2a8184a
+5100	5140	8074739088713239	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-build	550e49f87f0feb85
+5100	5140	8074739088713239	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-build	550e49f87f0feb85
+5140	5181	8074739089123475	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-install	214f7299c870cd98
+5140	5181	8074739089123475	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-install	214f7299c870cd98
+5181	5220	8074739089523541	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-test	e3db79732d7f82bb
+5181	5220	8074739089523541	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-test	e3db79732d7f82bb
+5221	5276	8074739090076242	CMakeFiles/vulkan_headers-populate-complete	c907b27bfdf8da55
+5221	5276	8074739090076242	vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-done	c907b27bfdf8da55
+5221	5276	8074739090076242	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/CMakeFiles/vulkan_headers-populate-complete	c907b27bfdf8da55
+5221	5276	8074739090076242	C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-subbuild/vulkan_headers-populate-prefix/src/vulkan_headers-populate-stamp/vulkan_headers-populate-done	c907b27bfdf8da55

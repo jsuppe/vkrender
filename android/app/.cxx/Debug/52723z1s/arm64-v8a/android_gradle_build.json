@@ -1,0 +1,48 @@
+{
+  "buildFiles": [
+    "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\.cxx\\Debug\\52723z1s\\arm64-v8a\\_deps\\volk-src\\CMakeLists.txt",
+    "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\.cxx\\Debug\\52723z1s\\arm64-v8a\\_deps\\vulkan_headers-src\\CMakeLists.txt",
+    "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\src\\main\\cpp\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\jonsu\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\.cxx\\Debug\\52723z1s\\arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\jonsu\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\.cxx\\Debug\\52723z1s\\arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "vkrender_native::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "vkrender_native",
+      "output": "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\build\\intermediates\\cxx\\Debug\\52723z1s\\obj\\arm64-v8a\\libvkrender_native.so",
+      "runtimeFiles": []
+    },
+    "volk::@2f990ff50bbcc7f22b46": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "volk",
+      "output": "C:\\Users\\jonsu\\dev\\vkrender\\android\\app\\.cxx\\Debug\\52723z1s\\arm64-v8a\\_deps\\volk-build\\libvolk.a"
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "C:\\Users\\jonsu\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "C:\\Users\\jonsu\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

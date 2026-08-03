@@ -49,6 +49,12 @@ public:
     bool addSurface(VkContext& vk, const proto::SurfaceDescMsg& desc, const int* fds,
                     size_t fdCount);
 
+#ifdef __ANDROID__
+    // Android: import one AHardwareBuffer (received out-of-band on the
+    // socket). Acquires its own reference; the caller keeps theirs.
+    bool addSurfaceAHB(VkContext& vk, uint32_t key, struct AHardwareBuffer* buffer);
+#endif
+
     void destroy(VkContext& vk);
 
     bool valid() const { return headerValid; }

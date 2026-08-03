@@ -23,6 +23,10 @@ public:
 
     bool headless = false;
 
+    // Android: the ANativeWindow* from the NativeActivity, set before init()
+    // (GLFW is not used there). Desktop: unused.
+    void* nativeWindow = nullptr;
+
     GLFWwindow* window = nullptr;
     VkInstance instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;

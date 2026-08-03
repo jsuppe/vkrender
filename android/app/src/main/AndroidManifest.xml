@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="vkrender"
+        android:allowBackup="false">
+
+        <!-- Renderer process: NativeActivity driven by android_main.cpp -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vkrender_native" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Decoder in its own OS process: the zero-copy boundary under test -->
+        <service
+            android:name=".DecoderService"
+            android:process=":decoder"
+            android:exported="false" />
+    </application>
+</manifest>

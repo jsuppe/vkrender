@@ -1,0 +1,359 @@
+{
+	"artifacts" : 
+	[
+		{
+			"path" : "C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so"
+		}
+	],
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"target_link_options",
+			"target_link_libraries",
+			"target_include_directories"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 29,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 52,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 44,
+				"parent" : 0
+			},
+			{
+				"command" : 3,
+				"file" : 0,
+				"line" : 39,
+				"parent" : 0
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -fPIC"
+				},
+				{
+					"fragment" : "-std=gnu++20"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 3,
+					"define" : "VK_NO_PROTOTYPES"
+				},
+				{
+					"backtrace" : 3,
+					"define" : "VK_USE_PLATFORM_ANDROID_KHR"
+				},
+				{
+					"define" : "vkrender_native_EXPORTS"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/common"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/decoder"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/renderer"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/ffmpeg-android/arm64-v8a/include"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/sources/android/native_app_glue"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-src"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-src/include"
+				}
+			],
+			"language" : "CXX",
+			"languageStandard" : 
+			{
+				"backtraces" : 
+				[
+					1
+				],
+				"standard" : "20"
+			},
+			"sourceIndexes" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6
+			],
+			"sysroot" : 
+			{
+				"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot"
+			}
+		},
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 3,
+					"define" : "VK_NO_PROTOTYPES"
+				},
+				{
+					"backtrace" : 3,
+					"define" : "VK_USE_PLATFORM_ANDROID_KHR"
+				},
+				{
+					"define" : "vkrender_native_EXPORTS"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/common"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/decoder"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/renderer"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/ffmpeg-android/arm64-v8a/include"
+				},
+				{
+					"backtrace" : 4,
+					"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/sources/android/native_app_glue"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-src"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/vulkan_headers-src/include"
+				}
+			],
+			"language" : "C",
+			"sourceIndexes" : 
+			[
+				7
+			],
+			"sysroot" : 
+			{
+				"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot"
+			}
+		}
+	],
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 3,
+			"id" : "volk::@2f990ff50bbcc7f22b46"
+		}
+	],
+	"id" : "vkrender_native::@6890427a1f51a3e7e1df",
+	"link" : 
+	{
+		"commandFragments" : 
+		[
+			{
+				"fragment" : "-static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--no-undefined-version -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments",
+				"role" : "flags"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "-u",
+				"role" : "flags"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "ANativeActivity_onCreate",
+				"role" : "flags"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "_deps\\volk-build\\libvolk.a",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "C:\\Users\\jonsu\\dev\\vkrender\\android\\ffmpeg-android\\arm64-v8a\\lib\\libavformat.a",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "C:\\Users\\jonsu\\dev\\vkrender\\android\\ffmpeg-android\\arm64-v8a\\lib\\libavcodec.a",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "C:\\Users\\jonsu\\dev\\vkrender\\android\\ffmpeg-android\\arm64-v8a\\lib\\libavutil.a",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "-landroid",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "-llog",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "-lmediandk",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "-lnativewindow",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 3,
+				"fragment" : "-lz",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-ldl",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-latomic -lm",
+				"role" : "libraries"
+			}
+		],
+		"language" : "CXX",
+		"sysroot" : 
+		{
+			"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot"
+		}
+	},
+	"name" : "vkrender_native",
+	"nameOnDisk" : "libvkrender_native.so",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/common/ipc_posix.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/decoder/mediacodec_decoder.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/renderer/vk_context.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/renderer/external_video_image.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/renderer/video_pass.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "C:/Users/jonsu/dev/vkrender/renderer/android_main.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "decoder_jni.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "C:/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/sources/android/native_app_glue/android_native_app_glue.c",
+			"sourceGroupIndex" : 0
+		}
+	],
+	"type" : "SHARED_LIBRARY"
+}

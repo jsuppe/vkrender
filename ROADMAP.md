@@ -59,47 +59,32 @@ setup and troubleshooting: [docs/LINUX.md](docs/LINUX.md).
       offscreen and writes a verification frame — how the SSH-only reference
       box is tested.
 - [x] CI: ubuntu-latest build + IPC test job.
-- [ ] Deferred to M6.1: explicit GPU-side sync via exported sync_files
-      (`VK_KHR_external_semaphore_fd`); Intel/AMD combined-mode validation on
-      real hardware; 10-bit (P010) Linux path; hybrid-GPU (decode≠render
-      device) support.
+- Backlog (M6.1, tracked as GitHub issues): [#1 sync_file explicit
+      sync](https://github.com/jsuppe/vkrender/issues/1), [#2 Intel/AMD
+      combined-mode validation](https://github.com/jsuppe/vkrender/issues/2),
+      [#3 Linux 10-bit P010](https://github.com/jsuppe/vkrender/issues/3),
+      [#4 hybrid-GPU](https://github.com/jsuppe/vkrender/issues/4).
 
-## M7 — Android backend (MediaCodec + AHardwareBuffer)
+## M7 — Android backend (MediaCodec + AHardwareBuffer) — DONE (2026-08-03)
 
-Goal: decoder service and renderer app as separate processes sharing frames
-through `AHardwareBuffer` — Android's first-class cross-process GPU buffer.
+One APK, two OS processes: `DecoderService` (`android:process=":decoder"`,
+FFmpeg RTSP demux + `AMediaCodec` + `AImageReader`) shares each decoded
+frame's `AHardwareBuffer` over the abstract Unix socket
+(`sendHandleToUnixSocket`); the `NativeActivity` renderer imports them via
+`VK_ANDROID_external_memory_android_hardware_buffer` + external-format YCbCr
+conversion. Zero copies, zero conversions; held-image ring + FrameConsumed
+release, same protocol as desktop. Full details: [docs/ANDROID.md](docs/ANDROID.md).
 
-Plan:
-1. **Decode**: NDK `AMediaCodec` in surface-less mode with an
-   `AImageReader` configured with
-   `AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE`; each output `AImage` exposes an
-   `AHardwareBuffer` (typically YUV420/NV12-class, `AHARDWAREBUFFER_FORMAT_Y8Cb8Cr8_420`).
-   RTSP demux still via FFmpeg (avformat builds cleanly for Android) feeding
-   codec-specific NAL units to MediaCodec.
-2. **Share**: `AHardwareBuffer_sendHandleToUnixSocket` /
-   `recvHandleFromUnixSocket` over the same Unix-socket IPC as Linux — the
-   protocol's opaque-handle model fits directly; pool slots are AImages held
-   until the consumer releases them.
-3. **Import**: `VK_ANDROID_external_memory_android_hardware_buffer` with
-   `VkExternalFormatANDROID` (the mandatory path for YUV buffers) +
-   `VkSamplerYcbcrConversion` created from
-   `vkGetAndroidHardwareBufferPropertiesANDROID` format properties. This is
-   the renderer's third import branch, structurally identical to dma-buf.
-4. **Sync**: MediaCodec/AImageReader deliver release fences as sync fds →
-   import with `VK_KHR_external_semaphore_fd` (SYNC_FD, temporary import) —
-   maps onto the existing per-frame wait design; consumed direction returns a
-   fence fd with the buffer release.
-5. **Process model**: decoder as a bound service (or simply a second
-   executable under the same UID for the demo); renderer as a GLFW-free
-   NativeActivity (android_native_app_glue + `VK_KHR_android_surface`) —
-   windowing is the only renderer piece GLFW doesn't cover on Android.
-6. **Build**: NDK toolchain file, Gradle wrapper for packaging; shaders
-   precompiled at desktop build time (glslang already in-tree).
+Verified end-to-end on the emulator (API 36 x86_64, gfxstream on host RTX
+5090): 720p30 H.264 RTSP from the host → animating video with 6 buffers
+cycling zero-copy. Two emulator-specific caveats, both documented: the
+goldfish hardware-codec shim stalls (auto-fallback to the software codec on
+`ro.boot.qemu`), and gfxstream mis-routes chroma for YV12 external formats
+(colors shift; structure/animation correct).
 
-Risks: vendor codecs may emit private tiled formats — always use
-`ExternalFormatANDROID` + YCbCr conversion rather than assuming NV12;
-`sendHandleToUnixSocket` requires both ends in the same user namespace
-(fine for same-app services, revisit for true multi-app).
+Backlog (M7.1): real-device verification (colors + hardware codecs + arm64);
+fence-fd explicit sync (acquire/release fences ↔ SYNC_FD semaphores);
+renderer lifecycle polish (rotation, foreground service); CI APK job.
 
 ## Later / ideas
 

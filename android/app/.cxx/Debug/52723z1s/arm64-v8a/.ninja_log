@@ -1,0 +1,26 @@
+# ninja log v5
+32	215	8074739110682622	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/AppData/Local/Android/Sdk/ndk/27.0.12077973/sources/android/native_app_glue/android_native_app_glue.c.o	734211b8298733e
+37	256	8074739111082637	_deps/volk-build/CMakeFiles/volk.dir/volk.c.o	8cb5ca2965c09ff9
+256	371	8074739111987757	_deps/volk-build/libvolk.a	5eb34baae5522911
+27	1199	8074739120540303	CMakeFiles/vkrender_native.dir/decoder_jni.cpp.o	4852c044f73e5cc6
+23	1270	8074739121225439	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/renderer/video_pass.cpp.o	92da0ae70b0be97c
+14	1291	8074739121465428	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/renderer/external_video_image.cpp.o	c06b01fcaa39c085
+1	1365	8074739122190543	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/common/ipc_posix.cpp.o	f9ccd31fdb8b8b4
+10	1373	8074739122250533	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/renderer/vk_context.cpp.o	55684dcab548ad6e
+18	1384	8074739122390537	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/renderer/android_main.cpp.o	e4051887e51a67fa
+6	1484	8074739123363683	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/decoder/mediacodec_decoder.cpp.o	25d3112e13e64e84
+1485	1609	8074739124618952	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+15	961	8074741542914575	CMakeFiles/vkrender_native.dir/decoder_jni.cpp.o	4852c044f73e5cc6
+962	1116	8074741544443973	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+8	723	8074743408522052	CMakeFiles/vkrender_native.dir/decoder_jni.cpp.o	4852c044f73e5cc6
+724	836	8074743409625434	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+17	818	8074745210749423	CMakeFiles/vkrender_native.dir/decoder_jni.cpp.o	4852c044f73e5cc6
+10	1066	8074745213187029	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/decoder/mediacodec_decoder.cpp.o	25d3112e13e64e84
+1067	1199	8074745214523208	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+19	800	8074746040772375	CMakeFiles/vkrender_native.dir/decoder_jni.cpp.o	4852c044f73e5cc6
+8	1052	8074746043251250	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/decoder/mediacodec_decoder.cpp.o	25d3112e13e64e84
+1052	1197	8074746044712114	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+8	1020	8074746872837663	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/decoder/mediacodec_decoder.cpp.o	25d3112e13e64e84
+1020	1137	8074746874015184	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4
+8	861	8074748273884200	CMakeFiles/vkrender_native.dir/C_/Users/jonsu/dev/vkrender/renderer/external_video_image.cpp.o	c06b01fcaa39c085
+861	986	8074748275124787	C:/Users/jonsu/dev/vkrender/android/app/build/intermediates/cxx/Debug/52723z1s/obj/arm64-v8a/libvkrender_native.so	9b808d26aadfb4b4

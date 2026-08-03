@@ -5,6 +5,10 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef __ANDROID__
+#include <android/hardware_buffer.h>
+#include <sys/system_properties.h>
+#endif
 
 #include "external_video_image.h"
 
@@ -553,6 +557,124 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
     return true;
 #endif
 }
+
+#ifdef __ANDROID__
+// MediaCodec output buffers are almost always vendor-opaque YUV: import goes
+// through VkExternalFormatANDROID and a YCbCr conversion created from the
+// buffer's reported format properties (the mandatory path for external
+// formats). The conversion is created once, from the first buffer.
+bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuffer* buffer) {
+    if (!headerValid) {
+        VKR_ERR("SurfaceDesc before PoolDesc");
+        return false;
+    }
+    if (slots.count(key)) return true;
+    if (slots.size() >= proto::kMaxSurfaces) {
+        VKR_ERR("too many surfaces (%zu)", slots.size());
+        return false;
+    }
+
+    VkAndroidHardwareBufferFormatPropertiesANDROID fmtProps{
+        VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID};
+    VkAndroidHardwareBufferPropertiesANDROID props{
+        VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID};
+    props.pNext = &fmtProps;
+    if (vkGetAndroidHardwareBufferPropertiesANDROID(vk.device, buffer, &props) != VK_SUCCESS) {
+        VKR_ERR("vkGetAndroidHardwareBufferPropertiesANDROID failed");
+        return false;
+    }
+
+    if (!conversion) {
+        VkExternalFormatANDROID extFmt{VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID};
+        extFmt.externalFormat = fmtProps.externalFormat;
+        VkSamplerYcbcrConversionCreateInfo convInfo{
+            VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+        if (fmtProps.format == VK_FORMAT_UNDEFINED) convInfo.pNext = &extFmt;
+        convInfo.format = fmtProps.format;
+        convInfo.ycbcrModel = fmtProps.suggestedYcbcrModel;
+        convInfo.ycbcrRange = fmtProps.suggestedYcbcrRange;
+        convInfo.components = fmtProps.samplerYcbcrConversionComponents;
+        // Note: on the emulator, gfxstream's external-format sampling routes
+        // chroma incorrectly for YV12 buffers (colors shift; component
+        // swizzle overrides are ignored). Cosmetic, emulator-only - real
+        // devices use their vendor's CTS-validated conversion. See
+        // docs/ANDROID.md.
+        convInfo.xChromaOffset = fmtProps.suggestedXChromaOffset;
+        convInfo.yChromaOffset = fmtProps.suggestedYChromaOffset;
+        convInfo.chromaFilter = VK_FILTER_LINEAR;
+        convInfo.forceExplicitReconstruction = VK_FALSE;
+        if (vkCreateSamplerYcbcrConversion(vk.device, &convInfo, nullptr, &conversion) !=
+            VK_SUCCESS) {
+            VKR_ERR("vkCreateSamplerYcbcrConversion(external format 0x%llx) failed",
+                    (unsigned long long)fmtProps.externalFormat);
+            return false;
+        }
+        format = fmtProps.format; // may stay UNDEFINED (external format)
+    }
+
+    AHardwareBuffer_Desc ahbDesc{};
+    AHardwareBuffer_describe(buffer, &ahbDesc);
+
+    Slot slot;
+    auto fail = [&](const char* what) {
+        VKR_ERR("%s (surface %u)", what, key);
+        for (auto& v : slot.view)
+            if (v) vkDestroyImageView(vk.device, v, nullptr);
+        for (auto& img : slot.image)
+            if (img) vkDestroyImage(vk.device, img, nullptr);
+        for (auto& m : slot.memory)
+            if (m) vkFreeMemory(vk.device, m, nullptr);
+        return false;
+    };
+
+    VkExternalFormatANDROID extFmt{VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID};
+    extFmt.externalFormat = fmtProps.format == VK_FORMAT_UNDEFINED ? fmtProps.externalFormat : 0;
+    VkExternalMemoryImageCreateInfo extImg{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    extImg.pNext = &extFmt;
+    extImg.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.pNext = &extImg;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = fmtProps.format;
+    ici.extent = {ahbDesc.width, ahbDesc.height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(vk.device, &ici, nullptr, &slot.image[0]) != VK_SUCCESS)
+        return fail("vkCreateImage(AHardwareBuffer) failed");
+
+    int memType = pickMemoryType(vk.phys, props.memoryTypeBits);
+    if (memType < 0) return fail("no compatible memory type for AHardwareBuffer");
+
+    VkImportAndroidHardwareBufferInfoANDROID importInfo{
+        VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID};
+    importInfo.buffer = buffer;
+    VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    dedicatedInfo.pNext = &importInfo;
+    dedicatedInfo.image = slot.image[0]; // AHB imports are dedicated-only
+
+    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    alloc.pNext = &dedicatedInfo;
+    alloc.allocationSize = props.allocationSize;
+    alloc.memoryTypeIndex = (uint32_t)memType;
+    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory[0]) != VK_SUCCESS)
+        return fail("vkAllocateMemory(import AHardwareBuffer) failed");
+    if (vkBindImageMemory(vk.device, slot.image[0], slot.memory[0], 0) != VK_SUCCESS)
+        return fail("vkBindImageMemory failed");
+    if (!makeView(vk, slot.image[0], fmtProps.format, conversion, &slot.view[0]))
+        return fail("view creation failed");
+
+    slots.emplace(key, slot);
+    VKR_LOG("renderer: imported AHardwareBuffer surface key=%u extFmt=0x%llx (%zu total, "
+            "zero-copy)",
+            key, (unsigned long long)fmtProps.externalFormat, slots.size());
+    return true;
+}
+#endif // __ANDROID__
 
 void ExternalVideoPool::destroy(VkContext& vk) {
     for (auto& [key, s] : slots) {

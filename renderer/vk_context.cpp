@@ -1,7 +1,9 @@
 #include "vk_context.h"
 
+#ifndef __ANDROID__
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -13,12 +15,16 @@ namespace vkr {
 namespace {
 
 // Interop extensions differ per OS: Windows imports D3D11 NT handles and
-// D3D fences; Linux imports dma-buf fds with explicit DRM format modifiers
-// and uses the FOREIGN queue family for ownership transfers.
+// D3D fences; Linux imports dma-buf fds with explicit DRM format modifiers;
+// Android imports AHardwareBuffers. Linux/Android use the FOREIGN queue
+// family for ownership transfers.
 const char* kDeviceExtensions[] = {
-#ifdef _WIN32
+#if defined(_WIN32)
     VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
     VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
+#elif defined(__ANDROID__)
+    VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
+    VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME,
 #else
     VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
     VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
@@ -48,6 +54,7 @@ bool hasAllExtensions(VkPhysicalDevice dev, bool needSwapchain) {
 bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool headlessMode) {
     headless = headlessMode;
 
+#ifndef __ANDROID__
     if (!headless) {
         if (!glfwInit()) {
             VKR_ERR("glfwInit failed");
@@ -64,6 +71,7 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
             return false;
         }
     }
+#endif
 
     if (volkInitialize() != VK_SUCCESS) {
         VKR_ERR("volkInitialize failed - Vulkan loader not found");
@@ -84,9 +92,13 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
 
     std::vector<const char*> instExts;
     if (!headless) {
+#ifdef __ANDROID__
+        instExts = {VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_android_surface"};
+#else
         uint32_t glfwExtCount = 0;
         const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
         instExts.assign(glfwExts, glfwExts + glfwExtCount);
+#endif
     }
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -110,10 +122,19 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
     volkLoadInstance(instance);
 
     if (!headless) {
+#ifdef __ANDROID__
+        VkAndroidSurfaceCreateInfoKHR asci{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+        asci.window = (ANativeWindow*)nativeWindow;
+        if (vkCreateAndroidSurfaceKHR(instance, &asci, nullptr, &surface) != VK_SUCCESS) {
+            VKR_ERR("vkCreateAndroidSurfaceKHR failed");
+            return false;
+        }
+#else
         if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
             VKR_ERR("glfwCreateWindowSurface failed");
             return false;
         }
+#endif
     }
 
     // Pick a physical device: needs the interop extensions, Vulkan 1.3, and
@@ -271,13 +292,15 @@ bool VkContext::createSwapchain() {
     }
     swapFormat = chosen.format;
 
-    int fbw = 0, fbh = 0;
-    glfwGetFramebufferSize(window, &fbw, &fbh);
     swapExtent = caps.currentExtent;
+#ifndef __ANDROID__
     if (swapExtent.width == UINT32_MAX) {
+        int fbw = 0, fbh = 0;
+        glfwGetFramebufferSize(window, &fbw, &fbh);
         swapExtent.width = std::clamp((uint32_t)fbw, caps.minImageExtent.width, caps.maxImageExtent.width);
         swapExtent.height = std::clamp((uint32_t)fbh, caps.minImageExtent.height, caps.maxImageExtent.height);
     }
+#endif
     if (swapExtent.width == 0 || swapExtent.height == 0) return false; // minimized
 
     // MAILBOX when available: newest-image-wins presentation without tearing,
@@ -362,8 +385,10 @@ void VkContext::destroy() {
     }
     if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
     if (instance) vkDestroyInstance(instance, nullptr);
+#ifndef __ANDROID__
     if (window) glfwDestroyWindow(window);
     if (!headless) glfwTerminate();
+#endif
 }
 
 } // namespace vkr

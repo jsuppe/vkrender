@@ -64,6 +64,11 @@ public:
     bool connected() const { return connected_; }
     uint32_t peerPid() const { return peerPid_; } // server side only
 
+    // POSIX only: the raw socket fd, for platform APIs that transfer objects
+    // over an existing socket (Android's AHardwareBuffer_sendHandleToUnixSocket).
+    // -1 on Windows or when disconnected.
+    int nativeSocket() const;
+
 private:
     void close();
 

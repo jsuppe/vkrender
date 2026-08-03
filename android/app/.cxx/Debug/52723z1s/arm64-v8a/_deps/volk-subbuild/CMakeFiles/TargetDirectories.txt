@@ -1,0 +1,3 @@
+C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/volk-populate.dir
+C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/edit_cache.dir
+C:/Users/jonsu/dev/vkrender/android/app/.cxx/Debug/52723z1s/arm64-v8a/_deps/volk-subbuild/CMakeFiles/rebuild_cache.dir

@@ -50,6 +50,8 @@ void IpcChannel::close() {
     connected_ = false;
 }
 
+int IpcChannel::nativeSocket() const { return -1; }
+
 IpcChannel IpcChannel::listen(const std::string& name) {
     IpcChannel ch;
     HANDLE pipe = CreateNamedPipeW(

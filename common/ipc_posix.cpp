@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <stddef.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -23,10 +24,31 @@ namespace {
 constexpr size_t kMaxMessageSize = 64 * 1024;
 constexpr size_t kMaxFds = 8;
 
+#ifdef __ANDROID__
+// Abstract namespace: no filesystem node, works across an app's processes
+// regardless of sandboxed storage. Marked by sun_path[0] == '\0'.
+constexpr bool kAbstract = true;
+#else
+constexpr bool kAbstract = false;
+#endif
+
 std::string socketPath(const std::string& name) {
+    if (kAbstract) return "vkrender-" + name;
     const char* runtime = getenv("XDG_RUNTIME_DIR");
     std::string dir = runtime && runtime[0] ? runtime : "/tmp";
     return dir + "/vkrender-" + name + ".sock";
+}
+
+// Returns the sockaddr length to use; fills addr for either namespace.
+socklen_t fillAddr(sockaddr_un& addr, const std::string& path) {
+    addr.sun_family = AF_UNIX;
+    if (kAbstract) {
+        addr.sun_path[0] = '\0';
+        strncpy(addr.sun_path + 1, path.c_str(), sizeof(addr.sun_path) - 2);
+        return (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + path.size());
+    }
+    strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    return sizeof(addr);
 }
 
 // The listening socket is not the channel; keep it just long enough to accept
@@ -38,15 +60,14 @@ int acceptOne(const std::string& path) {
         return -1;
     }
     sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    if (path.size() >= sizeof(addr.sun_path)) {
+    if (path.size() >= sizeof(addr.sun_path) - 1) {
         VKR_ERR("ipc: socket path too long: %s", path.c_str());
         close(server);
         return -1;
     }
-    strcpy(addr.sun_path, path.c_str());
-    unlink(path.c_str()); // stale socket from a previous run
-    if (bind(server, (sockaddr*)&addr, sizeof(addr)) < 0 || listen(server, 1) < 0) {
+    socklen_t addrLen = fillAddr(addr, path);
+    if (!kAbstract) unlink(path.c_str()); // stale socket from a previous run
+    if (bind(server, (sockaddr*)&addr, addrLen) < 0 || listen(server, 1) < 0) {
         VKR_ERR("bind/listen(%s) failed: %s", path.c_str(), strerror(errno));
         close(server);
         return -1;
@@ -55,7 +76,7 @@ int acceptOne(const std::string& path) {
     int client = accept4(server, nullptr, nullptr, SOCK_CLOEXEC);
     if (client < 0) VKR_ERR("accept failed: %s", strerror(errno));
     close(server);
-    unlink(path.c_str());
+    if (!kAbstract) unlink(path.c_str());
     return client;
 }
 
@@ -95,6 +116,10 @@ void IpcChannel::close() {
 static void* packFd(int fd) { return (void*)(intptr_t)(fd + 1); }
 static int unpackFd(void* h) { return (int)(intptr_t)h - 1; }
 
+int IpcChannel::nativeSocket() const {
+    return connected_ ? unpackFd(handle_) : -1;
+}
+
 IpcChannel IpcChannel::listen(const std::string& name) {
     IpcChannel ch;
     int fd = acceptOne(socketPath(name));
@@ -120,9 +145,8 @@ IpcChannel IpcChannel::connect(const std::string& name, uint32_t timeoutMs, bool
             return ch;
         }
         sockaddr_un addr{};
-        addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
-        if (::connect(fd, (sockaddr*)&addr, sizeof(addr)) == 0) {
+        socklen_t addrLen = fillAddr(addr, path);
+        if (::connect(fd, (sockaddr*)&addr, addrLen) == 0) {
             ch.handle_ = packFd(fd);
             ch.connected_ = true;
             return ch;
