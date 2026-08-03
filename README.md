@@ -2,7 +2,10 @@
 
 Two cooperating processes that share decoded video frames through GPU memory,
 with **zero copies between processes**: the texture the decoder writes is the
-exact same GPU allocation the renderer samples.
+exact same GPU allocation the renderer samples. Runs on **Windows**
+(D3D11VA → NT-handle sharing) and **Linux** (VAAPI → dma-buf sharing — where
+the renderer samples the decoder's decode surfaces directly, with no
+conversion pass at all). Linux specifics: [docs/LINUX.md](docs/LINUX.md).
 
 ```
 ┌────────── vkdecoder ─────────────┐         ┌────────── vkrenderer ────────────┐
@@ -55,14 +58,25 @@ renderer) should work there.
 
 ## Build
 
-Prereqs: Visual Studio 2022 (C++ workload), CMake 3.24+, a Vulkan-capable GPU
-driver. No Vulkan SDK required — Vulkan-Headers, volk, GLFW and glslang are
-fetched by CMake; prebuilt FFmpeg 7.1 (BtbN shared) is downloaded at
-configure time.
+No Vulkan SDK required on either OS — Vulkan-Headers, volk, GLFW and glslang
+are fetched by CMake.
+
+**Windows** (VS 2022 C++ workload, CMake 3.24+; prebuilt FFmpeg downloads at
+configure time):
 
 ```bash
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel
+```
+
+**Linux** (FFmpeg ≥ 6.1 + libva from the distro; full details, NVIDIA setup,
+and no-sudo bootstrap in [docs/LINUX.md](docs/LINUX.md)):
+
+```bash
+sudo apt install cmake g++ pkg-config libavformat-dev libavcodec-dev libavutil-dev \
+  libva-dev libdrm-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel && ctest --test-dir build
 ```
 
 ## Run

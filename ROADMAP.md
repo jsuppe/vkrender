@@ -35,41 +35,34 @@
 - [x] CI: GitHub Actions Windows build with FFmpeg download cache and
       binary artifact upload.
 
-## M6 — Linux backend (VAAPI + dma-buf)
+## M6 — Linux backend (VAAPI + dma-buf) — DONE (2026-08-03)
 
-Goal: same two binaries on Linux with true NV12 zero-copy (no conversion pass
-needed — dma-buf carries explicit plane layouts, fixing what Windows can't
-express).
+Same two binaries on Linux with **blit-free** zero-copy: the renderer samples
+the decoder's own decode surfaces (a ring of held `AVFrame` refs — no
+conversion pass, no in-process copy at all). Verified end-to-end on real
+hardware: RTX 3090 / driver 580.173 / Ubuntu 24.04 / nvidia-vaapi-driver,
+H.264 1080p30, headless render with pixel-correct frame dumps. Full details,
+setup and troubleshooting: [docs/LINUX.md](docs/LINUX.md).
 
-Plan:
-1. **IPC**: `common/ipc_posix.cpp` — Unix domain socket implementing the
-   existing `IpcChannel` API; fds are passed in-band with `SCM_RIGHTS`
-   ancillary data instead of raw handle values (`SharedFrameHandle` already
-   models this).
-2. **Decoder**: `decoder/vaapi_decoder.cpp` — FFmpeg `AV_HWDEVICE_TYPE_VAAPI`
-   decode; export each frame's surface with
-   `vaExportSurfaceHandle(VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
-   VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS)` →
-   dma-buf fd(s) + per-plane offset/pitch + DRM format modifier, all of which
-   go into `PoolDescMsg`. Decode-surface recycling differs from D3D11 (VAAPI
-   surfaces are refcounted via `AVFrame`), so the pool becomes a ring of
-   held `AVFrame` refs rather than copies — potentially removing even the
-   in-process blit.
-3. **Renderer import**: extend `external_video_image.cpp` with the dma-buf
-   branch: `VK_EXT_external_memory_dma_buf` + `VK_EXT_image_drm_format_modifier`
-   (`VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT`,
-   `VkImageDrmFormatModifierExplicitCreateInfoEXT` with the exported plane
-   layouts). NV12 sampling path (`VkSamplerYcbcrConversion`) already exists.
-4. **Sync**: start with dma-buf implicit sync (correct on today's Mesa/NVIDIA
-   with `DMA_BUF_IOCTL_EXPORT_SYNC_FILE` fallback); explicit path via
-   `VK_KHR_external_semaphore_fd` (SYNC_FD) mirroring the timeline design.
-5. **Build**: drop the Windows-only guard in CMake; FFmpeg from system
-   packages (pkg-config) instead of BtbN prebuilt; GLFW/Wayland+X11.
-
-Risks: modifier negotiation between the VAAPI driver and the Vulkan driver on
-hybrid setups (iGPU decode + dGPU render needs a linear-modifier or
-cross-device path); NVIDIA proprietary VAAPI is weak — NVDEC path may be
-wanted later (`AV_HWDEVICE_TYPE_CUDA` → `VK_KHR_external_memory_fd` opaque).
+- [x] `common/ipc_posix.cpp`: SOCK_SEQPACKET Unix socket + SCM_RIGHTS fd
+      passing; `vkr_ipc_test` self-test runs in CI and on dev boxes.
+- [x] `decoder/vaapi_decoder.cpp`: FFmpeg VAAPI decode, per-surface
+      `vaExportSurfaceHandle(DRM_PRIME_2, SEPARATE_LAYERS)` announced once as
+      `SurfaceDesc` (+fds), held-frame ring with FrameConsumed-driven release,
+      `vaSyncSurface` producer sync, RTSP auto-reconnect shared with Windows.
+- [x] Renderer dma-buf import with explicit DRM-modifier plane layouts; three
+      topologies: single-object combined, multi-object DISJOINT combined, and
+      **planar R8/R8G8 fallback** (auto-selected when the driver cannot sample
+      the exported modifier as multi-planar NV12 — the NVIDIA case) with
+      shader-side YUV→RGB.
+- [x] `--headless N --dump out.ppm` renderer mode (no window system): renders
+      offscreen and writes a verification frame — how the SSH-only reference
+      box is tested.
+- [x] CI: ubuntu-latest build + IPC test job.
+- [ ] Deferred to M6.1: explicit GPU-side sync via exported sync_files
+      (`VK_KHR_external_semaphore_fd`); Intel/AMD combined-mode validation on
+      real hardware; 10-bit (P010) Linux path; hybrid-GPU (decode≠render
+      device) support.
 
 ## M7 — Android backend (MediaCodec + AHardwareBuffer)
 

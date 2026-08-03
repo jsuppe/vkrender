@@ -29,8 +29,20 @@ facilities make the decoder's *own decode surfaces* directly shareable:
 
 So the Linux pipeline is: NVDEC/media-engine writes a decode surface → that
 exact allocation is sampled by the renderer. Zero copies *and* zero
-conversions; NV12 → RGB happens inside the sampler via
-`VkSamplerYcbcrConversion`.
+conversions.
+
+**Two sampling modes**, chosen automatically on the first imported surface:
+
+- **Combined** (Mesa/Intel/AMD): one multi-planar `G8_B8R8_2PLANE_420_UNORM`
+  VkImage, NV12→RGB inside the sampler via `VkSamplerYcbcrConversion`.
+- **Planar** (NVIDIA): NVIDIA's Vulkan driver only samples multi-planar NV12
+  with the LINEAR modifier, but the surfaces export with block-linear
+  modifiers (`0x03000000006060xx`) — which it *does* support for single-plane
+  `R8`/`R8G8`. So the renderer imports luma as an R8 image and chroma as an
+  R8G8 image (each plane's own dma-buf object + explicit layout) and does the
+  YUV→RGB matrix in the fragment shader. Same zero-copy property, verified
+  empirically (see §7). The mode decision is a runtime query of
+  `VkDrmFormatModifierPropertiesListEXT` against the exported modifier.
 
 ### Surface lifetime (the part that makes zero-copy safe)
 
@@ -239,10 +251,11 @@ Expected log lines proving the zero-copy path:
 
 | Symptom | Cause / fix |
 |---|---|
-| `av_hwdevice_ctx_create(VAAPI...) failed` | No VAAPI driver for this GPU: run `vainfo`; set `LIBVA_DRIVERS_PATH`/`LIBVA_DRIVER_NAME`; check `/dev/dri` permissions (user in `render` group). |
-| `vaExportSurfaceHandle ... failed` | Driver lacks `DRM_PRIME_2` export (very old Mesa/iHD, or shim misconfig). For nvidia-vaapi-driver ensure `NVD_BACKEND=direct` and driver ≥ 525. |
-| `vkCreateImage(dma-buf, modifier=...) failed` | The Vulkan driver can't sample that modifier. Cross-vendor decode/render mix, or NVIDIA driver too old for `VK_EXT_image_drm_format_modifier`. |
-| `unsupported dma-buf topology: N objects` | Driver exported disjoint per-plane buffers. Not implemented yet (single-object NV12 covers Intel/AMD/NVIDIA-shim defaults); file an issue with `vainfo` + GPU details. |
+| `av_hwdevice_ctx_create(VAAPI...) failed` | No VAAPI driver for this GPU, or no DRM node access. Run `vainfo`; set `LIBVA_DRIVERS_PATH`/`LIBVA_DRIVER_NAME`; **check `/dev/dri/renderD*` permissions — SSH sessions don't get the desktop seat ACL, the user must be in the `render` group** (`sudo usermod -aG render,video $USER`, then re-login). Hit on the reference box. |
+| `vaExportSurfaceHandle ... invalid VASurfaceID` | nvidia-vaapi-driver rejects `COMPOSED_LAYERS` with this (misleading) error — the project always uses `SEPARATE_LAYERS`, so if you see this you're running a pre-M6 build. |
+| `vaExportSurfaceHandle ... failed` (other) | Driver lacks `DRM_PRIME_2` export (very old Mesa/iHD, or shim misconfig). For nvidia-vaapi-driver ensure `NVD_BACKEND=direct` and driver ≥ 525. |
+| `vkCreateImage(dma-buf, modifier=...) failed` | The Vulkan driver can't create *any* image with that modifier — usually a cross-vendor decode/render mix, or NVIDIA driver too old for `VK_EXT_image_drm_format_modifier`. (NVIDIA's inability to sample it as *multi-planar* NV12 is handled automatically by planar mode and is not an error.) |
+| `bad dma-buf topology` | More than 4 buffer objects/planes exported; file an issue with `vainfo` + GPU details. |
 | Renderer: `no Vulkan 1.3 device with the required interop extensions` | `vulkaninfo` will show what's missing; NVIDIA needs a modern proprietary driver, Mesa needs ≥ 22.x. |
 | `Could not get 'vkCreateInstance' ... ICD libGLX_nvidia.so.0` | NVIDIA kernel module ≠ userspace version (typically after a driver upgrade without reboot). `cat /proc/driver/nvidia/version` vs `nvidia-smi`; reboot. Hit this on the reference box. |
 | Wrong colors (green/purple) | YCbCr conversion mismatch — check the decoder log's matrix/range against the stream; file an issue with both. |
@@ -255,6 +268,7 @@ Expected log lines proving the zero-copy path:
 |---|---|---|
 | Build (all targets) | Ubuntu 24.04 x86_64 (melchior), GitHub Actions ubuntu-latest | ✅ builds clean |
 | `vkr_ipc_test` (UDS framing, SCM_RIGHTS fd passing, peer pid, disconnect) | melchior + CI | ✅ passes |
-| VAAPI decode → dma-buf export → Vulkan import → headless render | melchior: RTX 3090, driver 580.173, nvidia-vaapi-driver | see ROADMAP.md M6 notes (this section is updated by the test procedure above) |
-| Intel iHD / AMD radeonsi end-to-end | — | not yet exercised (no hardware available to this project yet); §5 procedure applies verbatim |
-| Windowed renderer on X11/Wayland | — | code path identical to Windows GLFW loop; needs a desktop session to exercise |
+| **Full pipeline: RTSP → NVDEC (nvidia-vaapi-driver) → dma-buf export (block-linear modifier 0x300000000606014, 2 objects) → planar R8/R8G8 Vulkan import → headless render → frame dump** | melchior: RTX 3090, driver 580.173.02, Ubuntu 24.04, H.264 1080p30 | ✅ **verified 2026-08-03** — 60 frames, pixel-correct test pattern, 3 decode surfaces cycling zero-copy, 1 warm-up drop |
+| Combined-mode NV12 import (`VkSamplerYcbcrConversion`) | — | implemented; needs Intel iHD or AMD radeonsi hardware to exercise (§5 procedure applies verbatim) |
+| Windowed renderer on X11/Wayland | — | code path identical to the Windows GLFW loop; needs a desktop session to exercise |
+| Explicit GPU-side sync (sync_file) | — | not implemented; producer-side `vaSyncSurface` in use (see §1) |
