@@ -261,6 +261,12 @@ int GstVaDecoder::run(const std::string& url, IpcChannel& ch) {
                 VKR_LOG("decoder: stream interrupted (%s), sent=%llu dropped=%llu",
                         e ? e->message : "?", (unsigned long long)sentFrames_,
                         (unsigned long long)droppedFrames_);
+                if (!headerSent_ && sentFrames_ == 0)
+                    VKR_ERR("hint: if the RTSP source is reachable, this is usually caps "
+                            "negotiation - the VA driver must support memory:VAMemory output "
+                            "(Mesa radeonsi / Intel iHD do; the NVIDIA VAAPI shim does not - "
+                            "gst-va only offers system memory there, which would break "
+                            "zero-copy). See docs/LINUX.md.");
                 if (e) g_error_free(e);
                 gst_message_unref(m);
                 streamOk = false;
