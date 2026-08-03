@@ -52,8 +52,10 @@ if(WIN32)
     include(${CMAKE_SOURCE_DIR}/cmake/ffmpeg.cmake) # prebuilt BtbN download
 else()
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-        libavformat>=60 libavcodec>=60 libavutil>=58)
+    # M9: GStreamer end-to-end decode pipeline (rtspsrc -> decodebin3 -> va
+    # decoders); libva stays for the surface export call.
+    pkg_check_modules(GST REQUIRED IMPORTED_TARGET
+        gstreamer-1.0>=1.22 gstreamer-app-1.0 gstreamer-video-1.0 gstreamer-va-1.0)
     pkg_check_modules(LIBVA REQUIRED IMPORTED_TARGET libva>=1.16 libva-drm)
 endif()
 
@@ -72,8 +74,8 @@ if(WIN32)
         FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil d3d11 dxgi)
     vkr_copy_ffmpeg_dlls(vkdecoder)
 else()
-    target_sources(vkdecoder PRIVATE decoder/vaapi_decoder.cpp)
-    target_link_libraries(vkdecoder PRIVATE PkgConfig::FFMPEG PkgConfig::LIBVA)
+    target_sources(vkdecoder PRIVATE decoder/gst_va_decoder.cpp)
+    target_link_libraries(vkdecoder PRIVATE PkgConfig::GST PkgConfig::LIBVA)
 endif()
 
 # --- shader compilation ------------------------------------------------------

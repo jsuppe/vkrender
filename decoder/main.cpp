@@ -6,8 +6,8 @@
 #include "d3d11va_decoder.h"
 using PlatformDecoder = vkr::D3D11VADecoder;
 #else
-#include "vaapi_decoder.h"
-using PlatformDecoder = vkr::VAAPIDecoder;
+#include "gst_va_decoder.h"
+using PlatformDecoder = vkr::GstVaDecoder;
 #endif
 
 #include "ipc.h"
@@ -65,11 +65,10 @@ int main(int argc, char** argv) {
         }
         VKR_LOG("decoder: renderer pid=%u luidValid=%u", msg->rendererPid, msg->luidValid);
 
-#ifdef _WIN32
+        // Note: --device is currently unused with the GStreamer backend (the
+        // VA elements pick the render node; multi-GPU selection via
+        // GST_VA_DEVICE_PATH if needed).
         PlatformDecoder decoder(*msg, poolSize);
-#else
-        PlatformDecoder decoder(*msg, poolSize, device);
-#endif
         int rc = decoder.run(url, ch);
         if (rc != 0) return rc;
         VKR_LOG("decoder: session ended, waiting for a new renderer");
