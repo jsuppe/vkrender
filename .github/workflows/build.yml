@@ -39,8 +39,12 @@ jobs:
       - name: Install GStreamer
         shell: pwsh
         run: |
-          Start-Process msiexec -ArgumentList '/i','gst-msi/runtime.msi','/qn','/norestart','ADDLOCAL=ALL' -Wait
-          Start-Process msiexec -ArgumentList '/i','gst-msi/devel.msi','/qn','/norestart','ADDLOCAL=ALL' -Wait
+          $p1 = Start-Process msiexec -ArgumentList '/i',"$PWD\gst-msi\runtime.msi",'/qn','/norestart','ADDLOCAL=ALL' -Wait -PassThru
+          Write-Host "runtime msi exit: $($p1.ExitCode)"
+          $p2 = Start-Process msiexec -ArgumentList '/i',"$PWD\gst-msi\devel.msi",'/qn','/norestart','ADDLOCAL=ALL' -Wait -PassThru
+          Write-Host "devel msi exit: $($p2.ExitCode)"
+          Get-ChildItem C:\gstreamer -Recurse -Depth 2 -Directory -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty FullName
+          if ($p1.ExitCode -ne 0 -or $p2.ExitCode -ne 0) { exit 1 }
 
       - name: Configure
         run: cmake -S . -B build -A x64
