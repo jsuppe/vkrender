@@ -19,8 +19,10 @@ jobs:
           path: build/ffmpeg-prebuilt/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip
           key: ffmpeg-n7.1-latest-win64-gpl-shared
 
+      # No pinned generator: the runner image ships whichever Visual Studio
+      # is current, and CMake's default picks it up.
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -A x64
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
