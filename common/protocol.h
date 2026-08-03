@@ -11,7 +11,9 @@
 namespace vkr::proto {
 
 constexpr uint32_t kProtocolMagic = 0x31524B56; // "VKR1" little-endian
-constexpr uint32_t kMaxPoolSize = 8;
+constexpr uint32_t kMaxPoolSize = 8;   // Windows: fixed pool, handles in PoolDesc
+constexpr uint32_t kMaxSurfaces = 32;  // Linux: dynamic SurfaceDesc announcements
+                                       // (VAAPI decoder pools can exceed 8 surfaces)
 
 enum class MsgType : uint32_t {
     Hello = 1,         // renderer -> decoder: pid + preferred adapter LUID
@@ -21,6 +23,8 @@ enum class MsgType : uint32_t {
     StreamReset = 5,   // decoder -> renderer: pool obsolete, new PoolDesc follows
     Bye = 6,           // either direction: orderly shutdown
     StreamStatus = 7,  // decoder -> renderer: source connectivity for UI
+    SurfaceDesc = 8,   // decoder -> renderer: one shared surface (Linux: dma-buf
+                       // fd travels as SCM_RIGHTS ancillary data on this message)
 };
 
 #pragma pack(push, 4)
@@ -92,6 +96,21 @@ struct FrameConsumedMsg {
 
 struct StreamStatusMsg {
     StreamPhase phase;
+};
+
+// Linux: announces one decoder surface. The dma-buf fd(s) ride along as
+// SCM_RIGHTS ancillary data (IpcMessage::fds), in object order. Sent once per
+// distinct surface the first time it appears; afterwards FrameReady refers to
+// it by slotKey. Only numObjects == 1 (all planes in one buffer object) is
+// currently supported by the renderer.
+struct SurfaceDescMsg {
+    uint32_t slotKey;     // stable surface identity (VAAPI: VASurfaceID)
+    uint32_t numPlanes;   // 2 for NV12
+    uint32_t numObjects;  // == count of fds attached to this message
+    uint32_t _pad;
+    uint64_t drmModifier; // DRM format modifier of the buffer object(s)
+    PlaneLayout plane[4];
+    uint64_t objectSize[4];
 };
 
 #pragma pack(pop)

@@ -9,13 +9,19 @@ struct GLFWwindow;
 
 namespace vkr {
 
-// Owns instance, device, queue, swapchain, and the GLFW window.
-// Exposes the physical device LUID so the decoder can pick the same adapter.
+// Owns instance, device, queue, and either a GLFW window + swapchain or (in
+// headless mode, for machines without a display session) an offscreen render
+// target. Exposes the physical device LUID so the decoder can pick the same
+// adapter on Windows; on Linux adapter matching is by DRM render node instead.
 class VkContext {
 public:
-    bool init(uint32_t width, uint32_t height, const char* title);
+    // headless: no window system at all - creates an offscreen BGRA target of
+    // the given size instead of a swapchain. GLFW is not initialized.
+    bool init(uint32_t width, uint32_t height, const char* title, bool headless = false);
     void destroy();
     bool recreateSwapchain();
+
+    bool headless = false;
 
     GLFWwindow* window = nullptr;
     VkInstance instance = VK_NULL_HANDLE;
@@ -28,14 +34,18 @@ public:
     uint8_t deviceLUID[8] = {};
     bool luidValid = false;
 
+    // Window mode: swapchain state. Headless mode: swapImages/swapViews hold
+    // the single offscreen target, swapFormat/swapExtent describe it.
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D swapExtent{};
     std::vector<VkImage> swapImages;
     std::vector<VkImageView> swapViews;
+    VkDeviceMemory offscreenMemory = VK_NULL_HANDLE;
 
 private:
     bool createSwapchain();
+    bool createOffscreenTarget(uint32_t width, uint32_t height);
     void destroySwapchain();
     bool validation_ = false;
 };

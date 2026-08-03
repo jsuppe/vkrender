@@ -1,16 +1,23 @@
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-
 #include "video_pass.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "log.h"
 
 namespace vkr {
+
+namespace {
+// dma-buf producers (VAAPI) are a different driver "instance": FOREIGN.
+// Same-GPU cross-API sharing on Windows (D3D11) uses EXTERNAL.
+#ifdef _WIN32
+constexpr uint32_t kExternalQueueFamily = VK_QUEUE_FAMILY_EXTERNAL;
+#else
+constexpr uint32_t kExternalQueueFamily = VK_QUEUE_FAMILY_FOREIGN_EXT;
+#endif
+} // namespace
 
 VkShaderModule VideoPass::loadShader(VkDevice device, const std::string& path) {
     FILE* f = fopen(path.c_str(), "rb");
@@ -43,8 +50,8 @@ bool VideoPass::init(VkContext& vk, const std::string& shaderDir) {
 bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     unbindPool(vk);
 
-    // For NV12 pools the sampler carries the YCbCr conversion (filters must
-    // match its chromaFilter); BGRA pools use a plain sampler.
+    // For NV12 streams the sampler carries the YCbCr conversion (filters must
+    // match its chromaFilter); RGB streams use a plain sampler.
     VkSamplerYcbcrConversionInfo convInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
     convInfo.conversion = pool.conversion;
     VkSamplerCreateInfo sci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -136,33 +143,43 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
         return false;
     }
 
-    const uint32_t n = (uint32_t)pool.slots.size();
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, n};
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, proto::kMaxSurfaces};
     VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dpci.maxSets = n;
+    dpci.maxSets = proto::kMaxSurfaces;
     dpci.poolSizeCount = 1;
     dpci.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(vk.device, &dpci, nullptr, &descriptorPool_) != VK_SUCCESS)
         return false;
 
-    std::vector<VkDescriptorSetLayout> layouts(n, setLayout_);
+    for (const auto& [key, slot] : pool.slots) {
+        if (!addSlot(vk, pool, key)) return false;
+    }
+    return true;
+}
+
+bool VideoPass::addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t key) {
+    if (sets_.count(key)) return true;
+    const auto* slot = pool.find(key);
+    if (!slot || !descriptorPool_) return false;
+
     VkDescriptorSetAllocateInfo dsai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     dsai.descriptorPool = descriptorPool_;
-    dsai.descriptorSetCount = n;
-    dsai.pSetLayouts = layouts.data();
-    sets_.resize(n);
-    if (vkAllocateDescriptorSets(vk.device, &dsai, sets_.data()) != VK_SUCCESS) return false;
-
-    for (uint32_t i = 0; i < n; ++i) {
-        VkDescriptorImageInfo img{VK_NULL_HANDLE, pool.slots[i].view, VK_IMAGE_LAYOUT_GENERAL};
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = sets_[i];
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &img;
-        vkUpdateDescriptorSets(vk.device, 1, &write, 0, nullptr);
+    dsai.descriptorSetCount = 1;
+    dsai.pSetLayouts = &setLayout_;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vk.device, &dsai, &set) != VK_SUCCESS) {
+        VKR_ERR("descriptor allocation failed (surface %u)", key);
+        return false;
     }
+    VkDescriptorImageInfo img{VK_NULL_HANDLE, slot->view, VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet = set;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &img;
+    vkUpdateDescriptorSets(vk.device, 1, &write, 0, nullptr);
+    sets_.emplace(key, set);
     return true;
 }
 
@@ -180,15 +197,15 @@ void VideoPass::unbindPool(VkContext& vk) {
     sets_.clear();
 }
 
-void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int slot,
+void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
                        VkImageView target, VkExtent2D extent, uint32_t queueFamily) {
-    const bool haveVideo = slot >= 0 && slot < (int)sets_.size() && pipeline_ != VK_NULL_HANDLE;
-    static const bool noExternalBarrier = []() {
-        char buf[2];
-        return GetEnvironmentVariableA("VKR_NO_EXTERNAL_BARRIER", buf, sizeof(buf)) > 0;
-    }();
+    const ExternalVideoPool::Slot* slot =
+        slotKey >= 0 ? pool.find((uint32_t)slotKey) : nullptr;
+    auto setIt = slotKey >= 0 ? sets_.find((uint32_t)slotKey) : sets_.end();
+    const bool haveVideo = slot && setIt != sets_.end() && pipeline_ != VK_NULL_HANDLE;
+    static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
 
-    // Acquire the sampled image from the external (D3D11) side. Layout stays
+    // Acquire the sampled image from the external producer. Layout stays
     // GENERAL both ways: transitioning from UNDEFINED would legally discard
     // the decoder's pixels.
     if (haveVideo && !noExternalBarrier) {
@@ -199,9 +216,9 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int s
         acquire.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
         acquire.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
         acquire.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        acquire.srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+        acquire.srcQueueFamilyIndex = kExternalQueueFamily;
         acquire.dstQueueFamilyIndex = queueFamily;
-        acquire.image = pool.slots[slot].image;
+        acquire.image = slot->image;
         acquire.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
         dep.imageMemoryBarrierCount = 1;
@@ -224,7 +241,7 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int s
     vkCmdBeginRendering(cmd, &ri);
 
     if (haveVideo) {
-        // Letterbox: fit the video into the window preserving aspect ratio.
+        // Letterbox: fit the video into the target preserving aspect ratio.
         float scale = std::min((float)extent.width / (float)pool.width,
                                (float)extent.height / (float)pool.height);
         float vw = pool.width * scale, vh = pool.height * scale;
@@ -235,7 +252,7 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int s
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
-                                &sets_[slot], 0, nullptr);
+                                &setIt->second, 0, nullptr);
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
@@ -250,8 +267,8 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int s
         release.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
         release.newLayout = VK_IMAGE_LAYOUT_GENERAL;
         release.srcQueueFamilyIndex = queueFamily;
-        release.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
-        release.image = pool.slots[slot].image;
+        release.dstQueueFamilyIndex = kExternalQueueFamily;
+        release.image = slot->image;
         release.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
         dep.imageMemoryBarrierCount = 1;

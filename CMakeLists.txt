@@ -4,11 +4,9 @@ project(vkrender LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT WIN32)
-    message(FATAL_ERROR "Linux build (VAAPI/dma-buf backend) is not implemented yet")
+if(WIN32)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
-
-add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 include(FetchContent)
 
@@ -22,7 +20,10 @@ FetchContent_Declare(volk
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(vulkan_headers volk)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
-target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_WIN32_KHR VK_NO_PROTOTYPES)
+target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES)
+if(WIN32)
+    target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_WIN32_KHR)
+endif()
 
 # --- GLFW --------------------------------------------------------------------
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -46,23 +47,34 @@ FetchContent_Declare(glslang
     GIT_TAG vulkan-sdk-1.3.296.0)
 FetchContent_MakeAvailable(glslang)
 
-# --- FFmpeg prebuilt ---------------------------------------------------------
-include(${CMAKE_SOURCE_DIR}/cmake/ffmpeg.cmake)
+# --- FFmpeg ------------------------------------------------------------------
+if(WIN32)
+    include(${CMAKE_SOURCE_DIR}/cmake/ffmpeg.cmake) # prebuilt BtbN download
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+        libavformat>=60 libavcodec>=60 libavutil>=58)
+    pkg_check_modules(LIBVA REQUIRED IMPORTED_TARGET libva>=1.16 libva-drm)
+endif()
 
 # --- common ------------------------------------------------------------------
 add_library(vkr_common STATIC
-    common/ipc_win32.cpp)
+    $<$<BOOL:${WIN32}>:common/ipc_win32.cpp>
+    $<$<NOT:$<BOOL:${WIN32}>>:common/ipc_posix.cpp>)
 target_include_directories(vkr_common PUBLIC common)
 
 # --- decoder -----------------------------------------------------------------
-add_executable(vkdecoder
-    decoder/main.cpp
-    decoder/d3d11va_decoder.cpp)
-target_link_libraries(vkdecoder PRIVATE
-    vkr_common
-    FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil
-    d3d11 dxgi)
-vkr_copy_ffmpeg_dlls(vkdecoder)
+add_executable(vkdecoder decoder/main.cpp)
+target_link_libraries(vkdecoder PRIVATE vkr_common)
+if(WIN32)
+    target_sources(vkdecoder PRIVATE decoder/d3d11va_decoder.cpp)
+    target_link_libraries(vkdecoder PRIVATE
+        FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil d3d11 dxgi)
+    vkr_copy_ffmpeg_dlls(vkdecoder)
+else()
+    target_sources(vkdecoder PRIVATE decoder/vaapi_decoder.cpp)
+    target_link_libraries(vkdecoder PRIVATE PkgConfig::FFMPEG PkgConfig::LIBVA)
+endif()
 
 # --- shader compilation ------------------------------------------------------
 set(VKR_SHADERS
@@ -93,3 +105,11 @@ add_dependencies(vkrenderer vkr_shaders)
 add_custom_command(TARGET vkrenderer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${VKR_SHADER_OUT_DIR} "$<TARGET_FILE_DIR:vkrenderer>/shaders")
+
+# --- tests -------------------------------------------------------------------
+if(NOT WIN32)
+    enable_testing()
+    add_executable(vkr_ipc_test test/ipc_test.cpp)
+    target_link_libraries(vkr_ipc_test PRIVATE vkr_common)
+    add_test(NAME ipc COMMAND vkr_ipc_test)
+endif()

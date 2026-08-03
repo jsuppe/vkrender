@@ -115,7 +115,12 @@ IpcChannel IpcChannel::connect(const std::string& name, uint32_t timeoutMs, bool
     }
 }
 
-bool IpcChannel::send(proto::MsgType type, const void* payload, size_t size) {
+bool IpcChannel::send(proto::MsgType type, const void* payload, size_t size,
+                      const int* fds, size_t fdCount) {
+    if (fds || fdCount) {
+        VKR_ERR("ipc: fd passing is POSIX-only");
+        return false;
+    }
     if (!connected_) return false;
     // Message-mode pipe: one WriteFile == one message, so header and payload
     // must go out in a single write.

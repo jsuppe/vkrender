@@ -12,42 +12,57 @@ namespace vkr {
 
 namespace {
 
+// Interop extensions differ per OS: Windows imports D3D11 NT handles and
+// D3D fences; Linux imports dma-buf fds with explicit DRM format modifiers
+// and uses the FOREIGN queue family for ownership transfers.
 const char* kDeviceExtensions[] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#ifdef _WIN32
     VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
     VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
+#else
+    VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+    VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
+    VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+    VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME,
+#endif
 };
 
-bool hasAllExtensions(VkPhysicalDevice dev) {
+bool hasAllExtensions(VkPhysicalDevice dev, bool needSwapchain) {
     uint32_t count = 0;
     vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, nullptr);
     std::vector<VkExtensionProperties> props(count);
     vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, props.data());
-    for (const char* want : kDeviceExtensions) {
-        bool found = false;
+    auto has = [&](const char* want) {
         for (const auto& p : props)
-            if (!strcmp(p.extensionName, want)) { found = true; break; }
-        if (!found) return false;
-    }
+            if (!strcmp(p.extensionName, want)) return true;
+        return false;
+    };
+    for (const char* want : kDeviceExtensions)
+        if (!has(want)) return false;
+    if (needSwapchain && !has(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) return false;
     return true;
 }
 
 } // namespace
 
-bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
-    if (!glfwInit()) {
-        VKR_ERR("glfwInit failed");
-        return false;
-    }
-    if (!glfwVulkanSupported()) {
-        VKR_ERR("GLFW reports no Vulkan support (is vulkan-1.dll present?)");
-        return false;
-    }
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    window = glfwCreateWindow((int)width, (int)height, title, nullptr, nullptr);
-    if (!window) {
-        VKR_ERR("glfwCreateWindow failed");
-        return false;
+bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool headlessMode) {
+    headless = headlessMode;
+
+    if (!headless) {
+        if (!glfwInit()) {
+            VKR_ERR("glfwInit failed");
+            return false;
+        }
+        if (!glfwVulkanSupported()) {
+            VKR_ERR("GLFW reports no Vulkan support (is the Vulkan loader present?)");
+            return false;
+        }
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        window = glfwCreateWindow((int)width, (int)height, title, nullptr, nullptr);
+        if (!window) {
+            VKR_ERR("glfwCreateWindow failed");
+            return false;
+        }
     }
 
     if (volkInitialize() != VK_SUCCESS) {
@@ -56,7 +71,7 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     }
 
     // Validation layer is only present if a Vulkan SDK (or the layer package)
-    // is installed; enable opportunistically in that case.
+    // is installed; enable opportunistically in Debug builds.
     uint32_t layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     std::vector<VkLayerProperties> layers(layerCount);
@@ -67,9 +82,12 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     validation_ = false;
 #endif
 
-    uint32_t glfwExtCount = 0;
-    const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
-    std::vector<const char*> instExts(glfwExts, glfwExts + glfwExtCount);
+    std::vector<const char*> instExts;
+    if (!headless) {
+        uint32_t glfwExtCount = 0;
+        const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+        instExts.assign(glfwExts, glfwExts + glfwExtCount);
+    }
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "vkrenderer";
@@ -91,13 +109,15 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     }
     volkLoadInstance(instance);
 
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
-        VKR_ERR("glfwCreateWindowSurface failed");
-        return false;
+    if (!headless) {
+        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+            VKR_ERR("glfwCreateWindowSurface failed");
+            return false;
+        }
     }
 
     // Pick a physical device: needs the interop extensions, Vulkan 1.3, and
-    // present support. Prefer discrete GPUs.
+    // (window mode) present support. Prefer discrete GPUs.
     uint32_t devCount = 0;
     vkEnumeratePhysicalDevices(instance, &devCount, nullptr);
     std::vector<VkPhysicalDevice> devs(devCount);
@@ -107,7 +127,7 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     for (VkPhysicalDevice d : devs) {
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(d, &props);
-        if (props.apiVersion < VK_API_VERSION_1_3 || !hasAllExtensions(d)) continue;
+        if (props.apiVersion < VK_API_VERSION_1_3 || !hasAllExtensions(d, !headless)) continue;
 
         uint32_t qCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(d, &qCount, nullptr);
@@ -115,9 +135,14 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
         vkGetPhysicalDeviceQueueFamilyProperties(d, &qCount, qProps.data());
         int family = -1;
         for (uint32_t i = 0; i < qCount; ++i) {
-            VkBool32 present = VK_FALSE;
-            vkGetPhysicalDeviceSurfaceSupportKHR(d, i, surface, &present);
-            if ((qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) { family = (int)i; break; }
+            if (!(qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) continue;
+            if (!headless) {
+                VkBool32 present = VK_FALSE;
+                vkGetPhysicalDeviceSurfaceSupportKHR(d, i, surface, &present);
+                if (!present) continue;
+            }
+            family = (int)i;
+            break;
         }
         if (family < 0) continue;
 
@@ -129,7 +154,8 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
         }
     }
     if (!phys) {
-        VKR_ERR("no Vulkan 1.3 device with win32 external memory/semaphore + present support");
+        VKR_ERR("no Vulkan 1.3 device with the required interop extensions%s",
+                headless ? "" : " and present support");
         return false;
     }
 
@@ -139,8 +165,8 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     vkGetPhysicalDeviceProperties2(phys, &props2);
     luidValid = props11.deviceLUIDValid == VK_TRUE;
     memcpy(deviceLUID, props11.deviceLUID, sizeof(deviceLUID));
-    VKR_LOG("renderer: device: %s (LUID %s)", props2.properties.deviceName,
-            luidValid ? "valid" : "invalid");
+    VKR_LOG("renderer: device: %s%s", props2.properties.deviceName,
+            headless ? " (headless)" : "");
 
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -160,12 +186,16 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     VkPhysicalDeviceFeatures2 feat2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     feat2.pNext = &feat11;
 
+    std::vector<const char*> devExts(kDeviceExtensions,
+                                     kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(char*));
+    if (!headless) devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &feat2;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = (uint32_t)(sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));
-    dci.ppEnabledExtensionNames = kDeviceExtensions;
+    dci.enabledExtensionCount = (uint32_t)devExts.size();
+    dci.ppEnabledExtensionNames = devExts.data();
     if (vkCreateDevice(phys, &dci, nullptr, &device) != VK_SUCCESS) {
         VKR_ERR("vkCreateDevice failed");
         return false;
@@ -173,7 +203,56 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title) {
     volkLoadDevice(device);
     vkGetDeviceQueue(device, queueFamily, 0, &queue);
 
-    return createSwapchain();
+    return headless ? createOffscreenTarget(width, height) : createSwapchain();
+}
+
+bool VkContext::createOffscreenTarget(uint32_t width, uint32_t height) {
+    swapFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    swapExtent = {width, height};
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = swapFormat;
+    ici.extent = {width, height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    VkImage image = VK_NULL_HANDLE;
+    if (vkCreateImage(device, &ici, nullptr, &image) != VK_SUCCESS) return false;
+
+    VkMemoryRequirements req;
+    vkGetImageMemoryRequirements(device, image, &req);
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+    uint32_t type = 0;
+    for (uint32_t t = 0; t < mp.memoryTypeCount; ++t) {
+        if ((req.memoryTypeBits & (1u << t)) &&
+            (mp.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            type = t;
+            break;
+        }
+    }
+    VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    mai.allocationSize = req.size;
+    mai.memoryTypeIndex = type;
+    if (vkAllocateMemory(device, &mai, nullptr, &offscreenMemory) != VK_SUCCESS ||
+        vkBindImageMemory(device, image, offscreenMemory, 0) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    ivci.image = image;
+    ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    ivci.format = swapFormat;
+    ivci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(device, &ivci, nullptr, &view) != VK_SUCCESS) return false;
+
+    swapImages = {image};
+    swapViews = {view};
+    return true;
 }
 
 bool VkContext::createSwapchain() {
@@ -255,13 +334,17 @@ bool VkContext::createSwapchain() {
 
 void VkContext::destroySwapchain() {
     for (VkImageView v : swapViews) vkDestroyImageView(device, v, nullptr);
+    if (headless) {
+        for (VkImage img : swapImages) vkDestroyImage(device, img, nullptr);
+        if (offscreenMemory) vkFreeMemory(device, offscreenMemory, nullptr);
+        offscreenMemory = VK_NULL_HANDLE;
+    }
     swapViews.clear();
     swapImages.clear();
-    // note: the old VkSwapchainKHR itself is destroyed by the caller pattern:
-    // createSwapchain passes it as oldSwapchain, then we destroy it here.
 }
 
 bool VkContext::recreateSwapchain() {
+    if (headless) return true;
     vkDeviceWaitIdle(device);
     VkSwapchainKHR old = swapchain;
     bool ok = createSwapchain();
@@ -280,7 +363,7 @@ void VkContext::destroy() {
     if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
     if (instance) vkDestroyInstance(instance, nullptr);
     if (window) glfwDestroyWindow(window);
-    glfwTerminate();
+    if (!headless) glfwTerminate();
 }
 
 } // namespace vkr

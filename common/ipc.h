@@ -16,6 +16,11 @@ namespace vkr {
 struct IpcMessage {
     proto::MsgType type{};
     std::vector<uint8_t> payload;
+    // POSIX only: file descriptors received as SCM_RIGHTS ancillary data with
+    // this message (dma-buf fds for SurfaceDesc). Ownership transfers to the
+    // receiver; empty on Windows, where handles travel as duplicated values
+    // inside the payload instead.
+    std::vector<int> fds;
 
     template <typename T>
     const T* as() const {
@@ -38,9 +43,16 @@ public:
     // quiet suppresses failure logging (for periodic reconnect polling).
     static IpcChannel connect(const std::string& name, uint32_t timeoutMs, bool quiet = false);
 
-    bool send(proto::MsgType type, const void* payload, size_t size);
+    // fds/fdCount attach SCM_RIGHTS ancillary descriptors (POSIX only; must be
+    // zero on Windows, where handle values are duplicated into the payload).
+    bool send(proto::MsgType type, const void* payload, size_t size,
+              const int* fds = nullptr, size_t fdCount = 0);
     template <typename T>
     bool send(proto::MsgType type, const T& value) { return send(type, &value, sizeof(T)); }
+    template <typename T>
+    bool send(proto::MsgType type, const T& value, const int* fds, size_t fdCount) {
+        return send(type, &value, sizeof(T), fds, fdCount);
+    }
     bool send(proto::MsgType type) { return send(type, nullptr, 0); }
 
     // Blocking receive. nullopt on disconnect or protocol error.

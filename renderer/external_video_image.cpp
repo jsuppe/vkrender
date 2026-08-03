@@ -1,6 +1,10 @@
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "external_video_image.h"
 
@@ -9,11 +13,6 @@
 namespace vkr {
 
 namespace {
-
-constexpr VkExternalMemoryHandleTypeFlagBits kHandleType =
-    VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT_KHR;
-constexpr VkImageUsageFlags kImageUsage =
-    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 VkFormat vkFormatFor(proto::SharedFormat f) {
     switch (f) {
@@ -25,10 +24,66 @@ VkFormat vkFormatFor(proto::SharedFormat f) {
     return VK_FORMAT_UNDEFINED;
 }
 
+int pickMemoryType(VkPhysicalDevice phys, uint32_t allowedBits) {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(phys, &memProps);
+    int memType = -1;
+    for (uint32_t t = 0; t < memProps.memoryTypeCount; ++t) {
+        if (!(allowedBits & (1u << t))) continue;
+        if (memProps.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+            return (int)t;
+        if (memType < 0) memType = (int)t;
+    }
+    return memType;
+}
+
+bool createYcbcrConversion(VkContext& vk, VkFormat format, proto::Matrix matrix,
+                           proto::Range range, VkSamplerYcbcrConversion* out) {
+    VkSamplerYcbcrConversionCreateInfo convInfo{
+        VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+    convInfo.format = format;
+    convInfo.ycbcrModel = matrix == proto::Matrix::BT709
+                              ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
+                              : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
+    convInfo.ycbcrRange = range == proto::Range::Full ? VK_SAMPLER_YCBCR_RANGE_ITU_FULL
+                                                      : VK_SAMPLER_YCBCR_RANGE_ITU_NARROW;
+    convInfo.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                           VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
+    convInfo.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+    convInfo.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+    convInfo.chromaFilter = VK_FILTER_LINEAR;
+    convInfo.forceExplicitReconstruction = VK_FALSE;
+    if (vkCreateSamplerYcbcrConversion(vk.device, &convInfo, nullptr, out) != VK_SUCCESS) {
+        VKR_ERR("vkCreateSamplerYcbcrConversion failed");
+        return false;
+    }
+    return true;
+}
+
+bool makeView(VkContext& vk, VkImage image, VkFormat format, VkSamplerYcbcrConversion conversion,
+              VkImageView* out) {
+    VkSamplerYcbcrConversionInfo viewConv{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
+    viewConv.conversion = conversion;
+    VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    if (conversion) ivci.pNext = &viewConv;
+    ivci.image = image;
+    ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    ivci.format = format;
+    ivci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    return vkCreateImageView(vk.device, &ivci, nullptr, out) == VK_SUCCESS;
+}
+
+#ifdef _WIN32
+
+constexpr VkExternalMemoryHandleTypeFlagBits kWin32HandleType =
+    VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT_KHR;
+constexpr VkImageUsageFlags kImageUsage =
+    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
 bool checkImportCapability(VkPhysicalDevice phys, VkFormat format) {
     VkPhysicalDeviceExternalImageFormatInfo extInfo{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
-    extInfo.handleType = kHandleType;
+    extInfo.handleType = kWin32HandleType;
 
     VkPhysicalDeviceImageFormatInfo2 fmtInfo{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2};
@@ -45,13 +100,12 @@ bool checkImportCapability(VkPhysicalDevice phys, VkFormat format) {
 
     VkResult r = vkGetPhysicalDeviceImageFormatProperties2(phys, &fmtInfo, &props);
     if (r != VK_SUCCESS) {
-        VKR_ERR("driver rejects D3D11 import config for format %d (vkGetPhysicalDeviceImageFormatProperties2 = %d)",
-                format, r);
+        VKR_ERR("driver rejects D3D11 import config for format %d (query = %d)", format, r);
         return false;
     }
-    const auto& emp = extProps.externalMemoryProperties;
-    if (!(emp.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
-        VKR_ERR("driver reports D3D11 texture handles are not importable for format %d", format);
+    if (!(extProps.externalMemoryProperties.externalMemoryFeatures &
+          VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+        VKR_ERR("driver reports D3D11 texture handles not importable for format %d", format);
         return false;
     }
     return true;
@@ -75,173 +129,257 @@ bool importTimelineSemaphore(VkDevice device, uint64_t handleValue, VkSemaphore*
         VKR_ERR("vkImportSemaphoreWin32HandleKHR(D3D12_FENCE) failed");
         return false;
     }
-    // Keep the NT handle open for the pool's lifetime (see texture import note).
     return true;
 }
+
+bool importWin32Slot(VkContext& vk, VkFormat format, uint32_t width, uint32_t height,
+                     uint64_t handleValue, ExternalVideoPool::Slot* slot,
+                     VkSamplerYcbcrConversion conversion) {
+    VkExternalMemoryImageCreateInfo extImg{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    extImg.handleTypes = kWin32HandleType;
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.pNext = &extImg;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = format;
+    ici.extent = {width, height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = kImageUsage;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(vk.device, &ici, nullptr, &slot->image) != VK_SUCCESS) {
+        VKR_ERR("vkCreateImage(imported D3D11) failed");
+        return false;
+    }
+
+    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+    req.pNext = &dedicated;
+    VkImageMemoryRequirementsInfo2 reqInfo{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+    reqInfo.image = slot->image;
+    vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
+
+    HANDLE handle = (HANDLE)(uintptr_t)handleValue;
+    VkMemoryWin32HandlePropertiesKHR handleProps{
+        VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR};
+    if (vkGetMemoryWin32HandlePropertiesKHR(vk.device, kWin32HandleType, handle, &handleProps) !=
+        VK_SUCCESS) {
+        VKR_ERR("vkGetMemoryWin32HandlePropertiesKHR failed");
+        return false;
+    }
+
+    // The valid memory types are the intersection of what the image needs and
+    // what the imported handle allows; skipping the intersection works on
+    // NVIDIA and breaks on other vendors.
+    int memType = pickMemoryType(vk.phys,
+                                 req.memoryRequirements.memoryTypeBits & handleProps.memoryTypeBits);
+    if (memType < 0) {
+        VKR_ERR("no compatible memory type for imported texture");
+        return false;
+    }
+
+    VkImportMemoryWin32HandleInfoKHR importInfo{
+        VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR};
+    importInfo.handleType = kWin32HandleType;
+    importInfo.handle = handle;
+    // Imported D3D11 textures are dedicated-only on all desktop drivers.
+    VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    dedicatedInfo.pNext = &importInfo;
+    dedicatedInfo.image = slot->image;
+
+    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    alloc.pNext = &dedicatedInfo;
+    alloc.allocationSize = req.memoryRequirements.size;
+    alloc.memoryTypeIndex = (uint32_t)memType;
+    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot->memory) != VK_SUCCESS) {
+        VKR_ERR("vkAllocateMemory(import D3D11 texture) failed");
+        return false;
+    }
+    if (vkBindImageMemory(vk.device, slot->image, slot->memory, 0) != VK_SUCCESS) {
+        VKR_ERR("vkBindImageMemory failed");
+        return false;
+    }
+    return makeView(vk, slot->image, format, conversion, &slot->view);
+}
+
+#endif // _WIN32
 
 } // namespace
 
 bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
-    const VkFormat format = vkFormatFor(desc.format);
+    format = vkFormatFor(desc.format);
     if (format == VK_FORMAT_UNDEFINED) {
         VKR_ERR("unsupported shared format %u", (uint32_t)desc.format);
         return false;
     }
-    if (desc.poolSize == 0 || desc.poolSize > proto::kMaxPoolSize) return false;
-    if (!checkImportCapability(vk.phys, format)) return false;
-
     width = desc.width;
     height = desc.height;
     matrix = desc.matrix;
     range = desc.range;
 
     if (desc.format == proto::SharedFormat::NV12) {
-        VkSamplerYcbcrConversionCreateInfo convInfo{
-            VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
-        convInfo.format = format;
-        convInfo.ycbcrModel = matrix == proto::Matrix::BT709
-                                  ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
-                                  : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
-        convInfo.ycbcrRange = range == proto::Range::Full ? VK_SAMPLER_YCBCR_RANGE_ITU_FULL
-                                                          : VK_SAMPLER_YCBCR_RANGE_ITU_NARROW;
-        convInfo.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-                               VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
-        convInfo.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
-        convInfo.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
-        convInfo.chromaFilter = VK_FILTER_LINEAR;
-        convInfo.forceExplicitReconstruction = VK_FALSE;
-        if (vkCreateSamplerYcbcrConversion(vk.device, &convInfo, nullptr, &conversion) != VK_SUCCESS) {
-            VKR_ERR("vkCreateSamplerYcbcrConversion failed");
-            return false;
-        }
+        if (!createYcbcrConversion(vk, format, matrix, range, &conversion)) return false;
     }
 
+#ifdef _WIN32
+    if (desc.poolSize == 0 || desc.poolSize > proto::kMaxPoolSize) return false;
+    if (!checkImportCapability(vk.phys, format)) return false;
     for (uint32_t i = 0; i < desc.poolSize; ++i) {
         Slot slot;
-
-        VkExternalMemoryImageCreateInfo extImg{
-            VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-        extImg.handleTypes = kHandleType;
-
-        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        ici.pNext = &extImg;
-        ici.imageType = VK_IMAGE_TYPE_2D;
-        ici.format = format;
-        ici.extent = {width, height, 1};
-        ici.mipLevels = 1;
-        ici.arrayLayers = 1;
-        ici.samples = VK_SAMPLE_COUNT_1_BIT;
-        ici.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ici.usage = kImageUsage;
-        ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (vkCreateImage(vk.device, &ici, nullptr, &slot.image) != VK_SUCCESS) {
-            VKR_ERR("vkCreateImage(imported NV12) failed");
+        if (!importWin32Slot(vk, format, width, height, desc.textureHandle[i], &slot, conversion)) {
             destroy(vk);
             return false;
         }
-
-        VkMemoryDedicatedRequirements dedicated{
-            VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
-        VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
-        req.pNext = &dedicated;
-        VkImageMemoryRequirementsInfo2 reqInfo{
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
-        reqInfo.image = slot.image;
-        vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
-
-        HANDLE handle = (HANDLE)(uintptr_t)desc.textureHandle[i];
-        VkMemoryWin32HandlePropertiesKHR handleProps{
-            VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR};
-        if (vkGetMemoryWin32HandlePropertiesKHR(vk.device, kHandleType, handle,
-                                                &handleProps) != VK_SUCCESS) {
-            VKR_ERR("vkGetMemoryWin32HandlePropertiesKHR failed (slot %u)", i);
-            destroy(vk);
-            return false;
-        }
-
-        // The valid memory types are the intersection of what the image needs
-        // and what the imported handle allows; skipping the intersection works
-        // on NVIDIA and breaks on other vendors.
-        uint32_t memBits = req.memoryRequirements.memoryTypeBits & handleProps.memoryTypeBits;
-        VkPhysicalDeviceMemoryProperties memProps;
-        vkGetPhysicalDeviceMemoryProperties(vk.phys, &memProps);
-        int memType = -1;
-        for (uint32_t t = 0; t < memProps.memoryTypeCount; ++t) {
-            if (!(memBits & (1u << t))) continue;
-            if (memProps.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-                memType = (int)t;
-                break;
-            }
-            if (memType < 0) memType = (int)t;
-        }
-        if (memType < 0) {
-            VKR_ERR("no compatible memory type for imported texture (bits img=%08x handle=%08x)",
-                    req.memoryRequirements.memoryTypeBits, handleProps.memoryTypeBits);
-            destroy(vk);
-            return false;
-        }
-
-        VkImportMemoryWin32HandleInfoKHR importInfo{
-            VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR};
-        importInfo.handleType = kHandleType;
-        importInfo.handle = handle;
-        // Imported D3D11 textures are dedicated-only on all desktop drivers.
-        VkMemoryDedicatedAllocateInfo dedicatedInfo{
-            VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
-        dedicatedInfo.pNext = &importInfo;
-        dedicatedInfo.image = slot.image;
-
-        VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        alloc.pNext = &dedicatedInfo;
-        alloc.allocationSize = req.memoryRequirements.size;
-        alloc.memoryTypeIndex = (uint32_t)memType;
-        if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory) != VK_SUCCESS) {
-            VKR_ERR("vkAllocateMemory(import D3D11 texture, slot %u) failed", i);
-            destroy(vk);
-            return false;
-        }
-        // Deliberately NOT closing 'handle': spec says NT handle ownership
-        // stays with the app after import, but keep it open for the pool's
-        // lifetime while diagnosing device-lost on first access.
-        if (vkBindImageMemory(vk.device, slot.image, slot.memory, 0) != VK_SUCCESS) {
-            VKR_ERR("vkBindImageMemory failed (slot %u)", i);
-            destroy(vk);
-            return false;
-        }
-
-        VkSamplerYcbcrConversionInfo viewConv{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
-        viewConv.conversion = conversion;
-        VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        if (conversion) ivci.pNext = &viewConv;
-        ivci.image = slot.image;
-        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        ivci.format = format;
-        ivci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        if (vkCreateImageView(vk.device, &ivci, nullptr, &slot.view) != VK_SUCCESS) {
-            VKR_ERR("image view creation failed (slot %u)", i);
-            destroy(vk);
-            return false;
-        }
-        slots.push_back(slot);
+        slots.emplace(i, slot);
     }
-
     if (!importTimelineSemaphore(vk.device, desc.readyFenceHandle, &readySem) ||
         !importTimelineSemaphore(vk.device, desc.consumedFenceHandle, &consumedSem)) {
         destroy(vk);
         return false;
     }
-
-    const char* fmtName = desc.format == proto::SharedFormat::NV12      ? "NV12"
-                          : desc.format == proto::SharedFormat::RGB10A2 ? "RGB10A2"
-                                                                        : "BGRA8";
-    VKR_LOG("renderer: imported pool %ux%u %s x%u (zero-copy)", width, height, fmtName,
+    VKR_LOG("renderer: imported pool %ux%u fmt=%d x%u (zero-copy)", width, height, (int)format,
             (uint32_t)slots.size());
+#else
+    // Linux: stream header only; surfaces arrive incrementally as SurfaceDesc.
+    VKR_LOG("renderer: stream header %ux%u fmt=%d, awaiting dma-buf surfaces", width, height,
+            (int)format);
+#endif
+
+    headerValid = true;
     return true;
 }
 
+bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& desc,
+                                   const int* fds, size_t fdCount) {
+#ifdef _WIN32
+    (void)vk; (void)desc; (void)fds; (void)fdCount;
+    VKR_ERR("SurfaceDesc is not expected on Windows");
+    return false;
+#else
+    auto closeAll = [&]() {
+        for (size_t i = 0; i < fdCount; ++i) ::close(fds[i]);
+    };
+    if (!headerValid) {
+        VKR_ERR("SurfaceDesc before PoolDesc");
+        closeAll();
+        return false;
+    }
+    if (slots.count(desc.slotKey)) { // decoder resent a known surface; ignore
+        closeAll();
+        return true;
+    }
+    if (desc.numObjects != 1 || fdCount != 1) {
+        VKR_ERR("unsupported dma-buf topology: %u objects / %zu fds (only 1 supported; "
+                "use VA_EXPORT_SURFACE_COMPOSED_LAYERS)",
+                desc.numObjects, fdCount);
+        closeAll();
+        return false;
+    }
+    if (slots.size() >= proto::kMaxSurfaces) {
+        VKR_ERR("too many surfaces (%zu)", slots.size());
+        closeAll();
+        return false;
+    }
+
+    Slot slot;
+
+    VkSubresourceLayout planeLayouts[4]{};
+    for (uint32_t p = 0; p < desc.numPlanes && p < 4; ++p) {
+        planeLayouts[p].offset = desc.plane[p].offset;
+        planeLayouts[p].rowPitch = desc.plane[p].pitch;
+    }
+    VkImageDrmFormatModifierExplicitCreateInfoEXT modInfo{
+        VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
+    modInfo.drmFormatModifier = desc.drmModifier;
+    modInfo.drmFormatModifierPlaneCount = desc.numPlanes;
+    modInfo.pPlaneLayouts = planeLayouts;
+
+    VkExternalMemoryImageCreateInfo extImg{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    extImg.pNext = &modInfo;
+    extImg.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.pNext = &extImg;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = format;
+    ici.extent = {width, height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(vk.device, &ici, nullptr, &slot.image) != VK_SUCCESS) {
+        VKR_ERR("vkCreateImage(dma-buf, modifier=0x%llx) failed - driver may not support "
+                "this modifier for sampling",
+                (unsigned long long)desc.drmModifier);
+        closeAll();
+        return false;
+    }
+
+    VkMemoryFdPropertiesKHR fdProps{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
+    if (vkGetMemoryFdPropertiesKHR(vk.device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                   fds[0], &fdProps) != VK_SUCCESS) {
+        VKR_ERR("vkGetMemoryFdPropertiesKHR failed");
+        vkDestroyImage(vk.device, slot.image, nullptr);
+        closeAll();
+        return false;
+    }
+    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+    req.pNext = &dedicated;
+    VkImageMemoryRequirementsInfo2 reqInfo{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+    reqInfo.image = slot.image;
+    vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
+
+    int memType = pickMemoryType(vk.phys,
+                                 req.memoryRequirements.memoryTypeBits & fdProps.memoryTypeBits);
+    if (memType < 0) {
+        VKR_ERR("no compatible memory type for dma-buf import");
+        vkDestroyImage(vk.device, slot.image, nullptr);
+        closeAll();
+        return false;
+    }
+
+    // Import: Vulkan takes ownership of the fd on success (do NOT close it).
+    VkImportMemoryFdInfoKHR importInfo{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
+    importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+    importInfo.fd = fds[0];
+    VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    dedicatedInfo.pNext = &importInfo;
+    dedicatedInfo.image = slot.image;
+
+    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    alloc.pNext = dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation
+                      ? (void*)&dedicatedInfo
+                      : (void*)&importInfo;
+    alloc.allocationSize = desc.objectSize[0] ? desc.objectSize[0] : req.memoryRequirements.size;
+    alloc.memoryTypeIndex = (uint32_t)memType;
+    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory) != VK_SUCCESS) {
+        VKR_ERR("vkAllocateMemory(import dma-buf) failed");
+        vkDestroyImage(vk.device, slot.image, nullptr);
+        closeAll();
+        return false;
+    }
+    if (vkBindImageMemory(vk.device, slot.image, slot.memory, 0) != VK_SUCCESS ||
+        !makeView(vk, slot.image, format, conversion, &slot.view)) {
+        VKR_ERR("bind/view failed for imported dma-buf surface");
+        vkDestroyImage(vk.device, slot.image, nullptr);
+        vkFreeMemory(vk.device, slot.memory, nullptr);
+        return false;
+    }
+
+    slots.emplace(desc.slotKey, slot);
+    VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx (%zu total, zero-copy)",
+            desc.slotKey, (unsigned long long)desc.drmModifier, slots.size());
+    return true;
+#endif
+}
+
 void ExternalVideoPool::destroy(VkContext& vk) {
-    for (auto& s : slots) {
+    for (auto& [key, s] : slots) {
         if (s.view) vkDestroyImageView(vk.device, s.view, nullptr);
         if (s.image) vkDestroyImage(vk.device, s.image, nullptr);
         if (s.memory) vkFreeMemory(vk.device, s.memory, nullptr);
@@ -253,6 +391,8 @@ void ExternalVideoPool::destroy(VkContext& vk) {
     if (consumedSem) vkDestroySemaphore(vk.device, consumedSem, nullptr);
     readySem = consumedSem = VK_NULL_HANDLE;
     width = height = 0;
+    headerValid = false;
+    format = VK_FORMAT_UNDEFINED;
 }
 
 } // namespace vkr
