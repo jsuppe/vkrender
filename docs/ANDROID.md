@@ -122,12 +122,18 @@ Real-device notes (found and fixed during verification):
   `currentTransform` without rotating in the shader showed the image 180°
   flipped. The swapchain now prefers `IDENTITY` (compositor applies the
   display rotation).
-- **Hardware acquire fences signal 1-2 frames after the output callback.**
-  Blocking on them in the render loop (or sizing the held ring too small)
-  backs up the consumed handshake — observed as ~10 drops/s. Adoption is now
-  a non-blocking fence poll (present the current frame until the new one's
-  fence signals) and the held ring is 8 deep, which absorbs the fence latency
-  without adding display latency (latest-wins still skips stale frames).
+- **Hardware acquire fences signal 1-2 frames after the output callback**,
+  which broke naive adoption twice: blocking on the newest fence stalled
+  presentation (~10 drops/s), and non-blocking latest-only adoption
+  livelocked (the newest frame's fence is always the youngest, so
+  almost-ready frames kept being replaced — heavy visible frame skipping
+  with near-zero decoder drops). The renderer now keeps a small pending
+  window and adopts the **newest frame that is both fence-ready and
+  PTS-due** (clock-anchored pacing, re-anchoring on discontinuities), with
+  an 8-deep decoder ring absorbing the fence latency. Measured on the TCL
+  tablet: 150 adoptions / 5 s — exactly the stream's 30 fps — with zero
+  drops. A 5-second adoption/present rate log makes this verifiable on any
+  device.
 - A convenient transport for desk testing: `adb reverse tcp:8556 tcp:8556`
   lets the device reach the host's RTSP server at `rtsp://127.0.0.1:8556/...`
   over the USB cable — no LAN configuration.

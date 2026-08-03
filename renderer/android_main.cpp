@@ -18,6 +18,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <deque>
 #include <optional>
 #include <string>
 
@@ -159,16 +160,50 @@ void android_main(android_app* app) {
             pendingConsumedSignal = currentReady - 1;
     };
 
-    // Newest announced-but-not-yet-adopted frame. Adoption is deferred until
-    // its acquire fence signals - never block the render loop on a fence
-    // (that stalls presentation, delays FrameConsumed, and backs up the
-    // decoder's ring; observed as ~11 drops/s on hardware codecs).
-    std::optional<vkr::proto::FrameReadyMsg> pendingAdopt;
-    int pendingFence = -1;
+    // Announced-but-not-yet-adopted frames, in arrival order. Adoption picks
+    // the NEWEST entry whose acquire fence has signaled - never block the
+    // render loop on a fence (stalls presentation and backs up the decoder's
+    // ring), and never consider only the newest arrival (its fence is always
+    // the youngest; with fence latency > frame interval that livelocks into
+    // heavy frame skipping - observed on the TCL tablet).
+    struct PendingFrame {
+        vkr::proto::FrameReadyMsg msg;
+        int fence;
+    };
+    std::deque<PendingFrame> pendingQ;
     auto dropPending = [&]() {
-        if (pendingFence >= 0) close(pendingFence);
-        pendingFence = -1;
-        pendingAdopt.reset();
+        for (auto& p : pendingQ)
+            if (p.fence >= 0) close(p.fence);
+        pendingQ.clear();
+    };
+    auto fenceReady = [](int fd) {
+        if (fd < 0) return true;
+        pollfd pf{fd, POLLIN, 0};
+        return poll(&pf, 1, 0) > 0 && (pf.revents & POLLIN);
+    };
+    uint64_t adoptions = 0, renders = 0;
+    int64_t rateWindowStart = nowNs();
+
+    // PTS pacing: present each frame at its stream interval (anchored to the
+    // local clock on the first frame) instead of "whenever adoption lands" -
+    // decode/fence jitter otherwise shows as judder. Re-anchors on >1s
+    // discontinuities (stream restart, seek).
+    bool anchored = false;
+    int64_t anchorPts = 0, anchorLocal = 0;
+    auto dueTime = [&](int64_t ptsNs, int64_t now) {
+        if (ptsNs < 0) return now;
+        if (!anchored) {
+            anchored = true;
+            anchorPts = ptsNs;
+            anchorLocal = now;
+        }
+        int64_t due = anchorLocal + (ptsNs - anchorPts);
+        if (due - now > 1000000000ll || now - due > 1000000000ll) {
+            anchorPts = ptsNs;
+            anchorLocal = now;
+            due = now;
+        }
+        return due;
     };
 
     while (!state.destroyed) {
@@ -214,6 +249,7 @@ void android_main(android_app* app) {
                         lastConsumedSignal = 0;
                         pendingConsumedSignal.reset();
                         dropPending();
+                        anchored = false;
                         if (!pool.create(vk, *d)) return;
                         passNeedsBind = true;
                     }
@@ -248,9 +284,12 @@ void android_main(android_app* app) {
                             fc.readyValue = fr->readyValue;
                             ch.send(vkr::proto::MsgType::FrameConsumed, fc);
                         } else {
-                            dropPending(); // skipped frame: close its fence
-                            pendingAdopt = *fr;
-                            pendingFence = msg->fds.empty() ? -1 : msg->fds[0];
+                            pendingQ.push_back({*fr, msg->fds.empty() ? -1 : msg->fds[0]});
+                            // Bound the window; the front is the stalest.
+                            while (pendingQ.size() > 4) {
+                                if (pendingQ.front().fence >= 0) close(pendingQ.front().fence);
+                                pendingQ.pop_front();
+                            }
                         }
                     }
                     break;
@@ -260,6 +299,7 @@ void android_main(android_app* app) {
                     pool.destroy(vk);
                     currentSlot = -1;
                     dropPending();
+                    anchored = false;
                     break;
                 default:
                     break;
@@ -269,18 +309,32 @@ void android_main(android_app* app) {
             dropPending();
             continue;
         }
-        // Adopt the pending frame only once its acquire fence has signaled
-        // (non-blocking check); until then keep presenting the current frame.
-        if (pendingAdopt && pool.valid()) {
-            bool ready = true;
-            if (pendingFence >= 0) {
-                pollfd pf{pendingFence, POLLIN, 0};
-                ready = poll(&pf, 1, 0) > 0 && (pf.revents & POLLIN);
+        // Adopt the newest frame that is both fence-ready and PTS-due;
+        // discard everything older; keep the rest for later iterations.
+        if (!pendingQ.empty() && pool.valid()) {
+            const int64_t now = nowNs();
+            int readyIdx = -1;
+            for (int i = (int)pendingQ.size() - 1; i >= 0; --i) {
+                if (dueTime(pendingQ[i].msg.ptsNs, now) <= now && fenceReady(pendingQ[i].fence)) {
+                    readyIdx = i;
+                    break;
+                }
             }
-            if (ready) {
-                adoptFrame(*pendingAdopt);
-                dropPending();
+            if (readyIdx >= 0) {
+                adoptFrame(pendingQ[readyIdx].msg);
+                ++adoptions;
+                for (int i = 0; i <= readyIdx; ++i) {
+                    if (pendingQ.front().fence >= 0) close(pendingQ.front().fence);
+                    pendingQ.pop_front();
+                }
             }
+        }
+        ++renders;
+        if (nowNs() - rateWindowStart > 5000000000ll) {
+            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pending %zu)",
+                    (unsigned long long)adoptions, (unsigned long long)renders, pendingQ.size());
+            adoptions = renders = 0;
+            rateWindowStart = nowNs();
         }
 
         // Render
