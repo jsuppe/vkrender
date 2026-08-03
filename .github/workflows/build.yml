@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The prebuilt FFmpeg zip (~70 MB) is the only non-FetchContent download;
+      # cache it so CI doesn't hit the BtbN release on every run.
+      - name: Cache FFmpeg prebuilt
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg-prebuilt/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip
+          key: ffmpeg-n7.1-latest-win64-gpl-shared
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item build/Release/*.exe dist/
+          Copy-Item build/Release/*.dll dist/
+          Copy-Item -Recurse build/Release/shaders dist/shaders
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vkrender-win64
+          path: dist

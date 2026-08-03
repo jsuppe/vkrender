@@ -20,6 +20,7 @@ enum class MsgType : uint32_t {
     FrameConsumed = 4, // renderer -> decoder: optional (fence is authoritative)
     StreamReset = 5,   // decoder -> renderer: pool obsolete, new PoolDesc follows
     Bye = 6,           // either direction: orderly shutdown
+    StreamStatus = 7,  // decoder -> renderer: source connectivity for UI
 };
 
 #pragma pack(push, 4)
@@ -41,7 +42,13 @@ struct HelloMsg {
 // driver's plane-1 offset does not match the D3D11 NV12 allocation), so the
 // Windows decoder converts to BGRA8 via the D3D11 VideoProcessor and shares
 // single-plane textures.
-enum class SharedFormat : uint32_t { NV12 = 1, BGRA8 = 2 };
+enum class SharedFormat : uint32_t {
+    NV12 = 1,
+    BGRA8 = 2,
+    RGB10A2 = 3, // DXGI R10G10B10A2 == VK_FORMAT_A2B10G10R10_UNORM_PACK32; used for 10-bit (P010) sources
+};
+
+enum class StreamPhase : uint32_t { Connecting = 0, Streaming = 1, Error = 2 };
 enum class Matrix : uint32_t { BT601 = 0, BT709 = 1 };
 enum class Range  : uint32_t { Limited = 0, Full = 1 };
 
@@ -81,6 +88,10 @@ struct FrameConsumedMsg {
     uint32_t slot;
     uint32_t _pad;
     uint64_t readyValue;
+};
+
+struct StreamStatusMsg {
+    StreamPhase phase;
 };
 
 #pragma pack(pop)

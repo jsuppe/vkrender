@@ -2,7 +2,9 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <chrono>
 #include <cstring>
+#include <deque>
 #include <optional>
 #include <string>
 
@@ -16,11 +18,12 @@
 #include "video_pass.h"
 #include "vk_context.h"
 
-// vkrenderer [--pipe vkrender]
+// vkrenderer [--pipe vkrender] [--pacing latest|pts]
 //
 // Process 2 of the zero-copy pipeline: imports the decoder's shared GPU
 // textures and renders the video. Never copies pixel data - it samples the
-// exact memory the decoder wrote.
+// exact memory the decoder wrote. Survives decoder restarts by redialing the
+// pipe and reimporting on the next PoolDesc.
 
 namespace {
 
@@ -32,9 +35,15 @@ std::string exeDir() {
     return pos == std::string::npos ? "." : path.substr(0, pos);
 }
 
-// Debug: copy a corner of the imported luma plane to a host buffer and dump
-// bytes. Distinguishes "imported memory is unmapped -> any GPU access faults"
-// from "shader sampling path specifically faults".
+int64_t nowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+// Debug: copy a corner of the imported image to a host buffer and dump bytes.
+// Distinguishes "imported memory is unmapped -> any GPU access faults" from
+// "shader sampling path specifically faults".
 bool debugCopyReadback(vkr::VkContext& vk, VkCommandPool cmdPool,
                        const vkr::ExternalVideoPool& pool, int slot) {
     const uint32_t kW = 64, kH = 4;
@@ -95,7 +104,7 @@ bool debugCopyReadback(vkr::VkContext& vk, VkCommandPool cmdPool,
         void* data = nullptr;
         vkMapMemory(vk.device, mem, 0, VK_WHOLE_SIZE, 0, &data);
         const uint8_t* p = (const uint8_t*)data;
-        VKR_LOG("debug copy test OK, luma bytes: %02x %02x %02x %02x %02x %02x %02x %02x",
+        VKR_LOG("debug copy test OK, bytes: %02x %02x %02x %02x %02x %02x %02x %02x",
                 p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
         vkUnmapMemory(vk.device, mem);
     } else {
@@ -119,31 +128,48 @@ struct FrameSync {
 
 int main(int argc, char** argv) {
     std::string pipe = "vkrender";
+    bool ptsPacing = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
+        else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
+            std::string mode = argv[++i];
+            if (mode == "pts") ptsPacing = true;
+            else if (mode != "latest") {
+                fprintf(stderr, "usage: vkrenderer [--pipe name] [--pacing latest|pts]\n");
+                return 1;
+            }
+        } else {
+            fprintf(stderr, "usage: vkrenderer [--pipe name] [--pacing latest|pts]\n");
+            return 1;
+        }
     }
     // Debug bisection switches
     const bool dbgNoTimelineWait = GetEnvironmentVariableA("VKR_NO_TIMELINE_WAIT", nullptr, 0) > 0;
     const bool dbgNoVideoDraw = GetEnvironmentVariableA("VKR_NO_VIDEO_DRAW", nullptr, 0) > 0;
     if (dbgNoTimelineWait) VKR_WARN("debug: timeline wait disabled");
     if (dbgNoVideoDraw) VKR_WARN("debug: video draw disabled");
+    if (ptsPacing) VKR_LOG("renderer: PTS pacing enabled (smooth playback mode)");
 
     vkr::VkContext vk;
-    if (!vk.init(1280, 720, "vkrender - waiting for stream")) return 1;
+    if (!vk.init(1280, 720, "vkrender - waiting for decoder")) return 1;
 
     vkr::VideoPass pass;
     if (!pass.init(vk, exeDir() + "/shaders")) return 1;
+
+    auto sendHello = [&](vkr::IpcChannel& c) {
+        vkr::proto::HelloMsg hello{};
+        hello.rendererPid = GetCurrentProcessId();
+        hello.luidValid = vk.luidValid ? 1 : 0;
+        memcpy(hello.deviceLUID, vk.deviceLUID, sizeof(hello.deviceLUID));
+        return c.send(vkr::proto::MsgType::Hello, hello);
+    };
 
     vkr::IpcChannel ch = vkr::IpcChannel::connect(pipe, 30000);
     if (!ch.connected()) {
         VKR_ERR("could not reach vkdecoder on pipe '%s' (start it first)", pipe.c_str());
         return 1;
     }
-    vkr::proto::HelloMsg hello{};
-    hello.rendererPid = GetCurrentProcessId();
-    hello.luidValid = vk.luidValid ? 1 : 0;
-    memcpy(hello.deviceLUID, vk.deviceLUID, sizeof(hello.deviceLUID));
-    if (!ch.send(vkr::proto::MsgType::Hello, hello)) return 1;
+    if (!sendHello(ch)) return 1;
 
     // Per-frame-in-flight sync objects
     constexpr uint32_t kFramesInFlight = 2;
@@ -175,11 +201,55 @@ int main(int argc, char** argv) {
     std::optional<uint64_t> pendingConsumedSignal;
     uint64_t frameIndex = 0;
     bool decoderGone = false;
+    int64_t lastDialNs = 0;
+
+    // PTS pacing state: frames queue until their stream PTS (anchored to the
+    // local clock on the first frame) comes due.
+    std::deque<vkr::proto::FrameReadyMsg> ptsQueue;
+    bool anchored = false;
+    int64_t anchorPts = 0, anchorLocal = 0;
+
+    auto resetStreamState = [&]() {
+        ptsQueue.clear();
+        anchored = false;
+        currentSlot = -1;
+        currentReady = 0;
+        lastConsumedSignal = 0;
+        pendingConsumedSignal.reset();
+    };
+
+    auto adoptFrame = [&](const vkr::proto::FrameReadyMsg& fr) {
+        currentSlot = (int)fr.slot;
+        currentReady = fr.readyValue;
+        // Signaling consumed = V-1 promises we never again read any frame
+        // with readyValue <= V-1, freeing those slots for the decoder.
+        if (currentReady > 0 && currentReady - 1 > lastConsumedSignal)
+            pendingConsumedSignal = currentReady - 1;
+    };
 
     while (!glfwWindowShouldClose(vk.window)) {
         glfwPollEvents();
 
-        // Drain IPC; frame messages coalesce (latest wins).
+        // Redial a restarted decoder once a second.
+        if (!ch.connected()) {
+            if (!decoderGone) {
+                decoderGone = true;
+                glfwSetWindowTitle(vk.window, "vkrender - decoder disconnected (showing last frame)");
+            }
+            if (nowNs() - lastDialNs > 1000000000ll) {
+                lastDialNs = nowNs();
+                vkr::IpcChannel next = vkr::IpcChannel::connect(pipe, 1, /*quiet=*/true);
+                if (next.connected() && sendHello(next)) {
+                    ch = std::move(next);
+                    decoderGone = false;
+                    VKR_LOG("renderer: reconnected to decoder");
+                    glfwSetWindowTitle(vk.window, "vkrender - reconnected, waiting for stream");
+                }
+            }
+        }
+
+        // Drain IPC. In latest-wins mode frame messages coalesce; in PTS mode
+        // they queue for their presentation time.
         std::optional<vkr::proto::FrameReadyMsg> newest;
         while (auto msg = ch.tryRecv()) {
             switch (msg->type) {
@@ -188,10 +258,7 @@ int main(int argc, char** argv) {
                         vkDeviceWaitIdle(vk.device);
                         pass.unbindPool(vk);
                         pool.destroy(vk);
-                        currentSlot = -1;
-                        currentReady = 0;
-                        lastConsumedSignal = 0;
-                        pendingConsumedSignal.reset();
+                        resetStreamState();
                         newest.reset();
                         if (!pool.create(vk, *d) || !pass.bindPool(vk, pool)) {
                             VKR_ERR("failed to import shared pool");
@@ -202,15 +269,37 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case vkr::proto::MsgType::FrameReady:
-                    if (const auto* fr = msg->as<vkr::proto::FrameReadyMsg>()) newest = *fr;
+                    if (const auto* fr = msg->as<vkr::proto::FrameReadyMsg>()) {
+                        if (ptsPacing) ptsQueue.push_back(*fr);
+                        else newest = *fr;
+                    }
                     break;
                 case vkr::proto::MsgType::StreamReset:
                     // Old pool must not be touched anymore; wait for the new PoolDesc.
                     vkDeviceWaitIdle(vk.device);
                     pass.unbindPool(vk);
                     pool.destroy(vk);
-                    currentSlot = -1;
+                    resetStreamState();
                     newest.reset();
+                    break;
+                case vkr::proto::MsgType::StreamStatus:
+                    if (const auto* st = msg->as<vkr::proto::StreamStatusMsg>()) {
+                        switch (st->phase) {
+                            case vkr::proto::StreamPhase::Connecting:
+                                glfwSetWindowTitle(vk.window,
+                                                   pool.valid()
+                                                       ? "vkrender - reconnecting to stream (showing last frame)"
+                                                       : "vkrender - connecting to stream");
+                                break;
+                            case vkr::proto::StreamPhase::Streaming:
+                                glfwSetWindowTitle(vk.window, "vkrender - stream connected");
+                                break;
+                            case vkr::proto::StreamPhase::Error:
+                                glfwSetWindowTitle(vk.window,
+                                                   "vkrender - stream lost, decoder retrying");
+                                break;
+                        }
+                    }
                     break;
                 case vkr::proto::MsgType::Bye:
                     VKR_LOG("renderer: decoder said goodbye");
@@ -219,24 +308,48 @@ int main(int argc, char** argv) {
                     break;
             }
         }
-        if (!ch.connected() && !decoderGone) {
-            decoderGone = true;
-            glfwSetWindowTitle(vk.window, "vkrender - stream ended (showing last frame)");
-        }
 
-        // Adopt the newest decoded frame. Signaling consumed = V promises we
-        // will never again read any frame with readyValue <= V, which frees
-        // every pool slot except the one we are adopting.
-        if (newest && pool.valid()) {
+        // Frame adoption
+        if (pool.valid()) {
             static bool copyTested = false;
-            if (!copyTested && GetEnvironmentVariableA("VKR_DEBUG_COPY_TEST", nullptr, 0) > 0) {
-                copyTested = true;
-                debugCopyReadback(vk, cmdPool, pool, (int)newest->slot);
+            if (!ptsPacing && newest) {
+                if (!copyTested && GetEnvironmentVariableA("VKR_DEBUG_COPY_TEST", nullptr, 0) > 0) {
+                    copyTested = true;
+                    debugCopyReadback(vk, cmdPool, pool, (int)newest->slot);
+                }
+                adoptFrame(*newest);
+            } else if (ptsPacing) {
+                // Never let the queue starve the decoder's slot ring.
+                while (ptsQueue.size() > 4) {
+                    adoptFrame(ptsQueue.front());
+                    ptsQueue.pop_front();
+                }
+                const int64_t now = nowNs();
+                while (!ptsQueue.empty()) {
+                    const auto& f = ptsQueue.front();
+                    int64_t due = now;
+                    if (f.ptsNs >= 0) {
+                        if (!anchored) {
+                            anchored = true;
+                            anchorPts = f.ptsNs;
+                            anchorLocal = now;
+                        }
+                        due = anchorLocal + (f.ptsNs - anchorPts);
+                        // Discontinuity (seek, stream restart): re-anchor.
+                        if (due - now > 1000000000ll || now - due > 1000000000ll) {
+                            anchorPts = f.ptsNs;
+                            anchorLocal = now;
+                            due = now;
+                        }
+                    }
+                    if (due <= now) {
+                        adoptFrame(f);
+                        ptsQueue.pop_front();
+                    } else {
+                        break;
+                    }
+                }
             }
-            currentSlot = (int)newest->slot;
-            currentReady = newest->readyValue;
-            if (currentReady > 0 && currentReady - 1 > lastConsumedSignal)
-                pendingConsumedSignal = currentReady - 1;
         }
 
         FrameSync& f = frames[frameIndex % kFramesInFlight];

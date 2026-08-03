@@ -1,6 +1,8 @@
 ﻿#include "d3d11va_decoder.h"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 #include "log.h"
 
@@ -116,6 +118,7 @@ bool D3D11VADecoder::openStream(const std::string& url) {
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "rtsp_transport", "tcp", 0);
+    av_dict_set(&opts, "timeout", "5000000", 0);       // 5 s socket I/O timeout -> stalls become errors
     av_dict_set(&opts, "max_delay", "100000", 0);      // 100 ms reorder/jitter cap
     av_dict_set(&opts, "probesize", "1000000", 0);     // 1 MB is plenty for SPS/PPS
     av_dict_set(&opts, "analyzeduration", "500000", 0); // 0.5 s
@@ -149,18 +152,22 @@ bool D3D11VADecoder::openStream(const std::string& url) {
 
     // Wrap OUR device in an FFmpeg hw device context so decode surfaces live
     // on the adapter we picked (and multithread protection is already on).
-    hwDevice_ = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
+    // Created once and reused across RTSP reconnects.
     if (!hwDevice_) {
-        VKR_ERR("av_hwdevice_ctx_alloc(D3D11VA) failed");
-        return false;
-    }
-    auto* hwctx = reinterpret_cast<AVHWDeviceContext*>(hwDevice_->data);
-    auto* d3dctx = reinterpret_cast<AVD3D11VADeviceContext*>(hwctx->hwctx);
-    device_->AddRef(); // av_hwdevice_ctx frees this reference on release
-    d3dctx->device = device_.Get();
-    if (av_hwdevice_ctx_init(hwDevice_) < 0) {
-        VKR_ERR("av_hwdevice_ctx_init failed");
-        return false;
+        hwDevice_ = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
+        if (!hwDevice_) {
+            VKR_ERR("av_hwdevice_ctx_alloc(D3D11VA) failed");
+            return false;
+        }
+        auto* hwctx = reinterpret_cast<AVHWDeviceContext*>(hwDevice_->data);
+        auto* d3dctx = reinterpret_cast<AVD3D11VADeviceContext*>(hwctx->hwctx);
+        device_->AddRef(); // av_hwdevice_ctx frees this reference on release
+        d3dctx->device = device_.Get();
+        if (av_hwdevice_ctx_init(hwDevice_) < 0) {
+            VKR_ERR("av_hwdevice_ctx_init failed");
+            av_buffer_unref(&hwDevice_);
+            return false;
+        }
     }
     codec_->hw_device_ctx = av_buffer_ref(hwDevice_);
     codec_->get_format = pickD3D11Format;
@@ -199,15 +206,20 @@ void D3D11VADecoder::destroyPool() {
     consumedFence_.Reset();
     readyCounter_ = 0;
     poolWidth_ = poolHeight_ = 0;
+    poolSwFormat_ = -1;
 }
 
 bool D3D11VADecoder::ensurePool(const AVFrame* frame, IpcChannel& ch) {
     const uint32_t w = (uint32_t)frame->width & ~1u;
     const uint32_t h = (uint32_t)frame->height & ~1u;
-    if (w == poolWidth_ && h == poolHeight_ && !pool_.empty()) return true;
+    int curSwFormat = AV_PIX_FMT_NV12;
+    if (frame->hw_frames_ctx)
+        curSwFormat = reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data)->sw_format;
+    if (w == poolWidth_ && h == poolHeight_ && curSwFormat == poolSwFormat_ && !pool_.empty())
+        return true;
 
     if (!pool_.empty()) {
-        VKR_LOG("decoder: stream geometry changed %ux%u -> %ux%u, resetting pool",
+        VKR_LOG("decoder: stream parameters changed (%ux%u -> %ux%u), resetting pool",
                 poolWidth_, poolHeight_, w, h);
         ch.send(proto::MsgType::StreamReset);
         // The renderer promises to drop all imported state on StreamReset;
@@ -216,10 +228,41 @@ bool D3D11VADecoder::ensurePool(const AVFrame* frame, IpcChannel& ch) {
         destroyPool();
     }
 
+    // The VideoProcessor enumerator is needed first: it gates the output
+    // format choice (10-bit sources get an RGB10A2 pool when supported).
+    D3D11_VIDEO_PROCESSOR_CONTENT_DESC cd{};
+    cd.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+    cd.InputWidth = (UINT)frame->width;
+    cd.InputHeight = (UINT)frame->height;
+    cd.OutputWidth = w;
+    cd.OutputHeight = h;
+    cd.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
+    if (FAILED(videoDev_->CreateVideoProcessorEnumerator(&cd, &vpEnum_)) ||
+        FAILED(videoDev_->CreateVideoProcessor(vpEnum_.Get(), 0, &vp_))) {
+        VKR_ERR("CreateVideoProcessor failed");
+        return false;
+    }
+
+    const AVPixelFormat swFormat = (AVPixelFormat)curSwFormat;
+    const bool tenBit = swFormat == AV_PIX_FMT_P010;
+
+    DXGI_FORMAT poolFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+    proto::SharedFormat sharedFormat = proto::SharedFormat::BGRA8;
+    if (tenBit) {
+        UINT flags = 0;
+        if (SUCCEEDED(vpEnum_->CheckVideoProcessorFormat(DXGI_FORMAT_R10G10B10A2_UNORM, &flags)) &&
+            (flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT)) {
+            poolFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+            sharedFormat = proto::SharedFormat::RGB10A2;
+        } else {
+            VKR_WARN("decoder: 10-bit source but VideoProcessor lacks RGB10A2 output; using BGRA8");
+        }
+    }
+
     proto::PoolDescMsg desc{};
     desc.width = w;
     desc.height = h;
-    desc.format = proto::SharedFormat::BGRA8;
+    desc.format = sharedFormat;
     desc.matrix = mapMatrix(frame);
     desc.range = mapRange(frame);
     desc.poolSize = poolSize_;
@@ -230,7 +273,7 @@ bool D3D11VADecoder::ensurePool(const AVFrame* frame, IpcChannel& ch) {
     td.Height = h;
     td.MipLevels = 1;
     td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.Format = poolFormat;
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_DEFAULT;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
@@ -274,20 +317,8 @@ bool D3D11VADecoder::ensurePool(const AVFrame* frame, IpcChannel& ch) {
     if (!makeFence(readyFence_, desc.readyFenceHandle)) return false;
     if (!makeFence(consumedFence_, desc.consumedFenceHandle)) return false;
 
-    // VideoProcessor doing NV12 (decode surface, coded size) -> BGRA (shared
-    // pool, display size), with source-rect cropping and colorimetry.
-    D3D11_VIDEO_PROCESSOR_CONTENT_DESC cd{};
-    cd.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
-    cd.InputWidth = (UINT)frame->width;
-    cd.InputHeight = (UINT)frame->height;
-    cd.OutputWidth = w;
-    cd.OutputHeight = h;
-    cd.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
-    if (FAILED(videoDev_->CreateVideoProcessorEnumerator(&cd, &vpEnum_)) ||
-        FAILED(videoDev_->CreateVideoProcessor(vpEnum_.Get(), 0, &vp_))) {
-        VKR_ERR("CreateVideoProcessor failed");
-        return false;
-    }
+    // Program the VideoProcessor (created above): colorimetry and the
+    // source-rect crop (coded size -> display size).
     D3D11_VIDEO_PROCESSOR_COLOR_SPACE inCs{};
     inCs.YCbCr_Matrix = desc.matrix == proto::Matrix::BT709 ? 1 : 0;
     inCs.Nominal_Range = desc.range == proto::Range::Full
@@ -314,11 +345,14 @@ bool D3D11VADecoder::ensurePool(const AVFrame* frame, IpcChannel& ch) {
     slotReadyValue_.assign(poolSize_, 0);
     poolWidth_ = w;
     poolHeight_ = h;
+    poolSwFormat_ = curSwFormat;
 
     if (!ch.send(proto::MsgType::PoolDesc, desc)) return false;
-    VKR_LOG("decoder: shared pool ready: %ux%u BGRA8 x%u, matrix=%s range=%s", w, h, poolSize_,
+    VKR_LOG("decoder: shared pool ready: %ux%u %s x%u, matrix=%s range=%s (source %s)", w, h,
+            sharedFormat == proto::SharedFormat::RGB10A2 ? "RGB10A2" : "BGRA8", poolSize_,
             desc.matrix == proto::Matrix::BT709 ? "BT.709" : "BT.601",
-            desc.range == proto::Range::Full ? "full" : "limited");
+            desc.range == proto::Range::Full ? "full" : "limited",
+            av_get_pix_fmt_name(swFormat));
     return true;
 }
 
@@ -387,58 +421,101 @@ bool D3D11VADecoder::submitFrame(const AVFrame* frame, IpcChannel& ch) {
     return ch.send(proto::MsgType::FrameReady, msg);
 }
 
-int D3D11VADecoder::run(const std::string& url, IpcChannel& ch) {
-    if (!openStream(url)) return 2;
+namespace {
 
+// Drain control messages; false once the renderer is gone.
+bool pollRenderer(IpcChannel& ch) {
+    while (auto msg = ch.tryRecv()) {
+        if (msg->type == proto::MsgType::Bye) {
+            VKR_LOG("decoder: renderer said goodbye");
+            return false;
+        }
+    }
+    return ch.connected();
+}
+
+// Sleep in small steps so a renderer disconnect interrupts the backoff.
+bool backoffWait(IpcChannel& ch, uint32_t ms) {
+    for (uint32_t t = 0; t < ms; t += 100) {
+        if (!pollRenderer(ch)) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return true;
+}
+
+void sendPhase(IpcChannel& ch, proto::StreamPhase phase) {
+    proto::StreamStatusMsg st{phase};
+    ch.send(proto::MsgType::StreamStatus, st);
+}
+
+} // namespace
+
+// Streams until the renderer goes away. RTSP failures (connect refused, mid-
+// stream drop, server end) auto-reconnect with capped exponential backoff; the
+// shared pool survives across reconnects so the renderer keeps its last frame.
+int D3D11VADecoder::run(const std::string& url, IpcChannel& ch) {
     AVPacket* pkt = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
-    int rc = 0;
+    uint32_t backoffMs = 1000;
+    bool rendererAlive = true;
 
-    while (rc == 0) {
-        // Drain control messages; a closed pipe means the renderer is gone.
-        while (auto msg = ch.tryRecv()) {
-            if (msg->type == proto::MsgType::Bye) {
-                VKR_LOG("decoder: renderer said goodbye");
-                rc = -1;
+    while (rendererAlive) {
+        sendPhase(ch, proto::StreamPhase::Connecting);
+        VKR_LOG("decoder: connecting to %s", url.c_str());
+        if (!openStream(url)) {
+            closeStream();
+            sendPhase(ch, proto::StreamPhase::Error);
+            VKR_WARN("decoder: connect failed, retrying in %u ms", backoffMs);
+            rendererAlive = backoffWait(ch, backoffMs);
+            backoffMs = backoffMs * 2 > 10000 ? 10000 : backoffMs * 2;
+            continue;
+        }
+        backoffMs = 1000;
+        sendPhase(ch, proto::StreamPhase::Streaming);
+
+        bool streamOk = true;
+        while (streamOk && rendererAlive) {
+            rendererAlive = pollRenderer(ch);
+            if (!rendererAlive) break;
+
+            int err = av_read_frame(fmt_, pkt);
+            if (err == AVERROR(EAGAIN)) continue;
+            if (err < 0) {
+                char buf[256];
+                av_strerror(err, buf, sizeof(buf));
+                VKR_LOG("decoder: stream interrupted (%s), sent=%llu dropped=%llu", buf,
+                        (unsigned long long)sentFrames_, (unsigned long long)droppedFrames_);
+                streamOk = false;
+                break;
             }
-        }
-        if (!ch.connected()) {
-            VKR_LOG("decoder: renderer disconnected, exiting");
-            break;
-        }
-        if (rc) break;
-
-        int err = av_read_frame(fmt_, pkt);
-        if (err == AVERROR(EAGAIN)) continue;
-        if (err < 0) {
-            char buf[256];
-            av_strerror(err, buf, sizeof(buf));
-            VKR_LOG("decoder: stream ended (%s), sent=%llu dropped=%llu", buf,
-                    (unsigned long long)sentFrames_, (unsigned long long)droppedFrames_);
-            break;
-        }
-        if (pkt->stream_index != videoStream_) {
+            if (pkt->stream_index != videoStream_) {
+                av_packet_unref(pkt);
+                continue;
+            }
+            err = avcodec_send_packet(codec_, pkt);
             av_packet_unref(pkt);
-            continue;
-        }
-        err = avcodec_send_packet(codec_, pkt);
-        av_packet_unref(pkt);
-        if (err < 0 && err != AVERROR(EAGAIN)) {
-            VKR_WARN("decoder: send_packet error %d", err);
-            continue;
-        }
-        while (avcodec_receive_frame(codec_, frame) == 0) {
-            if (frame->format == AV_PIX_FMT_D3D11) {
-                if (!submitFrame(frame, ch)) rc = 3;
+            if (err < 0 && err != AVERROR(EAGAIN)) {
+                VKR_WARN("decoder: send_packet error %d", err);
+                continue;
             }
-            av_frame_unref(frame);
+            while (avcodec_receive_frame(codec_, frame) == 0) {
+                if (frame->format == AV_PIX_FMT_D3D11) {
+                    if (!submitFrame(frame, ch)) rendererAlive = ch.connected();
+                }
+                av_frame_unref(frame);
+            }
+        }
+        closeStream();
+        if (rendererAlive) {
+            sendPhase(ch, proto::StreamPhase::Error);
+            rendererAlive = backoffWait(ch, 1000);
         }
     }
 
     ch.send(proto::MsgType::Bye);
     av_frame_free(&frame);
     av_packet_free(&pkt);
-    return rc < 0 ? 0 : rc;
+    return 0;
 }
 
 } // namespace vkr

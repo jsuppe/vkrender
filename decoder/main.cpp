@@ -34,21 +34,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    vkr::IpcChannel ch = vkr::IpcChannel::listen(pipe);
-    if (!ch.connected()) return 1;
+    // Session loop: serve one renderer until it goes away, then wait for the
+    // next one. RTSP reconnection is handled inside run(); this loop handles
+    // renderer restarts. Ctrl+C to exit.
+    for (;;) {
+        vkr::IpcChannel ch = vkr::IpcChannel::listen(pipe);
+        if (!ch.connected()) return 1;
 
-    auto hello = ch.recv();
-    if (!hello || hello->type != vkr::proto::MsgType::Hello) {
-        VKR_ERR("expected Hello from renderer");
-        return 1;
-    }
-    const auto* msg = hello->as<vkr::proto::HelloMsg>();
-    if (!msg) {
-        VKR_ERR("malformed Hello");
-        return 1;
-    }
-    VKR_LOG("decoder: renderer pid=%u luidValid=%u", msg->rendererPid, msg->luidValid);
+        auto hello = ch.recv();
+        if (!hello || hello->type != vkr::proto::MsgType::Hello) {
+            VKR_ERR("expected Hello from renderer, dropping session");
+            continue;
+        }
+        const auto* msg = hello->as<vkr::proto::HelloMsg>();
+        if (!msg) {
+            VKR_ERR("malformed Hello, dropping session");
+            continue;
+        }
+        VKR_LOG("decoder: renderer pid=%u luidValid=%u", msg->rendererPid, msg->luidValid);
 
-    vkr::D3D11VADecoder decoder(*msg, poolSize);
-    return decoder.run(url, ch);
+        vkr::D3D11VADecoder decoder(*msg, poolSize);
+        int rc = decoder.run(url, ch);
+        if (rc != 0) return rc;
+        VKR_LOG("decoder: session ended, waiting for a new renderer");
+    }
 }

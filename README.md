@@ -78,7 +78,18 @@ build/Release/vkrenderer.exe
 ```
 
 Options: `--pipe <name>` on both ends to run multiple instances;
-`--pool-size <2-8>` on the decoder (default 4).
+`--pool-size <2-8>` on the decoder (default 4);
+`--pacing latest|pts` on the renderer (default `latest` = lowest latency,
+`pts` = smooth clock-anchored playback).
+
+Codecs: H.264 and H.265 (8-bit and 10-bit) verified via D3D11VA; 10-bit
+sources are shared as RGB10A2. AV1 should work on AV1-capable GPUs but is
+untested (FFmpeg cannot publish AV1 over RTSP for a local loop test).
+
+Both processes are resilient: the decoder auto-reconnects to the RTSP source
+with backoff and serves renderer restarts; the renderer redials a restarted
+decoder and shows the last frame (with status in the title bar) during any
+outage.
 
 ### Latency
 

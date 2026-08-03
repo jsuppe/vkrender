@@ -67,6 +67,7 @@ private:
     uint32_t poolSize_ = 4;
     uint64_t readyCounter_ = 0;
     uint32_t poolWidth_ = 0, poolHeight_ = 0;
+    int poolSwFormat_ = -1; // AVPixelFormat of the source when the pool was built
     uint64_t droppedFrames_ = 0, sentFrames_ = 0;
 
     HANDLE rendererProcess_ = nullptr;

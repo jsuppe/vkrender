@@ -35,7 +35,8 @@ public:
     // Server: create the endpoint and block until one client connects.
     static IpcChannel listen(const std::string& name);
     // Client: connect to an existing endpoint, retrying up to timeoutMs.
-    static IpcChannel connect(const std::string& name, uint32_t timeoutMs);
+    // quiet suppresses failure logging (for periodic reconnect polling).
+    static IpcChannel connect(const std::string& name, uint32_t timeoutMs, bool quiet = false);
 
     bool send(proto::MsgType type, const void* payload, size_t size);
     template <typename T>

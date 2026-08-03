@@ -19,6 +19,8 @@ VkFormat vkFormatFor(proto::SharedFormat f) {
     switch (f) {
         case proto::SharedFormat::NV12: return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
         case proto::SharedFormat::BGRA8: return VK_FORMAT_B8G8R8A8_UNORM;
+        // DXGI R10G10B10A2 (R in bits 0-9) == Vulkan A2B10G10R10 packed layout
+        case proto::SharedFormat::RGB10A2: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -230,8 +232,10 @@ bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
         return false;
     }
 
-    VKR_LOG("renderer: imported pool %ux%u %s x%u (zero-copy)", width, height,
-            desc.format == proto::SharedFormat::NV12 ? "NV12" : "BGRA8",
+    const char* fmtName = desc.format == proto::SharedFormat::NV12      ? "NV12"
+                          : desc.format == proto::SharedFormat::RGB10A2 ? "RGB10A2"
+                                                                        : "BGRA8";
+    VKR_LOG("renderer: imported pool %ux%u %s x%u (zero-copy)", width, height, fmtName,
             (uint32_t)slots.size());
     return true;
 }

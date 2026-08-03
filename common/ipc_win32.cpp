@@ -77,7 +77,7 @@ IpcChannel IpcChannel::listen(const std::string& name) {
     return ch;
 }
 
-IpcChannel IpcChannel::connect(const std::string& name, uint32_t timeoutMs) {
+IpcChannel IpcChannel::connect(const std::string& name, uint32_t timeoutMs, bool quiet) {
     IpcChannel ch;
     const std::wstring path = pipePath(name);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -99,13 +99,17 @@ IpcChannel IpcChannel::connect(const std::string& name, uint32_t timeoutMs) {
         if (err == ERROR_PIPE_BUSY) {
             WaitNamedPipeW(path.c_str(), 500);
         } else if (err == ERROR_FILE_NOT_FOUND) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                if (!quiet) VKR_ERR("ipc connect timed out after %u ms", timeoutMs);
+                return ch;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         } else {
-            VKR_ERR("ipc connect failed: %lu", err);
+            if (!quiet) VKR_ERR("ipc connect failed: %lu", err);
             return ch;
         }
         if (std::chrono::steady_clock::now() >= deadline) {
-            VKR_ERR("ipc connect timed out after %u ms", timeoutMs);
+            if (!quiet) VKR_ERR("ipc connect timed out after %u ms", timeoutMs);
             return ch;
         }
     }

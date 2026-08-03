@@ -11,17 +11,29 @@
   (chroma plane offset mismatch → device lost); Windows shares BGRA via
   VideoProcessor instead. NV12 renderer path retained for dma-buf platforms.
 
-## M5 — Windows hardening
+## M5 — Windows hardening (2026-08)
 
-- [ ] Renderer reconnect loop: survive decoder restart, re-listen/re-dial the
-      pipe, reimport on the next `PoolDesc` (today: shows last frame, no rejoin).
-- [ ] Decoder RTSP auto-reconnect with backoff; surface stream state to the
-      renderer (title/OSD).
-- [ ] PTS-based presentation pacing option (smooth playback mode) alongside
-      latest-frame-wins (lowest latency mode); A/V clock plumbing for future audio.
-- [ ] H.265/AV1 streams (D3D11VA already supports both — needs testing), and
-      10-bit content (P010 → BGRA10/RGB10A2 via VideoProcessor).
-- [ ] CI: GitHub Actions Windows build.
+- [x] Renderer reconnect loop: redials the pipe once a second after a decoder
+      death, resends `Hello`, reimports on the next `PoolDesc`; decoder runs a
+      session loop and serves renderer restarts the same way.
+- [x] Decoder RTSP auto-reconnect with capped exponential backoff (1→10 s),
+      5 s socket I/O timeout so stalls become errors, `StreamStatus` protocol
+      message surfaced in the renderer window title. Verified: publisher kill /
+      republish, decoder kill / restart, renderer kill / restart.
+- [x] PTS-based presentation pacing (`vkrenderer --pacing pts`): frames queue
+      until their anchored presentation time; re-anchors on >1 s discontinuity;
+      force-drains so the queue never starves the decoder's slot ring.
+      Default remains latest-frame-wins (lowest latency).
+- [x] H.265 verified end-to-end (8-bit and 10-bit). 10-bit P010 sources get an
+      RGB10A2 shared pool (VideoProcessor output support permitting) imported
+      as `VK_FORMAT_A2B10G10R10_UNORM_PACK32`; pool rebuilds automatically on
+      bit-depth changes.
+- [~] AV1: the decode path is codec-agnostic and AV1 D3D11VA is expected to
+      work on this GPU, but FFmpeg's RTSP muxer cannot publish AV1, so no
+      local end-to-end test exists yet — needs a GStreamer or WebRTC/SRT
+      publisher to verify.
+- [x] CI: GitHub Actions Windows build with FFmpeg download cache and
+      binary artifact upload.
 
 ## M6 — Linux backend (VAAPI + dma-buf)
 
