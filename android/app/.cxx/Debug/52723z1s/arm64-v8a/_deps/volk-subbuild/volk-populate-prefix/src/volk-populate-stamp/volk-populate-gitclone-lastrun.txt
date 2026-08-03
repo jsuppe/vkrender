@@ -1,3 +1,0 @@
-repository='https://github.com/zeux/volk.git'
-module=''
-tag='origin'
