@@ -71,15 +71,30 @@ The Gradle module drives the repo's sources through
 Shader SPIR-V ships as APK assets (`android/app/src/main/assets/shaders/`,
 regenerate from a desktop build's `build/shaders/`).
 
-## 3. FFmpeg for Android
+## 3. GStreamer for Android (M9 transport/demux)
 
-RTSP demux uses a deliberately tiny FFmpeg: avformat/avcodec/avutil with
-`--disable-everything` plus only the RTSP/RTP/SDP demuxers, TCP/UDP/RTP
-protocols, H.264/HEVC parsers and Annex-B bitstream filters. No decoders, no
-encoders, no scaling — decode belongs to MediaCodec. Build it on any Linux
-box with [scripts/build_ffmpeg_android.sh](../scripts/build_ffmpeg_android.sh)
-(downloads the Linux NDK, builds both ABIs, ~3 MB total) and place the result
-at `android/ffmpeg-android/<abi>/` (gitignored).
+Transport, demux and parsing run on GStreamer
+(`rtspsrc → parsebin → appsink` emitting byte-stream access units; parsebin's
+dynamically-plugged h264/h265parse gets `config-interval=-1` so SPS/PPS stay
+in-band for MediaCodec). The decode element remains platform `AMediaCodec`
+into the renderer's Surface — GStreamer's `amcvideodec` wraps the same codec
+but cannot target a foreign AImageReader surface without an extra GL copy.
+
+Dependencies come from the **official GStreamer Android universal prebuilts**:
+download `gstreamer-1.0-android-universal-<ver>.tar.xz` from
+gstreamer.freedesktop.org and extract the `arm64-v8a` and `x86_64` trees to
+`android/gstreamer-android/<abi>/` (gitignored). The CMake build resolves the
+static libraries and their transitive dependencies via the prebuilts'
+pkg-config metadata (host `pkg-config` required — the GStreamer Windows devel
+install or any Linux distro provides one) and links the needed plugins
+statically (`coreelements app rtsp rtp rtpmanager udp tcp playback
+typefindfunctions videoparsersbad`), registered via
+`GST_PLUGIN_STATIC_REGISTER` at init. GStreamer warnings/errors route to
+logcat under the `vkrender-gst` tag.
+
+(The M7-era minimal FFmpeg build and
+[scripts/build_ffmpeg_android.sh](../scripts/build_ffmpeg_android.sh) remain
+in history/tree but are no longer part of the build.)
 
 ## 4. Running against a local test stream
 

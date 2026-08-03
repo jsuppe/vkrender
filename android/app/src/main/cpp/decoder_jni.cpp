@@ -13,23 +13,12 @@
 
 #include <string>
 
+#include "gst_surface_decoder.h"
 #include "log.h"
-#include "surface_decoder.h"
-
-extern "C" {
-#include <libavutil/log.h>
-}
 
 // Provided by android_main.cpp: blocks briefly until the renderer's reader
 // exists, then returns its ANativeWindow (not owning).
 ANativeWindow* vkrGetRendererInputWindow();
-
-static void ffmpegLogToLogcat(void* avcl, int level, const char* fmt, va_list args) {
-    if (level > av_log_get_level()) return;
-    __android_log_vprint(level <= AV_LOG_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
-                         "vkrender-ffmpeg", fmt, args);
-    (void)avcl;
-}
 
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vkrender_DecoderService_nativeRunSession(JNIEnv* env, jobject, jstring jurl,
@@ -41,15 +30,12 @@ Java_dev_vkrender_DecoderService_nativeRunSession(JNIEnv* env, jobject, jstring 
         VKR_ERR("decoder session missing url or surface");
         return;
     }
-    av_log_set_callback(ffmpegLogToLogcat);
-    av_log_set_level(AV_LOG_WARNING);
-
     ANativeWindow* window = ANativeWindow_fromSurface(env, jsurface);
     if (!window) {
         VKR_ERR("ANativeWindow_fromSurface failed");
         return;
     }
-    vkr::SurfaceDecoder decoder;
+    vkr::GstSurfaceDecoder decoder;
     decoder.run(url, window);
     ANativeWindow_release(window);
 }

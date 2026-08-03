@@ -19,15 +19,32 @@ FetchContent_MakeAvailable(vulkan_headers volk)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_ANDROID_KHR)
 
-# Minimal static FFmpeg (RTSP demux only), prebuilt by scripts/build_ffmpeg_android.sh
-set(FFMPEG_ROOT ${REPO}/android/ffmpeg-android/${ANDROID_ABI})
-if(NOT EXISTS ${FFMPEG_ROOT}/lib/libavformat.a)
-    message(FATAL_ERROR "FFmpeg for ${ANDROID_ABI} not found at ${FFMPEG_ROOT}. "
-                        "Run scripts/build_ffmpeg_android.sh on a Linux box first.")
+# GStreamer Android universal prebuilts (M9 transport/demux). Fetch the
+# official tarball and extract to android/gstreamer-android/<abi>/
+# (see scripts/fetch_gstreamer_android notes in docs/ANDROID.md).
+set(GST_ANDROID ${REPO}/android/gstreamer-android/${ANDROID_ABI})
+if(NOT EXISTS ${GST_ANDROID}/lib/pkgconfig/gstreamer-1.0.pc)
+    message(FATAL_ERROR "GStreamer Android prebuilts for ${ANDROID_ABI} not found at "
+                        "${GST_ANDROID}. Extract the universal tarball there.")
 endif()
 
+find_package(PkgConfig REQUIRED)
+if(CMAKE_HOST_WIN32)
+    set(ENV{PKG_CONFIG_LIBDIR}
+        "${GST_ANDROID}/lib/pkgconfig;${GST_ANDROID}/lib/gstreamer-1.0/pkgconfig")
+else()
+    set(ENV{PKG_CONFIG_LIBDIR}
+        "${GST_ANDROID}/lib/pkgconfig:${GST_ANDROID}/lib/gstreamer-1.0/pkgconfig")
+endif()
+set(ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS} 1)
+set(ENV{PKG_CONFIG_ALLOW_SYSTEM_CFLAGS} 1)
+pkg_check_modules(GSTA REQUIRED
+    gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0
+    gstcoreelements gstapp gstrtsp gstrtp gstrtpmanager gstudp gsttcp
+    gstplayback gsttypefindfunctions gstvideoparsersbad)
+
 add_library(vkrender_native SHARED
-    ${REPO}/decoder/surface_decoder.cpp
+    ${REPO}/decoder/gst_surface_decoder.cpp
     ${REPO}/renderer/vk_context.cpp
     ${REPO}/renderer/external_video_image.cpp
     ${REPO}/renderer/video_pass.cpp
@@ -37,14 +54,17 @@ add_library(vkrender_native SHARED
 
 target_include_directories(vkrender_native PRIVATE
     ${REPO}/common ${REPO}/decoder ${REPO}/renderer
-    ${FFMPEG_ROOT}/include
+    ${GSTA_STATIC_INCLUDE_DIRS}
     ${ANDROID_NDK}/sources/android/native_app_glue)
+
+# Static gstreamer archives have circular deps; group them for the linker.
+list(TRANSFORM GSTA_STATIC_LIBRARIES PREPEND "-l")
+target_link_directories(vkrender_native PRIVATE ${GSTA_STATIC_LIBRARY_DIRS})
+target_link_options(vkrender_native PRIVATE
+    "-Wl,--start-group" ${GSTA_STATIC_LIBRARIES} "-Wl,--end-group")
 
 target_link_libraries(vkrender_native PRIVATE
     volk
-    ${FFMPEG_ROOT}/lib/libavformat.a
-    ${FFMPEG_ROOT}/lib/libavcodec.a
-    ${FFMPEG_ROOT}/lib/libavutil.a
     android log mediandk nativewindow z)
 
 # Keep the NativeActivity entry point alive despite static linking.
