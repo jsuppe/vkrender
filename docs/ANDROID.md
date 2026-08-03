@@ -141,4 +141,12 @@ returning release fences with `AImage_deleteAsync`.
 - Renderer lifecycle: `APP_CMD_TERM_WINDOW`/rotation handling is minimal
   (swapchain recreate on OUT_OF_DATE only); no foreground-service persistence
   for the decoder.
+- **Screen-off freezes the pipeline** (observed in practice): when the display
+  sleeps, the activity leaves the foreground and Android's cached-app freezer
+  suspends *both* processes (the decoder is a plain background service).
+  After a long freeze the RTSP session is dead server-side and does not
+  self-recover on wake — restart the app. During development,
+  `adb shell svc power stayon true` avoids it. The durable fixes — a
+  foreground service for the decoder and freeze/thaw-aware reconnect — are
+  part of the lifecycle work in the M7.1 backlog.
 - CI: no APK job yet (needs NDK + Gradle caching in Actions).
