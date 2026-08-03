@@ -110,18 +110,27 @@ Expected logs: `decoder: stream: video/avc WxH` → `stream header sent` →
 
 ## 5. Emulator vs real devices
 
-| Aspect | Emulator (verified 2026-08-03) | Real device (expected) |
+| Aspect | Emulator (verified 2026-08-03) | Real device: TCL 8483A tablet, Android 15, arm64 (**verified 2026-08-03**) |
 |---|---|---|
-| Codec | `c2.goldfish.h264.decoder` **stalls in surface mode** — the decoder auto-detects `ro.boot.qemu` and picks `c2.android.avc.decoder` (software) instead | Vendor hardware codec via `createDecoderByType` |
-| AHB→Vulkan | works via gfxstream (host GPU) | native, the primary Android video path |
-| Colors | **wrong (chroma routing)**: gfxstream's external-format YV12 sampling mis-routes chroma planes; component swizzle overrides are ignored. Structural pipeline unaffected — video animates, geometry/luma correct | correct — vendor YCbCr conversion is CTS-validated |
-| Verdict | proves the full zero-copy architecture end-to-end | needed for color-correct sign-off (backlog) |
+| Codec | `c2.goldfish.h264.decoder` **stalls in surface mode** — the decoder auto-detects `ro.boot.qemu` and picks `c2.android.avc.decoder` (software) instead | vendor hardware codec via `createDecoderByType` ✅ |
+| AHB→Vulkan | works via gfxstream (host GPU) | ✅ vendor-private external format (0xef) imported through `VkExternalFormatANDROID`; hardware pool of 19 buffers |
+| Colors | **wrong (chroma routing)**: gfxstream's external-format YV12 sampling mis-routes chroma planes; swizzle overrides ignored. Cosmetic; video animates, geometry/luma correct | ✅ **correct** — vendor YCbCr conversion, full test-pattern palette |
+| Performance | 30 fps, warm-up drop only | ✅ 30 fps, 1 warm-up drop over 45 s (after the fence-latency tuning below) |
 
-Verified on the emulator end-to-end: RTSP → demux → MediaCodec → AImageReader
-→ AHB over the socket → Vulkan import with external format → rendered,
-animating at 30 fps with surface recycling (6 buffers cycling, drops only at
-warm-up). Screenshot evidence in the M7 notes; real-device verification is a
-backlog item.
+Real-device notes (found and fixed during verification):
+- **Swapchain preTransform**: the panel is mounted rotated; accepting
+  `currentTransform` without rotating in the shader showed the image 180°
+  flipped. The swapchain now prefers `IDENTITY` (compositor applies the
+  display rotation).
+- **Hardware acquire fences signal 1-2 frames after the output callback.**
+  Blocking on them in the render loop (or sizing the held ring too small)
+  backs up the consumed handshake — observed as ~10 drops/s. Adoption is now
+  a non-blocking fence poll (present the current frame until the new one's
+  fence signals) and the held ring is 8 deep, which absorbs the fence latency
+  without adding display latency (latest-wins still skips stale frames).
+- A convenient transport for desk testing: `adb reverse tcp:8556 tcp:8556`
+  lets the device reach the host's RTSP server at `rtsp://127.0.0.1:8556/...`
+  over the USB cable — no LAN configuration.
 
 ## 6. Sync model
 

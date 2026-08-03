@@ -325,7 +325,12 @@ bool VkContext::createSwapchain() {
     sci.imageArrayLayers = 1;
     sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    sci.preTransform = caps.currentTransform;
+    // IDENTITY lets the compositor apply display rotation (we don't rotate in
+    // the shader); currentTransform without shader-side handling shows the
+    // image rotated on rotated displays (seen on the TCL tablet).
+    sci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+                           ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                           : caps.currentTransform;
     sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sci.presentMode = presentMode;
     sci.clipped = VK_TRUE;

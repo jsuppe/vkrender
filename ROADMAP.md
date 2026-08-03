@@ -96,9 +96,14 @@ M7.1 hardening (2026-08-03):
       surface/swapchain rebuild on window replacement — verified across
       sleep/wake.
 - [x] CI `android` job: NDK + cached FFmpeg static build + Gradle, APK artifact.
-- [ ] Real-device verification remains open
-      ([#5](https://github.com/jsuppe/vkrender/issues/5)): colors (emulator
-      gfxstream chroma quirk), hardware codecs, arm64.
+- [x] **Real-device verification** ([#5](https://github.com/jsuppe/vkrender/issues/5),
+      closed): TCL 8483A tablet, Android 15, arm64, vendor hardware codec,
+      vendor-private external format import, **correct colors** (confirming
+      the emulator palette shift is gfxstream-only), smooth 30 fps after two
+      device-informed fixes: IDENTITY swapchain preTransform (display was
+      180° rotated) and non-blocking fence adoption + 8-deep held ring
+      (hardware acquire fences lag the output callback; the 4-deep ring
+      dropped ~10 fps).
 
 ## Later / ideas
 

@@ -159,6 +159,18 @@ void android_main(android_app* app) {
             pendingConsumedSignal = currentReady - 1;
     };
 
+    // Newest announced-but-not-yet-adopted frame. Adoption is deferred until
+    // its acquire fence signals - never block the render loop on a fence
+    // (that stalls presentation, delays FrameConsumed, and backs up the
+    // decoder's ring; observed as ~11 drops/s on hardware codecs).
+    std::optional<vkr::proto::FrameReadyMsg> pendingAdopt;
+    int pendingFence = -1;
+    auto dropPending = [&]() {
+        if (pendingFence >= 0) close(pendingFence);
+        pendingFence = -1;
+        pendingAdopt.reset();
+    };
+
     while (!state.destroyed) {
         // Android event pump
         android_poll_source* source = nullptr;
@@ -190,13 +202,6 @@ void android_main(android_app* app) {
         // Message pump: latest-frame-wins. Runs while paused too, so the
         // decoder's surface ring never starves; paused frames are consumed
         // and discarded immediately (we never touch their buffers).
-        std::optional<vkr::proto::FrameReadyMsg> newest;
-        int newestFence = -1;
-        auto dropNewest = [&]() {
-            if (newestFence >= 0) close(newestFence);
-            newestFence = -1;
-            newest.reset();
-        };
         while (auto msg = ch.tryRecv()) {
             switch (msg->type) {
                 case vkr::proto::MsgType::PoolDesc:
@@ -208,7 +213,7 @@ void android_main(android_app* app) {
                         currentReady = 0;
                         lastConsumedSignal = 0;
                         pendingConsumedSignal.reset();
-                        dropNewest();
+                        dropPending();
                         if (!pool.create(vk, *d)) return;
                         passNeedsBind = true;
                     }
@@ -243,9 +248,9 @@ void android_main(android_app* app) {
                             fc.readyValue = fr->readyValue;
                             ch.send(vkr::proto::MsgType::FrameConsumed, fc);
                         } else {
-                            dropNewest(); // skipped frame: close its fence
-                            newest = *fr;
-                            newestFence = msg->fds.empty() ? -1 : msg->fds[0];
+                            dropPending(); // skipped frame: close its fence
+                            pendingAdopt = *fr;
+                            pendingFence = msg->fds.empty() ? -1 : msg->fds[0];
                         }
                     }
                     break;
@@ -254,30 +259,28 @@ void android_main(android_app* app) {
                     pass.unbindPool(vk);
                     pool.destroy(vk);
                     currentSlot = -1;
-                    dropNewest();
+                    dropPending();
                     break;
                 default:
                     break;
             }
         }
         if (!state.windowReady) {
-            dropNewest();
+            dropPending();
             continue;
         }
-        if (newest && pool.valid()) {
-            adoptFrame(*newest);
-            // Producer sync: the decode write is complete when the acquire
-            // fence signals. sync_file fds are pollable; by adoption time the
-            // fence is normally long signaled.
-            if (newestFence >= 0) {
-                pollfd pf{newestFence, POLLIN, 0};
-                if (poll(&pf, 1, 1000) <= 0)
-                    VKR_WARN("renderer: acquire fence wait timed out");
-                close(newestFence);
-                newestFence = -1;
+        // Adopt the pending frame only once its acquire fence has signaled
+        // (non-blocking check); until then keep presenting the current frame.
+        if (pendingAdopt && pool.valid()) {
+            bool ready = true;
+            if (pendingFence >= 0) {
+                pollfd pf{pendingFence, POLLIN, 0};
+                ready = poll(&pf, 1, 0) > 0 && (pf.revents & POLLIN);
             }
-        } else {
-            dropNewest();
+            if (ready) {
+                adoptFrame(*pendingAdopt);
+                dropPending();
+            }
         }
 
         // Render

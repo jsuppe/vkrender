@@ -47,7 +47,10 @@ Java_dev_vkrender_DecoderService_nativeRun(JNIEnv* env, jobject, jstring jurl) {
         const auto* msg = hello->as<vkr::proto::HelloMsg>();
         if (!msg) continue;
 
-        vkr::MediaCodecDecoder decoder(*msg, 4);
+        // Ring of 8: hardware codec acquire fences signal ~1-2 frames after
+        // the output callback, so adoption (and the consumed handshake) trail
+        // decode; a 4-deep ring overflowed on real devices (~10 drops/s).
+        vkr::MediaCodecDecoder decoder(*msg, 8);
         decoder.run(url, ch);
         VKR_LOG("decoder service: session ended, waiting for a new renderer");
     }

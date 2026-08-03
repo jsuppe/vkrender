@@ -109,7 +109,7 @@ bool MediaCodecDecoder::openStream(const std::string& url) {
     // gralloc buffers are exactly what we share with the renderer.
     media_status_t ms = AImageReader_newWithUsage(
         par->width, par->height, AIMAGE_FORMAT_PRIVATE,
-        AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, (int32_t)maxHeld_ + 3, &reader_);
+        AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, (int32_t)maxHeld_ + 4, &reader_);
     if (ms != AMEDIA_OK || !reader_) {
         VKR_ERR("AImageReader_newWithUsage failed: %d", ms);
         return false;
