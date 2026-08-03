@@ -285,6 +285,19 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
         return false;
     }
 
+    Slot slot;
+    auto fail = [&](const char* what) {
+        VKR_ERR("%s (surface %u, modifier=0x%llx)", what, desc.slotKey,
+                (unsigned long long)desc.drmModifier);
+        for (auto& v : slot.view)
+            if (v) vkDestroyImageView(vk.device, v, nullptr);
+        for (auto& img : slot.image)
+            if (img) vkDestroyImage(vk.device, img, nullptr);
+        for (auto& m : slot.memory)
+            if (m) vkFreeMemory(vk.device, m, nullptr);
+        return false;
+    };
+
     // Mode decision, once, on the first surface (needs the actual modifier):
     // if the driver cannot sample multi-planar NV12 with this modifier
     // (NVIDIA only lists LINEAR for NV12 but supports its block-linear
@@ -392,19 +405,6 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
     // need a DISJOINT image with per-plane memory binds; single-object
     // exports (Mesa) bind one allocation for the whole image.
     const bool disjoint = desc.numObjects > 1;
-
-    Slot slot;
-    auto fail = [&](const char* what) {
-        VKR_ERR("%s (surface %u, modifier=0x%llx)", what, desc.slotKey,
-                (unsigned long long)desc.drmModifier);
-        for (auto& v : slot.view)
-            if (v) vkDestroyImageView(vk.device, v, nullptr);
-        for (auto& img : slot.image)
-            if (img) vkDestroyImage(vk.device, img, nullptr);
-        for (auto& m : slot.memory)
-            if (m) vkFreeMemory(vk.device, m, nullptr);
-        return false;
-    };
 
     VkSubresourceLayout planeLayouts[4]{};
     for (uint32_t p = 0; p < desc.numPlanes; ++p) {
