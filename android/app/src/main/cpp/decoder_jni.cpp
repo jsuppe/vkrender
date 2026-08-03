@@ -1,22 +1,29 @@
-// JNI entry for the DecoderService: runs the MediaCodec decoder session loop
-// on the calling (Java background) thread. Lives in the ":decoder" process,
-// a real OS process boundary away from the renderer.
+// JNI entries for the two services.
+//
+// DecoderService (":decoder" process): runs one decode session into the
+// renderer-provided Surface (M8 - BufferQueue carries the frames, no custom
+// frame IPC).
+//
+// RendererService (main process): exposes the native renderer's AImageReader
+// Surface to Binder clients (bridge state lives in android_main.cpp).
 
 #include <android/log.h>
+#include <android/native_window_jni.h>
 #include <jni.h>
 
 #include <string>
 
-#include "ipc.h"
 #include "log.h"
-#include "mediacodec_decoder.h"
+#include "surface_decoder.h"
 
 extern "C" {
 #include <libavutil/log.h>
 }
 
-// FFmpeg logs to stderr by default, which is invisible on Android; forward
-// everything at info level or worse to logcat.
+// Provided by android_main.cpp: blocks briefly until the renderer's reader
+// exists, then returns its ANativeWindow (not owning).
+ANativeWindow* vkrGetRendererInputWindow();
+
 static void ffmpegLogToLogcat(void* avcl, int level, const char* fmt, va_list args) {
     if (level > av_log_get_level()) return;
     __android_log_vprint(level <= AV_LOG_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
@@ -25,33 +32,31 @@ static void ffmpegLogToLogcat(void* avcl, int level, const char* fmt, va_list ar
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_dev_vkrender_DecoderService_nativeRun(JNIEnv* env, jobject, jstring jurl) {
+Java_dev_vkrender_DecoderService_nativeRunSession(JNIEnv* env, jobject, jstring jurl,
+                                                  jobject jsurface) {
     const char* urlChars = env->GetStringUTFChars(jurl, nullptr);
     std::string url(urlChars ? urlChars : "");
     env->ReleaseStringUTFChars(jurl, urlChars);
-    if (url.empty()) {
-        VKR_ERR("decoder service started without a url");
+    if (url.empty() || !jsurface) {
+        VKR_ERR("decoder session missing url or surface");
         return;
     }
-    VKR_LOG("decoder service: url=%s", url.c_str());
     av_log_set_callback(ffmpegLogToLogcat);
     av_log_set_level(AV_LOG_WARNING);
 
-    // Session loop: serve one renderer connection at a time, forever (the
-    // service is stopped by the OS / stopService).
-    for (;;) {
-        vkr::IpcChannel ch = vkr::IpcChannel::listen("vkrender");
-        if (!ch.connected()) return;
-        auto hello = ch.recv();
-        if (!hello || hello->type != vkr::proto::MsgType::Hello) continue;
-        const auto* msg = hello->as<vkr::proto::HelloMsg>();
-        if (!msg) continue;
-
-        // Ring of 8: hardware codec acquire fences signal ~1-2 frames after
-        // the output callback, so adoption (and the consumed handshake) trail
-        // decode; a 4-deep ring overflowed on real devices (~10 drops/s).
-        vkr::MediaCodecDecoder decoder(*msg, 8);
-        decoder.run(url, ch);
-        VKR_LOG("decoder service: session ended, waiting for a new renderer");
+    ANativeWindow* window = ANativeWindow_fromSurface(env, jsurface);
+    if (!window) {
+        VKR_ERR("ANativeWindow_fromSurface failed");
+        return;
     }
+    vkr::SurfaceDecoder decoder;
+    decoder.run(url, window);
+    ANativeWindow_release(window);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_dev_vkrender_RendererService_nativeAcquireInputSurface(JNIEnv* env, jclass) {
+    ANativeWindow* window = vkrGetRendererInputWindow();
+    if (!window) return nullptr;
+    return ANativeWindow_toSurface(env, window);
 }

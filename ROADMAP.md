@@ -105,6 +105,20 @@ M7.1 hardening (2026-08-03):
       (hardware acquire fences lag the output callback; the 4-deep ring
       dropped ~10 fps).
 
+## M8 — Android: renderer-owned Surface over Binder — DONE (2026-08-03)
+
+Architecture inversion proposed by Jon: the renderer owns the `AImageReader`
+and hands its `Surface` to producers through an AIDL service; MediaCodec
+decodes directly into it and BufferQueue replaces the entire custom frame
+plane (socket AHB passing, fence fds, consumed handshake, held ring, pending
+window — all deleted). Verified same-day on the TCL 8483A and the emulator:
+identical telemetry to the tuned M7.1 pipeline (60 Hz vsync-locked presents,
+exact 30 fps adoptions, buffers cycling zero-copy) with ~500 fewer lines of
+platform code. The renderer is now effectively a compositor service — any
+Surface producer (camera, other apps with permission gating) can feed it.
+Details: [docs/ANDROID.md](docs/ANDROID.md). Closed
+[#7](https://github.com/jsuppe/vkrender/issues/7).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

@@ -27,8 +27,7 @@ if(NOT EXISTS ${FFMPEG_ROOT}/lib/libavformat.a)
 endif()
 
 add_library(vkrender_native SHARED
-    ${REPO}/common/ipc_posix.cpp
-    ${REPO}/decoder/mediacodec_decoder.cpp
+    ${REPO}/decoder/surface_decoder.cpp
     ${REPO}/renderer/vk_context.cpp
     ${REPO}/renderer/external_video_image.cpp
     ${REPO}/renderer/video_pass.cpp

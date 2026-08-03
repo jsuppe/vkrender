@@ -23,6 +23,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Renderer-owned Surface handed to producers over Binder (M8) -->
+        <service
+            android:name=".RendererService"
+            android:exported="false" />
+
         <!-- Decoder in its own OS process: the zero-copy boundary under test -->
         <service
             android:name=".DecoderService"

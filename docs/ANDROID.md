@@ -1,60 +1,58 @@
-# Android backend — MediaCodec + AHardwareBuffer zero-copy
+# Android backend — renderer-owned Surface, BufferQueue zero-copy (M8)
 
-Android is the third backend, and its sharing primitive is the most
-first-class of all: `AHardwareBuffer` is Android's kernel-backed,
-refcounted, cross-process GPU buffer, with a dedicated API for passing it
-over Unix sockets and a dedicated Vulkan extension for importing it.
+Android is the third backend, and after two architecture generations it is
+also the most platform-native: the renderer **owns an `AImageReader` and
+hands its `Surface` to producers over Binder**. BufferQueue — the OS
+machinery behind every Surface — then carries the frames cross-process with
+its own queueing, fences, timestamps and backpressure. There is no custom
+frame IPC at all.
 
 ## 1. Architecture
 
-One APK, **two OS processes** — the Android-idiomatic mapping of the desktop
-process pair:
+One APK, **two OS processes**:
 
 ```
 ┌── :decoder process ─────────────────┐    ┌── main process ──────────────────┐
-│ DecoderService (Java shim)          │    │ MainActivity : NativeActivity    │
-│  └ decoder_jni → MediaCodecDecoder  │    │  └ android_main.cpp              │
-│ FFmpeg avformat (RTSP demux only,   │ AF │ Vulkan renderer (same video_pass │
-│  static minimal build)              │UNIX│  / pool code as desktop)         │
-│ AMediaCodec hw/sw decode            │sock│ VkImage ← AHardwareBuffer import │
-│  └ output → AImageReader surface    │──► │ (VK_ANDROID_external_memory_ahb, │
-│ AImage → AHardwareBuffer per frame  │    │  VkExternalFormatANDROID +       │
-│  sent via sendHandleToUnixSocket    │    │  YCbCr conversion)               │
+│ DecoderService (foreground service) │    │ MainActivity : NativeActivity    │
+│  binds RendererService ────────────────► │ RendererService (AIDL):          │
+│  ◄─── Surface (Parcelable) ─────────│    │   returns the reader's Surface   │
+│  └ decoder_jni → SurfaceDecoder     │    │  └ android_main.cpp              │
+│ FFmpeg avformat (RTSP demux only)   │ Buf │ owns AImageReader (GPU_SAMPLED) │
+│ AMediaCodec decodes INTO the        │ferQ │ per vsync: acquireLatestImage → │
+│  renderer's Surface;                │ueue │  AHardwareBuffer → Vulkan import │
+│  releaseOutputBuffer = delivery     │───► │  (cached per buffer) → sample    │
 └─────────────────────────────────────┘    └──────────────────────────────────┘
 ```
 
-- **Manifest** ([android/app/src/main/AndroidManifest.xml](../android/app/src/main/AndroidManifest.xml)):
-  `DecoderService` has `android:process=":decoder"` — a real process boundary,
-  same UID. `MainActivity extends NativeActivity` starts the service with the
-  RTSP url from its own intent, then hands control to native code.
-- **IPC**: the same `IpcChannel` protocol as desktop over an
-  **abstract-namespace** Unix socket (no filesystem node — works in the app
-  sandbox). `SurfaceDesc` with `numObjects == 0` announces "an
-  `AHardwareBuffer` follows out-of-band", then
-  `AHardwareBuffer_sendHandleToUnixSocket` /
-  `AHardwareBuffer_recvHandleFromUnixSocket` transfer the buffer on the same
-  socket. `FrameReady` / `FrameConsumed` / `StreamStatus` / reconnect
-  semantics are identical to desktop.
-- **Decode** ([decoder/mediacodec_decoder.cpp](../decoder/mediacodec_decoder.cpp)):
-  FFmpeg's avformat does RTSP demux exactly as on desktop (a ~3 MB static
-  build with **no decoders** — see §3); Annex-B access units feed NDK
-  `AMediaCodec`, whose output surface is an `AImageReader` created with
-  `AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE`. Every decoded frame surfaces as
-  an `AImage` wrapping a gralloc `AHardwareBuffer` — the exact allocation the
-  renderer samples. Zero copies, zero conversions.
-- **Buffer identity & lifetime**: the reader cycles a fixed buffer set; the
-  `AHardwareBuffer*` value identifies a buffer, announced once. Held
-  `AImage`s pin buffers until `FrameConsumed` releases them
-  (`AImage_delete` returns the buffer to the codec) — the same held-ring
-  policy as the VAAPI backend, capped so a stalled renderer drops frames
-  instead of queueing latency.
-- **Import** ([renderer/external_video_image.cpp](../renderer/external_video_image.cpp)
-  `addSurfaceAHB`): `vkGetAndroidHardwareBufferPropertiesANDROID` →
-  `VkExternalFormatANDROID` (vendor-opaque YUV) → `VkSamplerYcbcrConversion`
-  built from the buffer's suggested model/range/siting — the mandatory
-  external-format path — then dedicated import + bind + sampled view. The
-  renderer pipeline (video_pass, barriers with `VK_QUEUE_FAMILY_FOREIGN_EXT`,
-  latest-frame-wins loop) is shared desktop code.
+- **AIDL** ([IVkRendererService.aidl](../android/app/src/main/aidl/dev/vkrender/IVkRendererService.aidl)):
+  `Surface acquireInputSurface()`. `Surface` is Parcelable, so the Binder
+  handoff is trivial; the native bridge converts the reader's window with
+  `ANativeWindow_toSurface`. Because *any* Surface producer works —
+  MediaCodec, camera, another app if the service were exported with
+  permission gating — the renderer is effectively a video compositor service.
+- **Decode** ([decoder/surface_decoder.cpp](../decoder/surface_decoder.cpp)):
+  FFmpeg avformat demux (minimal static build, §3) feeds `AMediaCodec`
+  configured directly with the renderer's Surface.
+  `releaseOutputBuffer(render=true)` *is* frame delivery — timestamped into
+  the BufferQueue. Backpressure is automatic: if the consumer holds all
+  buffers, `dequeueOutputBuffer` starves and decode stalls. RTSP reconnect
+  with backoff and the wall-clock watchdog are internal; the session ends
+  only when the surface dies (renderer gone), and the Java side re-binds and
+  starts a new session.
+- **Render** ([renderer/android_main.cpp](../renderer/android_main.cpp)): one
+  `AImageReader_acquireLatestImage` per Choreographer vsync (stale frames are
+  discarded by the call itself — latest-wins for free, fences honored by the
+  sync acquire). Each distinct `AHardwareBuffer` (they recycle) is imported
+  into Vulkan once via the external-format + YCbCr-conversion path and
+  cached; the acquired `AImage` is held while its buffer is being sampled and
+  deleted only after the frame fence that last read it retires — the entire
+  consumed-handshake of previous generations reduced to a local vector.
+
+What M8 deleted relative to M7 (see git history for the old design): the
+Unix-socket frame protocol, AHB handle passing, the SurfaceDesc/FrameReady/
+FrameConsumed messages, the decoder-side held-ring and drop policy, the
+acquire-fence fd plumbing and the renderer's pending-window PTS logic —
+BufferQueue provides all of it.
 
 ## 2. Building
 

@@ -1,11 +1,12 @@
-// NativeActivity entry for the vkrender renderer on Android.
+// NativeActivity entry for the vkrender renderer on Android - M8 architecture.
 //
-// The activity (see android/app/src/main/java) starts the DecoderService in
-// its own process, then this native loop connects to the decoder over an
-// abstract-namespace Unix socket, imports the AHardwareBuffers it announces,
-// and renders them zero-copy - the same pipeline as desktop with the GLFW
-// loop replaced by android_native_app_glue and AHB import instead of
-// dma-buf/NT-handle import.
+// The renderer OWNS an AImageReader; its Surface is handed to producers (the
+// DecoderService, in another process) over Binder via RendererService.
+// BufferQueue does all frame transport: queueing, fences, timestamps,
+// backpressure. This loop just acquires the latest ready image each display
+// vsync, imports its AHardwareBuffer into Vulkan once per distinct buffer
+// (they recycle), samples it zero-copy, and defers each image's release
+// until the GPU work that sampled it has provably retired.
 
 #ifdef __ANDROID__
 
@@ -14,19 +15,20 @@
 #include <android/hardware_buffer.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
-#include <poll.h>
+#include <media/NdkImage.h>
+#include <media/NdkImageReader.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
-#include <deque>
-#include <optional>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include <volk.h>
 
 #include "external_video_image.h"
-#include "ipc.h"
 #include "log.h"
 #include "video_pass.h"
 #include "vk_context.h"
@@ -39,8 +41,12 @@ int64_t nowNs() {
         .count();
 }
 
-// The .spv shaders ship as APK assets; VideoPass loads from the filesystem,
-// so extract them to the app's internal files dir once at startup.
+// ---- Surface bridge to RendererService (Binder thread) ---------------------
+std::mutex g_readerMutex;
+std::condition_variable g_readerCv;
+AImageReader* g_reader = nullptr;
+ANativeWindow* g_readerWindow = nullptr;
+
 bool extractShaders(android_app* app, const std::string& outDir) {
     const char* names[] = {"fullscreen.vert.spv", "video_ycbcr.frag.spv", "nv12_planar.frag.spv"};
     for (const char* name : names) {
@@ -69,7 +75,9 @@ struct FrameSync {
     VkSemaphore renderDoneSem = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
-    std::optional<uint64_t> pendingConsumed;
+    // Images whose last GPU read is fenced by this frame; deleted (returned
+    // to the BufferQueue) once the fence is waited.
+    std::vector<AImage*> retiring;
 };
 
 struct RendererState {
@@ -88,12 +96,18 @@ void onAppCmd(android_app* app, int32_t cmd) {
 
 } // namespace
 
+// Called from RendererService's binder thread (decoder_jni.cpp).
+ANativeWindow* vkrGetRendererInputWindow() {
+    std::unique_lock<std::mutex> lock(g_readerMutex);
+    g_readerCv.wait_for(lock, std::chrono::seconds(5), [] { return g_readerWindow != nullptr; });
+    return g_readerWindow;
+}
+
 void android_main(android_app* app) {
     RendererState state;
     app->userData = &state;
     app->onAppCmd = onAppCmd;
 
-    // Wait for the window before any Vulkan work.
     while (!state.windowReady && !state.destroyed) {
         android_poll_source* source = nullptr;
         int events = 0;
@@ -114,13 +128,21 @@ void android_main(android_app* app) {
     vkr::VideoPass pass;
     if (!pass.init(vk, filesDir)) return;
 
-    // The decoder service may still be starting; keep dialing.
-    vkr::IpcChannel ch;
-    auto sendHello = [&](vkr::IpcChannel& c) {
-        vkr::proto::HelloMsg hello{};
-        hello.rendererPid = (uint32_t)getpid();
-        return c.send(vkr::proto::MsgType::Hello, hello);
-    };
+    // The producer-facing input: created up-front at a nominal size (the
+    // producer overrides buffer dimensions; per-image sizes are authoritative).
+    {
+        std::lock_guard<std::mutex> lock(g_readerMutex);
+        media_status_t ms = AImageReader_newWithUsage(1920, 1080, AIMAGE_FORMAT_PRIVATE,
+                                                      AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 6,
+                                                      &g_reader);
+        if (ms != AMEDIA_OK || !g_reader) {
+            VKR_ERR("AImageReader_newWithUsage failed: %d", ms);
+            return;
+        }
+        AImageReader_getWindow(g_reader, &g_readerWindow);
+    }
+    g_readerCv.notify_all();
+    VKR_LOG("renderer: input surface ready (BufferQueue)");
 
     constexpr uint32_t kFramesInFlight = 2;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
@@ -145,88 +167,24 @@ void android_main(android_app* app) {
     }
 
     vkr::ExternalVideoPool pool;
-    bool passNeedsBind = false;
+    bool passBound = false;
     int64_t currentSlot = -1;
-    uint64_t currentReady = 0;
-    uint64_t lastConsumedSignal = 0;
-    std::optional<uint64_t> pendingConsumedSignal;
+    AImage* currentImage = nullptr; // the image currentSlot samples from
     uint64_t frameIndex = 0;
-    int64_t lastDialNs = 0;
-    ANativeWindow* vkWindow = app->window; // the window vk's surface was built on
-
-    int64_t currentDueNs = 0;    // display time the adopted frame is scheduled for
-    bool contentChanged = false; // adopted since the last present
-    uint32_t presentId = 0;
-
-    auto adoptFrame = [&](const vkr::proto::FrameReadyMsg& fr) {
-        currentSlot = (int64_t)fr.slot;
-        currentReady = fr.readyValue;
-        contentChanged = true;
-        if (currentReady > 0 && currentReady - 1 > lastConsumedSignal)
-            pendingConsumedSignal = currentReady - 1;
-    };
-
-    // Announced-but-not-yet-adopted frames, in arrival order. Adoption picks
-    // the NEWEST entry whose acquire fence has signaled - never block the
-    // render loop on a fence (stalls presentation and backs up the decoder's
-    // ring), and never consider only the newest arrival (its fence is always
-    // the youngest; with fence latency > frame interval that livelocks into
-    // heavy frame skipping - observed on the TCL tablet).
-    struct PendingFrame {
-        vkr::proto::FrameReadyMsg msg;
-        int fence;
-    };
-    std::deque<PendingFrame> pendingQ;
-    auto dropPending = [&]() {
-        for (auto& p : pendingQ)
-            if (p.fence >= 0) close(p.fence);
-        pendingQ.clear();
-    };
-    auto fenceReady = [](int fd) {
-        if (fd < 0) return true;
-        pollfd pf{fd, POLLIN, 0};
-        return poll(&pf, 1, 0) > 0 && (pf.revents & POLLIN);
-    };
+    ANativeWindow* vkWindow = app->window;
     uint64_t adoptions = 0, renders = 0;
     int64_t rateWindowStart = nowNs();
-    int64_t tFence = 0, tAcquire = 0, tSubmit = 0, tPresent = 0; // phase totals, ns
-    int64_t tPump = 0, tLoop = 0;
-    int64_t lastLoopEnd = nowNs();
 
-    // PTS pacing: present each frame at its stream interval (anchored to the
-    // local clock on the first frame) instead of "whenever adoption lands" -
-    // decode/fence jitter otherwise shows as judder. Re-anchors on >1s
-    // discontinuities (stream restart, seek).
-    bool anchored = false;
-    int64_t anchorPts = 0, anchorLocal = 0;
-    auto dueTime = [&](int64_t ptsNs, int64_t now) {
-        if (ptsNs < 0) return now;
-        if (!anchored) {
-            anchored = true;
-            anchorPts = ptsNs;
-            anchorLocal = now;
-        }
-        int64_t due = anchorLocal + (ptsNs - anchorPts);
-        if (due - now > 1000000000ll || now - due > 1000000000ll) {
-            anchorPts = ptsNs;
-            anchorLocal = now;
-            due = now;
-        }
-        return due;
+    auto keyForBuffer = [](AHardwareBuffer* ahb) {
+        uint64_t v = (uint64_t)(uintptr_t)ahb;
+        return (uint32_t)(v ^ (v >> 32));
     };
 
-    // Vsync pacing: render exactly once per display refresh. Without it the
-    // CPU loop free-runs (Mali throttles GPU-side only; measured 240Hz of
-    // duplicate presents) and content frames land on arbitrary vsyncs.
     AChoreographer* choreographer = AChoreographer_getInstance();
     bool frameDue = false;
 
     while (!state.destroyed) {
-        int64_t loopStart = nowNs();
-        tLoop += loopStart - lastLoopEnd; // time since previous iteration end
-
-        // Pump events until the next vsync tick (the choreographer callback
-        // wakes the looper), or on a slow timer while there is no window.
+        // Vsync-paced event pump (see M7.1 notes: unpaced loops free-run).
         if (state.windowReady && choreographer) {
             frameDue = false;
             AChoreographer_postFrameCallback64(
@@ -245,164 +203,65 @@ void android_main(android_app* app) {
         }
         if (state.destroyed) break;
 
-        // The activity can come back with a new ANativeWindow (screen off/on,
-        // task switch): rebuild surface + swapchain on the new one.
         if (state.windowReady && app->window != vkWindow) {
             VKR_LOG("renderer: window replaced, recreating surface");
             if (!vk.recreateSurface(app->window)) break;
             vkWindow = app->window;
         }
+        if (!state.windowReady) continue;
 
-        // (Re)dial the decoder service.
-        if (!ch.connected() && nowNs() - lastDialNs > 1000000000ll) {
-            lastDialNs = nowNs();
-            vkr::IpcChannel next = vkr::IpcChannel::connect("vkrender", 1, /*quiet=*/true);
-            if (next.connected() && sendHello(next)) {
-                ch = std::move(next);
-                VKR_LOG("renderer: connected to decoder service");
-            }
-        }
-
-        // Message pump: latest-frame-wins. Runs while paused too, so the
-        // decoder's surface ring never starves; paused frames are consumed
-        // and discarded immediately (we never touch their buffers).
-        while (auto msg = ch.tryRecv()) {
-            switch (msg->type) {
-                case vkr::proto::MsgType::PoolDesc:
-                    if (const auto* d = msg->as<vkr::proto::PoolDescMsg>()) {
-                        vkDeviceWaitIdle(vk.device);
-                        pass.unbindPool(vk);
-                        pool.destroy(vk);
-                        currentSlot = -1;
-                        currentReady = 0;
-                        lastConsumedSignal = 0;
-                        pendingConsumedSignal.reset();
-                        dropPending();
-                        anchored = false;
-                        if (!pool.create(vk, *d)) return;
-                        passNeedsBind = true;
-                    }
-                    break;
-                case vkr::proto::MsgType::SurfaceDesc:
-                    if (const auto* d = msg->as<vkr::proto::SurfaceDescMsg>()) {
-                        // numObjects == 0: the AHardwareBuffer follows
-                        // out-of-band on this socket.
-                        AHardwareBuffer* ahb = nullptr;
-                        if (d->numObjects == 0 &&
-                            AHardwareBuffer_recvHandleFromUnixSocket(ch.nativeSocket(), &ahb) == 0 &&
-                            ahb) {
-                            bool ok = pool.addSurfaceAHB(vk, d->slotKey, ahb);
-                            AHardwareBuffer_release(ahb); // pool holds its own ref via import
-                            if (ok) {
-                                ok = passNeedsBind ? pass.bindPool(vk, pool)
-                                                   : pass.addSlot(vk, pool, d->slotKey);
-                                passNeedsBind = false;
-                            }
-                            if (!ok) VKR_ERR("failed to bind surface %u", d->slotKey);
-                        } else {
-                            VKR_ERR("failed to receive AHardwareBuffer for surface %u", d->slotKey);
-                        }
-                    }
-                    break;
-                case vkr::proto::MsgType::FrameReady:
-                    if (const auto* fr = msg->as<vkr::proto::FrameReadyMsg>()) {
-                        if (!state.windowReady) {
-                            // Paused: release straight back to the decoder.
-                            for (int fd : msg->fds) close(fd);
-                            vkr::proto::FrameConsumedMsg fc{};
-                            fc.readyValue = fr->readyValue;
-                            ch.send(vkr::proto::MsgType::FrameConsumed, fc);
-                        } else {
-                            pendingQ.push_back({*fr, msg->fds.empty() ? -1 : msg->fds[0]});
-                            // Bound the window; the front is the stalest.
-                            while (pendingQ.size() > 4) {
-                                if (pendingQ.front().fence >= 0) close(pendingQ.front().fence);
-                                pendingQ.pop_front();
-                            }
-                        }
-                    }
-                    break;
-                case vkr::proto::MsgType::StreamReset:
-                    vkDeviceWaitIdle(vk.device);
-                    pass.unbindPool(vk);
-                    pool.destroy(vk);
-                    currentSlot = -1;
-                    dropPending();
-                    anchored = false;
-                    break;
-                default:
-                    break;
-            }
-        }
-        if (!state.windowReady) {
-            dropPending();
-            continue;
-        }
-        // Adopt the newest frame that is both fence-ready and nearly PTS-due
-        // (one vsync of lead so the scheduled present can hit the exact
-        // display time); discard everything older; keep the rest for later.
-        if (!pendingQ.empty() && pool.valid()) {
-            const int64_t now = nowNs();
-            const int64_t lead = 17000000; // ~one 60Hz vsync
-            int readyIdx = -1;
-            int64_t readyDue = 0;
-            for (int i = (int)pendingQ.size() - 1; i >= 0; --i) {
-                int64_t due = dueTime(pendingQ[i].msg.ptsNs, now);
-                if (due <= now + lead && fenceReady(pendingQ[i].fence)) {
-                    readyIdx = i;
-                    readyDue = due;
-                    break;
+        // Latest ready frame from the BufferQueue; older queued frames are
+        // discarded by acquireLatestImage itself (latest-wins, fences
+        // respected by the sync acquire).
+        AImage* image = nullptr;
+        if (AImageReader_acquireLatestImage(g_reader, &image) == AMEDIA_OK && image) {
+            AHardwareBuffer* ahb = nullptr;
+            if (AImage_getHardwareBuffer(image, &ahb) == AMEDIA_OK && ahb) {
+                if (!pool.headerValid) {
+                    int32_t w = 0, h = 0;
+                    AImage_getWidth(image, &w);
+                    AImage_getHeight(image, &h);
+                    vkr::proto::PoolDescMsg header{};
+                    header.width = (uint32_t)w & ~1u;
+                    header.height = (uint32_t)h & ~1u;
+                    header.format = vkr::proto::SharedFormat::NV12;
+                    header.matrix = h >= 720 ? vkr::proto::Matrix::BT709 : vkr::proto::Matrix::BT601;
+                    header.range = vkr::proto::Range::Limited;
+                    header.planeCount = 2;
+                    if (!pool.create(vk, header)) break;
+                }
+                uint32_t key = keyForBuffer(ahb);
+                bool ok = pool.find(key) != nullptr || pool.addSurfaceAHB(vk, key, ahb);
+                if (ok && !passBound) {
+                    ok = pass.bindPool(vk, pool);
+                    passBound = ok;
+                } else if (ok) {
+                    ok = pass.addSlot(vk, pool, key);
+                }
+                if (ok) {
+                    // Adopt: previous image retires behind this frame's fence.
+                    if (currentImage)
+                        frames[frameIndex % kFramesInFlight].retiring.push_back(currentImage);
+                    currentImage = image;
+                    currentSlot = (int64_t)key;
+                    ++adoptions;
+                    image = nullptr; // ownership moved to currentImage
                 }
             }
-            if (readyIdx >= 0) {
-                adoptFrame(pendingQ[readyIdx].msg);
-                currentDueNs = readyDue;
-                ++adoptions;
-                for (int i = 0; i <= readyIdx; ++i) {
-                    if (pendingQ.front().fence >= 0) close(pendingQ.front().fence);
-                    pendingQ.pop_front();
-                }
-            }
-        }
-        ++renders;
-        if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pending %zu) "
-                    "phase-ms pump=%.1f fence=%.1f acquire=%.1f submit=%.1f present=%.1f gap=%.1f",
-                    (unsigned long long)adoptions, (unsigned long long)renders, pendingQ.size(),
-                    renders ? tPump / 1e6 / renders : 0.0,
-                    renders ? tFence / 1e6 / renders : 0.0,
-                    renders ? tAcquire / 1e6 / renders : 0.0,
-                    renders ? tSubmit / 1e6 / renders : 0.0,
-                    renders ? tPresent / 1e6 / renders : 0.0,
-                    renders ? tLoop / 1e6 / renders : 0.0);
-            adoptions = renders = 0;
-            tFence = tAcquire = tSubmit = tPresent = tPump = tLoop = 0;
-            rateWindowStart = nowNs();
+            if (image) AImage_delete(image); // import failed: return the buffer
         }
 
-        // Render
         FrameSync& f = frames[frameIndex % kFramesInFlight];
         ++frameIndex;
-        int64_t tp0 = nowNs();
-        tPump += tp0 - loopStart;
         vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
-        int64_t tp1 = nowNs();
-        tFence += tp1 - tp0;
-        if (f.pendingConsumed) {
-            vkr::proto::FrameConsumedMsg fc{};
-            fc.readyValue = *f.pendingConsumed;
-            if (ch.connected()) ch.send(vkr::proto::MsgType::FrameConsumed, fc);
-            f.pendingConsumed.reset();
-        }
+        // Fence retired: every submission recorded before it is done; images
+        // parked on this frame can go back to the BufferQueue.
+        for (AImage* retired : f.retiring) AImage_delete(retired);
+        f.retiring.clear();
 
         uint32_t imageIndex = 0;
         VkResult ar = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, f.acquireSem,
                                             VK_NULL_HANDLE, &imageIndex);
-        int64_t tp2 = nowNs();
-        tAcquire += tp2 - tp1;
-        // SUBOPTIMAL is steady state here: we intentionally present with
-        // IDENTITY transform on a rotated panel (compositor rotates).
-        // Recreating on it rebuilt the swapchain EVERY frame (~25ms/frame).
         if (ar == VK_ERROR_OUT_OF_DATE_KHR) {
             vk.recreateSwapchain();
             continue;
@@ -427,7 +286,7 @@ void android_main(android_app* app) {
         dep.pImageMemoryBarriers = &toColor;
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
-        pass.record(f.cmd, pool, pool.valid() ? currentSlot : -1, vk.swapViews[imageIndex],
+        pass.record(f.cmd, pool, passBound ? currentSlot : -1, vk.swapViews[imageIndex],
                     vk.swapExtent, vk.queueFamily);
 
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -444,12 +303,6 @@ void android_main(android_app* app) {
         vkEndCommandBuffer(f.cmd);
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSemaphore signalSem = f.renderDoneSem;
-        if (pendingConsumedSignal) {
-            f.pendingConsumed = *pendingConsumedSignal;
-            lastConsumedSignal = *pendingConsumedSignal;
-            pendingConsumedSignal.reset();
-        }
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.waitSemaphoreCount = 1;
         si.pWaitSemaphores = &f.acquireSem;
@@ -457,10 +310,8 @@ void android_main(android_app* app) {
         si.commandBufferCount = 1;
         si.pCommandBuffers = &f.cmd;
         si.signalSemaphoreCount = 1;
-        si.pSignalSemaphores = &signalSem;
+        si.pSignalSemaphores = &f.renderDoneSem;
         if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) break;
-        int64_t tp3 = nowNs();
-        tSubmit += tp3 - tp2;
 
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;
@@ -468,38 +319,36 @@ void android_main(android_app* app) {
         pi.swapchainCount = 1;
         pi.pSwapchains = &vk.swapchain;
         pi.pImageIndices = &imageIndex;
-
-        // Schedule the present carrying NEW content for the frame's PTS
-        // display time - SurfaceFlinger then latches it on the correct vsync
-        // regardless of render-loop jitter (the observed 16/33ms present
-        // mix). Re-presents of unchanged content stay unscheduled.
-        VkPresentTimeGOOGLE presentTime{};
-        VkPresentTimesInfoGOOGLE timesInfo{VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE};
-        if (vk.hasDisplayTiming && contentChanged) {
-            presentTime.presentID = ++presentId;
-            presentTime.desiredPresentTime = currentDueNs > nowNs() ? (uint64_t)currentDueNs : 0;
-            timesInfo.swapchainCount = 1;
-            timesInfo.pTimes = &presentTime;
-            pi.pNext = &timesInfo;
-        }
-        contentChanged = false;
-
         VkResult pr = vkQueuePresentKHR(vk.queue, &pi);
-        lastLoopEnd = nowNs();
-        tPresent += lastLoopEnd - tp3;
         if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk.recreateSwapchain();
+
+        ++renders;
+        if (nowNs() - rateWindowStart > 5000000000ll) {
+            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers)",
+                    (unsigned long long)adoptions, (unsigned long long)renders,
+                    pool.slots.size());
+            adoptions = renders = 0;
+            rateWindowStart = nowNs();
+        }
     }
 
-    if (ch.connected()) ch.send(vkr::proto::MsgType::Bye);
+    {
+        std::lock_guard<std::mutex> lock(g_readerMutex);
+        g_readerWindow = nullptr;
+    }
     vkDeviceWaitIdle(vk.device);
     for (auto& f : frames) {
+        for (AImage* retired : f.retiring) AImage_delete(retired);
         vkDestroySemaphore(vk.device, f.acquireSem, nullptr);
         vkDestroySemaphore(vk.device, f.renderDoneSem, nullptr);
         vkDestroyFence(vk.device, f.inFlight, nullptr);
     }
+    if (currentImage) AImage_delete(currentImage);
     vkDestroyCommandPool(vk.device, cmdPool, nullptr);
     pass.destroy(vk);
     pool.destroy(vk);
+    if (g_reader) AImageReader_delete(g_reader);
+    g_reader = nullptr;
     vk.destroy();
 }
 
