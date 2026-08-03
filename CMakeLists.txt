@@ -47,9 +47,29 @@ FetchContent_Declare(glslang
     GIT_TAG vulkan-sdk-1.3.296.0)
 FetchContent_MakeAvailable(glslang)
 
-# --- FFmpeg ------------------------------------------------------------------
+# --- Media pipeline (M9: GStreamer everywhere) -------------------------------
 if(WIN32)
-    include(${CMAKE_SOURCE_DIR}/cmake/ffmpeg.cmake) # prebuilt BtbN download
+    # Official GStreamer MSVC runtime + development MSIs must be installed
+    # (https://gstreamer.freedesktop.org/download/). The devel MSI sets
+    # GSTREAMER_1_0_ROOT_MSVC_X86_64.
+    set(GST_ROOT "$ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64}")
+    if(NOT GST_ROOT)
+        set(GST_ROOT "C:/gstreamer/1.0/msvc_x86_64")
+    endif()
+    if(NOT EXISTS "${GST_ROOT}/lib/gstreamer-1.0.lib")
+        message(FATAL_ERROR "GStreamer MSVC (runtime + development) not found at "
+                            "'${GST_ROOT}'. Install both MSIs from "
+                            "https://gstreamer.freedesktop.org/download/ and re-run CMake.")
+    endif()
+    add_library(GStreamer::win INTERFACE IMPORTED)
+    target_include_directories(GStreamer::win INTERFACE
+        "${GST_ROOT}/include/gstreamer-1.0"
+        "${GST_ROOT}/include/glib-2.0"
+        "${GST_ROOT}/lib/glib-2.0/include")
+    target_link_directories(GStreamer::win INTERFACE "${GST_ROOT}/lib")
+    target_link_libraries(GStreamer::win INTERFACE
+        gstreamer-1.0.lib gstapp-1.0.lib gstvideo-1.0.lib gstd3d11-1.0.lib
+        gobject-2.0.lib glib-2.0.lib)
 else()
     find_package(PkgConfig REQUIRED)
     # M9: GStreamer end-to-end decode pipeline (rtspsrc -> decodebin3 -> va
@@ -69,10 +89,8 @@ target_include_directories(vkr_common PUBLIC common)
 add_executable(vkdecoder decoder/main.cpp)
 target_link_libraries(vkdecoder PRIVATE vkr_common)
 if(WIN32)
-    target_sources(vkdecoder PRIVATE decoder/d3d11va_decoder.cpp)
-    target_link_libraries(vkdecoder PRIVATE
-        FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil d3d11 dxgi)
-    vkr_copy_ffmpeg_dlls(vkdecoder)
+    target_sources(vkdecoder PRIVATE decoder/gst_d3d11_decoder.cpp)
+    target_link_libraries(vkdecoder PRIVATE GStreamer::win d3d11 dxgi)
 else()
     target_sources(vkdecoder PRIVATE decoder/gst_va_decoder.cpp)
     target_link_libraries(vkdecoder PRIVATE PkgConfig::GST PkgConfig::LIBVA)

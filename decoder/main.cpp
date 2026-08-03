@@ -3,8 +3,8 @@
 #include <string>
 
 #ifdef _WIN32
-#include "d3d11va_decoder.h"
-using PlatformDecoder = vkr::D3D11VADecoder;
+#include "gst_d3d11_decoder.h"
+using PlatformDecoder = vkr::GstD3D11Decoder;
 #else
 #include "gst_va_decoder.h"
 using PlatformDecoder = vkr::GstVaDecoder;
