@@ -10,6 +10,7 @@
 #ifdef __ANDROID__
 
 #include <android/asset_manager.h>
+#include <android/choreographer.h>
 #include <android/hardware_buffer.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
@@ -153,9 +154,14 @@ void android_main(android_app* app) {
     int64_t lastDialNs = 0;
     ANativeWindow* vkWindow = app->window; // the window vk's surface was built on
 
+    int64_t currentDueNs = 0;    // display time the adopted frame is scheduled for
+    bool contentChanged = false; // adopted since the last present
+    uint32_t presentId = 0;
+
     auto adoptFrame = [&](const vkr::proto::FrameReadyMsg& fr) {
         currentSlot = (int64_t)fr.slot;
         currentReady = fr.readyValue;
+        contentChanged = true;
         if (currentReady > 0 && currentReady - 1 > lastConsumedSignal)
             pendingConsumedSignal = currentReady - 1;
     };
@@ -183,6 +189,9 @@ void android_main(android_app* app) {
     };
     uint64_t adoptions = 0, renders = 0;
     int64_t rateWindowStart = nowNs();
+    int64_t tFence = 0, tAcquire = 0, tSubmit = 0, tPresent = 0; // phase totals, ns
+    int64_t tPump = 0, tLoop = 0;
+    int64_t lastLoopEnd = nowNs();
 
     // PTS pacing: present each frame at its stream interval (anchored to the
     // local clock on the first frame) instead of "whenever adoption lands" -
@@ -206,14 +215,34 @@ void android_main(android_app* app) {
         return due;
     };
 
+    // Vsync pacing: render exactly once per display refresh. Without it the
+    // CPU loop free-runs (Mali throttles GPU-side only; measured 240Hz of
+    // duplicate presents) and content frames land on arbitrary vsyncs.
+    AChoreographer* choreographer = AChoreographer_getInstance();
+    bool frameDue = false;
+
     while (!state.destroyed) {
-        // Android event pump
-        android_poll_source* source = nullptr;
-        int events = 0;
-        while (ALooper_pollOnce(state.windowReady ? 0 : 100, nullptr, &events,
-                                (void**)&source) >= 0 &&
-               source)
-            source->process(app, source);
+        int64_t loopStart = nowNs();
+        tLoop += loopStart - lastLoopEnd; // time since previous iteration end
+
+        // Pump events until the next vsync tick (the choreographer callback
+        // wakes the looper), or on a slow timer while there is no window.
+        if (state.windowReady && choreographer) {
+            frameDue = false;
+            AChoreographer_postFrameCallback64(
+                choreographer, [](int64_t, void* data) { *(bool*)data = true; }, &frameDue);
+            while (!frameDue && !state.destroyed) {
+                android_poll_source* source = nullptr;
+                int events = 0;
+                if (ALooper_pollOnce(50, nullptr, &events, (void**)&source) >= 0 && source)
+                    source->process(app, source);
+            }
+        } else {
+            android_poll_source* source = nullptr;
+            int events = 0;
+            while (ALooper_pollOnce(100, nullptr, &events, (void**)&source) >= 0 && source)
+                source->process(app, source);
+        }
         if (state.destroyed) break;
 
         // The activity can come back with a new ANativeWindow (screen off/on,
@@ -309,19 +338,25 @@ void android_main(android_app* app) {
             dropPending();
             continue;
         }
-        // Adopt the newest frame that is both fence-ready and PTS-due;
-        // discard everything older; keep the rest for later iterations.
+        // Adopt the newest frame that is both fence-ready and nearly PTS-due
+        // (one vsync of lead so the scheduled present can hit the exact
+        // display time); discard everything older; keep the rest for later.
         if (!pendingQ.empty() && pool.valid()) {
             const int64_t now = nowNs();
+            const int64_t lead = 17000000; // ~one 60Hz vsync
             int readyIdx = -1;
+            int64_t readyDue = 0;
             for (int i = (int)pendingQ.size() - 1; i >= 0; --i) {
-                if (dueTime(pendingQ[i].msg.ptsNs, now) <= now && fenceReady(pendingQ[i].fence)) {
+                int64_t due = dueTime(pendingQ[i].msg.ptsNs, now);
+                if (due <= now + lead && fenceReady(pendingQ[i].fence)) {
                     readyIdx = i;
+                    readyDue = due;
                     break;
                 }
             }
             if (readyIdx >= 0) {
                 adoptFrame(pendingQ[readyIdx].msg);
+                currentDueNs = readyDue;
                 ++adoptions;
                 for (int i = 0; i <= readyIdx; ++i) {
                     if (pendingQ.front().fence >= 0) close(pendingQ.front().fence);
@@ -331,16 +366,28 @@ void android_main(android_app* app) {
         }
         ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pending %zu)",
-                    (unsigned long long)adoptions, (unsigned long long)renders, pendingQ.size());
+            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pending %zu) "
+                    "phase-ms pump=%.1f fence=%.1f acquire=%.1f submit=%.1f present=%.1f gap=%.1f",
+                    (unsigned long long)adoptions, (unsigned long long)renders, pendingQ.size(),
+                    renders ? tPump / 1e6 / renders : 0.0,
+                    renders ? tFence / 1e6 / renders : 0.0,
+                    renders ? tAcquire / 1e6 / renders : 0.0,
+                    renders ? tSubmit / 1e6 / renders : 0.0,
+                    renders ? tPresent / 1e6 / renders : 0.0,
+                    renders ? tLoop / 1e6 / renders : 0.0);
             adoptions = renders = 0;
+            tFence = tAcquire = tSubmit = tPresent = tPump = tLoop = 0;
             rateWindowStart = nowNs();
         }
 
         // Render
         FrameSync& f = frames[frameIndex % kFramesInFlight];
         ++frameIndex;
+        int64_t tp0 = nowNs();
+        tPump += tp0 - loopStart;
         vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
+        int64_t tp1 = nowNs();
+        tFence += tp1 - tp0;
         if (f.pendingConsumed) {
             vkr::proto::FrameConsumedMsg fc{};
             fc.readyValue = *f.pendingConsumed;
@@ -351,11 +398,16 @@ void android_main(android_app* app) {
         uint32_t imageIndex = 0;
         VkResult ar = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, f.acquireSem,
                                             VK_NULL_HANDLE, &imageIndex);
-        if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
+        int64_t tp2 = nowNs();
+        tAcquire += tp2 - tp1;
+        // SUBOPTIMAL is steady state here: we intentionally present with
+        // IDENTITY transform on a rotated panel (compositor rotates).
+        // Recreating on it rebuilt the swapchain EVERY frame (~25ms/frame).
+        if (ar == VK_ERROR_OUT_OF_DATE_KHR) {
             vk.recreateSwapchain();
             continue;
         }
-        if (ar != VK_SUCCESS) continue;
+        if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) continue;
         vkResetFences(vk.device, 1, &f.inFlight);
 
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -407,6 +459,8 @@ void android_main(android_app* app) {
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &signalSem;
         if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) break;
+        int64_t tp3 = nowNs();
+        tSubmit += tp3 - tp2;
 
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;
@@ -414,8 +468,26 @@ void android_main(android_app* app) {
         pi.swapchainCount = 1;
         pi.pSwapchains = &vk.swapchain;
         pi.pImageIndices = &imageIndex;
+
+        // Schedule the present carrying NEW content for the frame's PTS
+        // display time - SurfaceFlinger then latches it on the correct vsync
+        // regardless of render-loop jitter (the observed 16/33ms present
+        // mix). Re-presents of unchanged content stay unscheduled.
+        VkPresentTimeGOOGLE presentTime{};
+        VkPresentTimesInfoGOOGLE timesInfo{VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE};
+        if (vk.hasDisplayTiming && contentChanged) {
+            presentTime.presentID = ++presentId;
+            presentTime.desiredPresentTime = currentDueNs > nowNs() ? (uint64_t)currentDueNs : 0;
+            timesInfo.swapchainCount = 1;
+            timesInfo.pTimes = &presentTime;
+            pi.pNext = &timesInfo;
+        }
+        contentChanged = false;
+
         VkResult pr = vkQueuePresentKHR(vk.queue, &pi);
-        if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) vk.recreateSwapchain();
+        lastLoopEnd = nowNs();
+        tPresent += lastLoopEnd - tp3;
+        if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk.recreateSwapchain();
     }
 
     if (ch.connected()) ch.send(vkr::proto::MsgType::Bye);

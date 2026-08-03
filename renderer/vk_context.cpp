@@ -210,6 +210,22 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
     std::vector<const char*> devExts(kDeviceExtensions,
                                      kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(char*));
     if (!headless) devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+#ifdef __ANDROID__
+    // Optional: scheduled presents for exact video cadence.
+    {
+        uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties(phys, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> props(count);
+        vkEnumerateDeviceExtensionProperties(phys, nullptr, &count, props.data());
+        for (const auto& p : props) {
+            if (!strcmp(p.extensionName, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME)) {
+                devExts.push_back(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+                hasDisplayTiming = true;
+                VKR_LOG("renderer: VK_GOOGLE_display_timing available");
+            }
+        }
+    }
+#endif
 
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &feat2;
@@ -313,7 +329,13 @@ bool VkContext::createSwapchain() {
     for (VkPresentModeKHR m : modes)
         if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
 
+#ifdef __ANDROID__
+    // One extra image over desktop: BufferQueue-backed swapchains stall in
+    // acquire when SurfaceFlinger holds buffers across a latch.
+    uint32_t imageCount = caps.minImageCount + 2;
+#else
     uint32_t imageCount = caps.minImageCount + 1;
+#endif
     if (caps.maxImageCount && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
 
     VkSwapchainCreateInfoKHR sci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};

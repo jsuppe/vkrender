@@ -42,6 +42,9 @@ public:
 
     uint8_t deviceLUID[8] = {};
     bool luidValid = false;
+    // VK_GOOGLE_display_timing available (Android): presents can be scheduled
+    // for specific display times, giving exact video cadence.
+    bool hasDisplayTiming = false;
 
     // Window mode: swapchain state. Headless mode: swapImages/swapViews hold
     // the single offscreen target, swapFormat/swapExtent describe it.

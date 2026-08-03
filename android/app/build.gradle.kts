@@ -26,6 +26,14 @@ android {
             version = "3.22.1"
         }
     }
+    defaultConfig.externalNativeBuild {
+        cmake {
+            // Optimized native code even in the debug APK: the -O0 render
+            // loop misses vsync deadlines on slower devices (measured ~37Hz
+            // present rate on a 60Hz panel -> judder).
+            arguments += "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+        }
+    }
 
     buildTypes {
         release {
