@@ -31,7 +31,9 @@ class ExternalVideoPool {
 public:
     struct Slot {
         VkImage image = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
+        // One allocation on Windows / single-object dma-bufs; one per plane
+        // for disjoint multi-object dma-bufs (nvidia-vaapi-driver).
+        VkDeviceMemory memory[4] = {};
         VkImageView view = VK_NULL_HANDLE;
     };
 

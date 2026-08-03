@@ -39,3 +39,26 @@ jobs:
         with:
           name: vkrender-win64
           path: dist
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libva-dev libdrm-dev \
+            xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 4
+
+      # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

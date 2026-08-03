@@ -193,11 +193,11 @@ bool importWin32Slot(VkContext& vk, VkFormat format, uint32_t width, uint32_t he
     alloc.pNext = &dedicatedInfo;
     alloc.allocationSize = req.memoryRequirements.size;
     alloc.memoryTypeIndex = (uint32_t)memType;
-    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot->memory) != VK_SUCCESS) {
+    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot->memory[0]) != VK_SUCCESS) {
         VKR_ERR("vkAllocateMemory(import D3D11 texture) failed");
         return false;
     }
-    if (vkBindImageMemory(vk.device, slot->image, slot->memory, 0) != VK_SUCCESS) {
+    if (vkBindImageMemory(vk.device, slot->image, slot->memory[0], 0) != VK_SUCCESS) {
         VKR_ERR("vkBindImageMemory failed");
         return false;
     }
@@ -270,10 +270,10 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
         closeAll();
         return true;
     }
-    if (desc.numObjects != 1 || fdCount != 1) {
-        VKR_ERR("unsupported dma-buf topology: %u objects / %zu fds (only 1 supported; "
-                "use VA_EXPORT_SURFACE_COMPOSED_LAYERS)",
-                desc.numObjects, fdCount);
+    if (desc.numObjects == 0 || desc.numObjects > 4 || fdCount != desc.numObjects ||
+        desc.numPlanes == 0 || desc.numPlanes > 4) {
+        VKR_ERR("bad dma-buf topology: %u objects / %zu fds / %u planes", desc.numObjects,
+                fdCount, desc.numPlanes);
         closeAll();
         return false;
     }
@@ -283,10 +283,24 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
         return false;
     }
 
+    // Multi-object exports (one buffer per plane, e.g. nvidia-vaapi-driver)
+    // need a DISJOINT image with per-plane memory binds; single-object
+    // exports (Mesa) bind one allocation for the whole image.
+    const bool disjoint = desc.numObjects > 1;
+
     Slot slot;
+    auto fail = [&](const char* what) {
+        VKR_ERR("%s (surface %u, modifier=0x%llx)", what, desc.slotKey,
+                (unsigned long long)desc.drmModifier);
+        if (slot.view) vkDestroyImageView(vk.device, slot.view, nullptr);
+        if (slot.image) vkDestroyImage(vk.device, slot.image, nullptr);
+        for (auto& m : slot.memory)
+            if (m) vkFreeMemory(vk.device, m, nullptr);
+        return false;
+    };
 
     VkSubresourceLayout planeLayouts[4]{};
-    for (uint32_t p = 0; p < desc.numPlanes && p < 4; ++p) {
+    for (uint32_t p = 0; p < desc.numPlanes; ++p) {
         planeLayouts[p].offset = desc.plane[p].offset;
         planeLayouts[p].rowPitch = desc.plane[p].pitch;
     }
@@ -302,6 +316,7 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
 
     VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ici.pNext = &extImg;
+    ici.flags = disjoint ? VK_IMAGE_CREATE_DISJOINT_BIT : 0;
     ici.imageType = VK_IMAGE_TYPE_2D;
     ici.format = format;
     ici.extent = {width, height, 1};
@@ -312,64 +327,118 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
     ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (vkCreateImage(vk.device, &ici, nullptr, &slot.image) != VK_SUCCESS) {
-        VKR_ERR("vkCreateImage(dma-buf, modifier=0x%llx) failed - driver may not support "
-                "this modifier for sampling",
-                (unsigned long long)desc.drmModifier);
         closeAll();
-        return false;
+        return fail("vkCreateImage(dma-buf) failed - driver may not support this "
+                    "modifier for sampling");
     }
 
-    VkMemoryFdPropertiesKHR fdProps{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
-    if (vkGetMemoryFdPropertiesKHR(vk.device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-                                   fds[0], &fdProps) != VK_SUCCESS) {
-        VKR_ERR("vkGetMemoryFdPropertiesKHR failed");
-        vkDestroyImage(vk.device, slot.image, nullptr);
-        closeAll();
-        return false;
-    }
-    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
-    VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
-    req.pNext = &dedicated;
-    VkImageMemoryRequirementsInfo2 reqInfo{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
-    reqInfo.image = slot.image;
-    vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
+    if (!disjoint) {
+        VkMemoryFdPropertiesKHR fdProps{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
+        if (vkGetMemoryFdPropertiesKHR(vk.device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                       fds[0], &fdProps) != VK_SUCCESS) {
+            closeAll();
+            return fail("vkGetMemoryFdPropertiesKHR failed");
+        }
+        VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+        VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+        req.pNext = &dedicated;
+        VkImageMemoryRequirementsInfo2 reqInfo{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+        reqInfo.image = slot.image;
+        vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
 
-    int memType = pickMemoryType(vk.phys,
-                                 req.memoryRequirements.memoryTypeBits & fdProps.memoryTypeBits);
-    if (memType < 0) {
-        VKR_ERR("no compatible memory type for dma-buf import");
-        vkDestroyImage(vk.device, slot.image, nullptr);
-        closeAll();
-        return false;
+        int memType = pickMemoryType(
+            vk.phys, req.memoryRequirements.memoryTypeBits & fdProps.memoryTypeBits);
+        if (memType < 0) {
+            closeAll();
+            return fail("no compatible memory type for dma-buf import");
+        }
+        VkImportMemoryFdInfoKHR importInfo{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
+        importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+        importInfo.fd = fds[0];
+        VkMemoryDedicatedAllocateInfo dedicatedInfo{
+            VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+        dedicatedInfo.pNext = &importInfo;
+        dedicatedInfo.image = slot.image;
+        VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        alloc.pNext = dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation
+                          ? (void*)&dedicatedInfo
+                          : (void*)&importInfo;
+        alloc.allocationSize =
+            desc.objectSize[0] ? desc.objectSize[0] : req.memoryRequirements.size;
+        alloc.memoryTypeIndex = (uint32_t)memType;
+        if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory[0]) != VK_SUCCESS) {
+            closeAll();
+            return fail("vkAllocateMemory(import dma-buf) failed");
+        }
+        // Vulkan owns the fd now.
+        if (vkBindImageMemory(vk.device, slot.image, slot.memory[0], 0) != VK_SUCCESS)
+            return fail("vkBindImageMemory failed");
+    } else {
+        // One import per buffer object, one bind per plane.
+        static const VkImageAspectFlagBits kPlaneAspects[4] = {
+            VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT, VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT,
+            VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT, VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT};
+
+        for (uint32_t o = 0; o < desc.numObjects; ++o) {
+            VkMemoryFdPropertiesKHR fdProps{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
+            if (vkGetMemoryFdPropertiesKHR(vk.device,
+                                           VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                           fds[o], &fdProps) != VK_SUCCESS) {
+                for (uint32_t r = o; r < fdCount; ++r) ::close(fds[r]);
+                return fail("vkGetMemoryFdPropertiesKHR failed");
+            }
+            // Plane requirements: use the first plane backed by this object.
+            uint32_t planeForObject = 0;
+            for (uint32_t p = 0; p < desc.numPlanes; ++p)
+                if (desc.planeObject[p] == o) { planeForObject = p; break; }
+            VkImagePlaneMemoryRequirementsInfo planeInfo{
+                VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO};
+            planeInfo.planeAspect = kPlaneAspects[planeForObject];
+            VkImageMemoryRequirementsInfo2 reqInfo{
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+            reqInfo.pNext = &planeInfo;
+            reqInfo.image = slot.image;
+            VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+            vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
+
+            int memType = pickMemoryType(
+                vk.phys, req.memoryRequirements.memoryTypeBits & fdProps.memoryTypeBits);
+            if (memType < 0) {
+                for (uint32_t r = o; r < fdCount; ++r) ::close(fds[r]);
+                return fail("no compatible memory type for dma-buf plane import");
+            }
+            VkImportMemoryFdInfoKHR importInfo{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
+            importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+            importInfo.fd = fds[o];
+            VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            alloc.pNext = &importInfo;
+            alloc.allocationSize =
+                desc.objectSize[o] ? desc.objectSize[o] : req.memoryRequirements.size;
+            alloc.memoryTypeIndex = (uint32_t)memType;
+            if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory[o]) != VK_SUCCESS) {
+                for (uint32_t r = o; r < fdCount; ++r) ::close(fds[r]);
+                return fail("vkAllocateMemory(import dma-buf plane) failed");
+            }
+            // fd owned by Vulkan from here on.
+        }
+
+        VkBindImagePlaneMemoryInfo planeBind[4]{};
+        VkBindImageMemoryInfo binds[4]{};
+        for (uint32_t p = 0; p < desc.numPlanes; ++p) {
+            planeBind[p] = {VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO};
+            planeBind[p].planeAspect = kPlaneAspects[p];
+            binds[p] = {VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO};
+            binds[p].pNext = &planeBind[p];
+            binds[p].image = slot.image;
+            binds[p].memory = slot.memory[desc.planeObject[p]];
+            binds[p].memoryOffset = 0; // plane offset lives in the modifier layout
+        }
+        if (vkBindImageMemory2(vk.device, desc.numPlanes, binds) != VK_SUCCESS)
+            return fail("vkBindImageMemory2(disjoint planes) failed");
     }
 
-    // Import: Vulkan takes ownership of the fd on success (do NOT close it).
-    VkImportMemoryFdInfoKHR importInfo{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
-    importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-    importInfo.fd = fds[0];
-    VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
-    dedicatedInfo.pNext = &importInfo;
-    dedicatedInfo.image = slot.image;
-
-    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    alloc.pNext = dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation
-                      ? (void*)&dedicatedInfo
-                      : (void*)&importInfo;
-    alloc.allocationSize = desc.objectSize[0] ? desc.objectSize[0] : req.memoryRequirements.size;
-    alloc.memoryTypeIndex = (uint32_t)memType;
-    if (vkAllocateMemory(vk.device, &alloc, nullptr, &slot.memory) != VK_SUCCESS) {
-        VKR_ERR("vkAllocateMemory(import dma-buf) failed");
-        vkDestroyImage(vk.device, slot.image, nullptr);
-        closeAll();
-        return false;
-    }
-    if (vkBindImageMemory(vk.device, slot.image, slot.memory, 0) != VK_SUCCESS ||
-        !makeView(vk, slot.image, format, conversion, &slot.view)) {
-        VKR_ERR("bind/view failed for imported dma-buf surface");
-        vkDestroyImage(vk.device, slot.image, nullptr);
-        vkFreeMemory(vk.device, slot.memory, nullptr);
-        return false;
-    }
+    if (!makeView(vk, slot.image, format, conversion, &slot.view))
+        return fail("view creation failed for imported dma-buf surface");
 
     slots.emplace(desc.slotKey, slot);
     VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx (%zu total, zero-copy)",
@@ -382,7 +451,8 @@ void ExternalVideoPool::destroy(VkContext& vk) {
     for (auto& [key, s] : slots) {
         if (s.view) vkDestroyImageView(vk.device, s.view, nullptr);
         if (s.image) vkDestroyImage(vk.device, s.image, nullptr);
-        if (s.memory) vkFreeMemory(vk.device, s.memory, nullptr);
+        for (auto& m : s.memory)
+            if (m) vkFreeMemory(vk.device, m, nullptr);
     }
     slots.clear();
     if (conversion) vkDestroySamplerYcbcrConversion(vk.device, conversion, nullptr);

@@ -176,10 +176,15 @@ bool VAAPIDecoder::backoffWait(IpcChannel& ch, uint32_t ms) {
 bool VAAPIDecoder::announceSurface(VASurfaceID sid, IpcChannel& ch) {
     if (announced_.count(sid)) return true;
 
+    // SEPARATE_LAYERS: one layer per plane, each referencing a buffer object.
+    // Drivers differ: Mesa typically packs both NV12 planes into one object;
+    // nvidia-vaapi-driver exports one object per plane. (COMPOSED_LAYERS is
+    // rejected outright by nvidia-vaapi-driver.) The protocol carries the
+    // plane->object mapping so the renderer can bind either topology.
     VADRMPRIMESurfaceDescriptor prime{};
     VAStatus vs = vaExportSurfaceHandle(
         display_, sid, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
-        VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_COMPOSED_LAYERS, &prime);
+        VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &prime);
     if (vs != VA_STATUS_SUCCESS) {
         VKR_ERR("vaExportSurfaceHandle(surface %u) failed: %s (driver may not support "
                 "DRM_PRIME_2 export)",
@@ -187,28 +192,33 @@ bool VAAPIDecoder::announceSurface(VASurfaceID sid, IpcChannel& ch) {
         return false;
     }
 
-    // COMPOSED_LAYERS: one layer describing all planes. The renderer only
-    // supports a single buffer object today (the common case for NV12).
     proto::SurfaceDescMsg desc{};
     desc.slotKey = (uint32_t)sid;
     desc.numObjects = prime.num_objects;
     desc.drmModifier = prime.objects[0].drm_format_modifier;
-    const auto& layer = prime.layers[0];
-    desc.numPlanes = layer.num_planes;
-    for (uint32_t p = 0; p < layer.num_planes && p < 4; ++p) {
-        desc.plane[p].offset = layer.offset[p];
-        desc.plane[p].pitch = layer.pitch[p];
+    uint32_t planeCount = 0;
+    for (uint32_t l = 0; l < prime.num_layers && planeCount < 4; ++l) {
+        for (uint32_t p = 0; p < prime.layers[l].num_planes && planeCount < 4; ++p) {
+            desc.plane[planeCount].offset = prime.layers[l].offset[p];
+            desc.plane[planeCount].pitch = prime.layers[l].pitch[p];
+            desc.planeObject[planeCount] = prime.layers[l].object_index[p];
+            ++planeCount;
+        }
     }
+    desc.numPlanes = planeCount;
     int fds[4] = {-1, -1, -1, -1};
     for (uint32_t o = 0; o < prime.num_objects && o < 4; ++o) {
         fds[o] = prime.objects[o].fd;
         desc.objectSize[o] = prime.objects[o].size;
+        if (prime.objects[o].drm_format_modifier != desc.drmModifier)
+            VKR_WARN("surface %u: object %u has a different modifier (0x%llx vs 0x%llx)", sid, o,
+                     (unsigned long long)prime.objects[o].drm_format_modifier,
+                     (unsigned long long)desc.drmModifier);
     }
 
     bool ok = true;
-    if (prime.num_objects != 1) {
-        VKR_ERR("surface %u exports %u buffer objects; only 1 supported", sid,
-                prime.num_objects);
+    if (prime.num_objects > 4) {
+        VKR_ERR("surface %u exports %u buffer objects; max 4 supported", sid, prime.num_objects);
         ok = false;
     } else if (prime.fourcc != VA_FOURCC_NV12) {
         VKR_ERR("surface fourcc %08x is not NV12 (10-bit Linux path not implemented yet)",

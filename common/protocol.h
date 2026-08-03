@@ -104,12 +104,13 @@ struct StreamStatusMsg {
 // it by slotKey. Only numObjects == 1 (all planes in one buffer object) is
 // currently supported by the renderer.
 struct SurfaceDescMsg {
-    uint32_t slotKey;     // stable surface identity (VAAPI: VASurfaceID)
-    uint32_t numPlanes;   // 2 for NV12
-    uint32_t numObjects;  // == count of fds attached to this message
+    uint32_t slotKey;       // stable surface identity (VAAPI: VASurfaceID)
+    uint32_t numPlanes;     // 2 for NV12
+    uint32_t numObjects;    // == count of fds attached to this message
     uint32_t _pad;
-    uint64_t drmModifier; // DRM format modifier of the buffer object(s)
-    PlaneLayout plane[4];
+    uint64_t drmModifier;   // DRM format modifier of the buffer object(s)
+    PlaneLayout plane[4];   // per plane; offset is within its buffer object
+    uint32_t planeObject[4]; // which attached fd backs each plane
     uint64_t objectSize[4];
 };
 
