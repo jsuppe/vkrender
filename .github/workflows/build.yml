@@ -21,6 +21,27 @@ jobs:
 
       # No pinned generator: the runner image ships whichever Visual Studio
       # is current, and CMake's default picks it up.
+      - name: Cache GStreamer MSIs
+        id: gst-cache
+        uses: actions/cache@v4
+        with:
+          path: gst-msi
+          key: gstreamer-msvc-1.26.11
+
+      - name: Download GStreamer MSIs
+        if: steps.gst-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory gst-msi | Out-Null
+          curl.exe -sL -o gst-msi/runtime.msi https://gstreamer.freedesktop.org/data/pkg/windows/1.26.11/msvc/gstreamer-1.0-msvc-x86_64-1.26.11.msi
+          curl.exe -sL -o gst-msi/devel.msi https://gstreamer.freedesktop.org/data/pkg/windows/1.26.11/msvc/gstreamer-1.0-devel-msvc-x86_64-1.26.11.msi
+
+      - name: Install GStreamer
+        shell: pwsh
+        run: |
+          Start-Process msiexec -ArgumentList '/i','gst-msi/runtime.msi','/qn','/norestart','ADDLOCAL=ALL' -Wait
+          Start-Process msiexec -ArgumentList '/i','gst-msi/devel.msi','/qn','/norestart','ADDLOCAL=ALL' -Wait
+
       - name: Configure
         run: cmake -S . -B build -A x64
 

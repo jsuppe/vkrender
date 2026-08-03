@@ -119,6 +119,30 @@ Surface producer (camera, other apps with permission gating) can feed it.
 Details: [docs/ANDROID.md](docs/ANDROID.md). Closed
 [#7](https://github.com/jsuppe/vkrender/issues/7).
 
+## M9 — GStreamer decode pipelines (in progress, 2026-08-03)
+
+Replacing FFmpeg with GStreamer end-to-end (motivation: team familiarity).
+
+- [x] **Linux**: `rtspsrc → decodebin3 → vah264/265dec`, appsink pinned to
+      `memory:VAMemory`, per-buffer `VASurfaceID` via gstreamer-va-1.0 +
+      the M6-verified dma-buf export. Zero-copy negotiates on Mesa/iHD
+      (Intel/AMD); the NVIDIA shim only offers sysmem caps (decode proven on
+      melchior, zero-copy needs Intel/AMD hardware). Hardware-agnostic
+      fallback for VMs tracked in [#8](https://github.com/jsuppe/vkrender/issues/8).
+- [x] **Windows**: `rtspsrc → decodebin3 → d3d11 decoders` on our own D3D11
+      device (GstContext sharing), appsink `memory:D3D11Memory` (NV12/P010),
+      unchanged VideoProcessor→shared-pool→fence→IPC path. **Verified
+      end-to-end on the RTX 5090**: 30 fps exact, correct colors. Requires
+      the GStreamer MSVC runtime+devel MSIs (CMake reports clearly; CI
+      installs silently).
+- [ ] **Android**: swap the transport/demux layer to GStreamer prebuilts
+      (`rtspsrc → depay → parse → appsink`) feeding the M8
+      MediaCodec-into-renderer-Surface path (decode element stays platform
+      MediaCodec: `amcvideodec` cannot target a foreign AImageReader surface
+      without an extra GL copy).
+- FFmpeg remains only as: the Android demux (until the above), and the
+  desktop test-stream publisher CLI (dev tooling, not product).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

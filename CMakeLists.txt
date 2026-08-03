@@ -53,9 +53,12 @@ if(WIN32)
     # (https://gstreamer.freedesktop.org/download/). The devel MSI sets
     # GSTREAMER_1_0_ROOT_MSVC_X86_64.
     set(GST_ROOT "$ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64}")
-    if(NOT GST_ROOT)
-        set(GST_ROOT "C:/gstreamer/1.0/msvc_x86_64")
-    endif()
+    foreach(_cand "C:/gstreamer/1.0/msvc_x86_64"
+                  "C:/Program Files/gstreamer/1.0/msvc_x86_64")
+        if(NOT GST_ROOT AND EXISTS "${_cand}/lib/gstreamer-1.0.lib")
+            set(GST_ROOT "${_cand}")
+        endif()
+    endforeach()
     if(NOT EXISTS "${GST_ROOT}/lib/gstreamer-1.0.lib")
         message(FATAL_ERROR "GStreamer MSVC (runtime + development) not found at "
                             "'${GST_ROOT}'. Install both MSIs from "
@@ -65,7 +68,8 @@ if(WIN32)
     target_include_directories(GStreamer::win INTERFACE
         "${GST_ROOT}/include/gstreamer-1.0"
         "${GST_ROOT}/include/glib-2.0"
-        "${GST_ROOT}/lib/glib-2.0/include")
+        "${GST_ROOT}/lib/glib-2.0/include"
+        "${GST_ROOT}/lib/gstreamer-1.0/include") # generated per-arch headers
     target_link_directories(GStreamer::win INTERFACE "${GST_ROOT}/lib")
     target_link_libraries(GStreamer::win INTERFACE
         gstreamer-1.0.lib gstapp-1.0.lib gstvideo-1.0.lib gstd3d11-1.0.lib
