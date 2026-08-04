@@ -181,9 +181,13 @@ UID) gets its own `AImageReader`, up to six streams — one per cube face
 face; barriers cover the unique slots).
 
 - Client packages need zero code changes: same AIDL, same
-  `acquireInputSurface()` — the per-UID keying is server-side. A second
-  decoder flavor (`dev.vkrender.decoder2`) exists purely to demo two client
-  apps from one codebase.
+  `acquireInputSurface()` — the per-UID keying is server-side. Six decoder
+  flavors (`dev.vkrender.decoder` + `decoder2..6`) build from one codebase
+  to demo a full cube: **verified all six faces live simultaneously** on the
+  TCL tablet (testsrc2, SMPTE bars, mandelbrot, gradients, rgbtestsrc,
+  testsrc — ~870 adoptions/5 s ≈ 6 × 30 fps, 101 imported slots, presents
+  locked at 60 Hz; `kMaxSurfaces` raised to 128 to hold six hardware codec
+  buffer pools).
 - Stream lifecycle: client death freezes its face on the last frame (other
   streams unaffected); on restart the client releases-then-reacquires so
   the renderer frees the stale stream's imported slots (bounded pool across
