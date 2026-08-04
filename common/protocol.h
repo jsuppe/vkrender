@@ -12,8 +12,9 @@ namespace vkr::proto {
 
 constexpr uint32_t kProtocolMagic = 0x31524B56; // "VKR1" little-endian
 constexpr uint32_t kMaxPoolSize = 8;   // Windows: fixed pool, handles in PoolDesc
-constexpr uint32_t kMaxSurfaces = 32;  // Linux: dynamic SurfaceDesc announcements
-                                       // (VAAPI decoder pools can exceed 8 surfaces)
+constexpr uint32_t kMaxSurfaces = 64;  // dynamic surface announcements (VAAPI pools
+                                       // exceed 8; Android M11 composites up to 6
+                                       // streams x ~19 hardware codec buffers)
 
 enum class MsgType : uint32_t {
     Hello = 1,         // renderer -> decoder: pid + preferred adapter LUID

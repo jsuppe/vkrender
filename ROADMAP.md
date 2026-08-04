@@ -173,6 +173,27 @@ target is Android):
   zero-copy pool, hardware codec) and the API 36 emulator. CI builds both
   APKs.
 
+## M11 — Multi-producer compositing (done, 2026-08-04)
+
+The renderer service becomes a real compositor: each client app (Binder
+UID) gets its own `AImageReader`, up to six streams — one per cube face
+(fewer streams cycle across faces; `recordCube` binds a descriptor set per
+face; barriers cover the unique slots).
+
+- Client packages need zero code changes: same AIDL, same
+  `acquireInputSurface()` — the per-UID keying is server-side. A second
+  decoder flavor (`dev.vkrender.decoder2`) exists purely to demo two client
+  apps from one codebase.
+- Stream lifecycle: client death freezes its face on the last frame (other
+  streams unaffected); on restart the client releases-then-reacquires so
+  the renderer frees the stale stream's imported slots (bounded pool across
+  restarts — without it each codec restart leaked ~14 slot imports toward
+  the `kMaxSurfaces=64` cap). `ExternalVideoPool::removeSlot` +
+  freeable descriptor sets make per-stream teardown possible.
+- Verified on the TCL tablet: two client APKs streaming simultaneously
+  (testsrc2 + SMPTE bars on adjacent faces), 300 adoptions/5 s = 2 × 30 fps
+  exact, 27-28 slot imports stable across client restarts.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

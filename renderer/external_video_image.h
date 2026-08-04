@@ -55,6 +55,12 @@ public:
     bool addSurfaceAHB(VkContext& vk, uint32_t key, struct AHardwareBuffer* buffer);
 #endif
 
+    // Destroys one slot's Vulkan resources (caller must ensure no GPU work
+    // references it - e.g. after vkDeviceWaitIdle). Needed when a producer
+    // stream goes away: its AHardwareBuffers are freed and their addresses
+    // (our slot keys) can be reused by a later allocation.
+    void removeSlot(VkContext& vk, uint32_t key);
+
     void destroy(VkContext& vk);
 
     bool valid() const { return headerValid; }

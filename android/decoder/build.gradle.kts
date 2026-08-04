@@ -18,6 +18,21 @@ android {
         }
     }
 
+    // Two installable client packages from the same sources: the renderer
+    // composites one stream per client app (Binder UID), so demonstrating
+    // multi-stream needs at least two distinct packages (M11).
+    flavorDimensions += "instance"
+    productFlavors {
+        create("primary") {
+            dimension = "instance"
+            // keeps applicationId dev.vkrender.decoder
+        }
+        create("second") {
+            dimension = "instance"
+            applicationId = "dev.vkrender.decoder2"
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

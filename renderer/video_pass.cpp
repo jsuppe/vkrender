@@ -176,6 +176,8 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                   proto::kMaxSurfaces * 2};
     VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    // Individual frees: slots come and go with producer streams (M11).
+    dpci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     dpci.maxSets = proto::kMaxSurfaces;
     dpci.poolSizeCount = 1;
     dpci.pPoolSizes = &poolSize;
@@ -219,6 +221,13 @@ bool VideoPass::addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t k
     return true;
 }
 
+void VideoPass::removeSlot(VkContext& vk, uint32_t key) {
+    auto it = sets_.find(key);
+    if (it == sets_.end()) return;
+    vkFreeDescriptorSets(vk.device, descriptorPool_, 1, &it->second);
+    sets_.erase(it);
+}
+
 void VideoPass::unbindPool(VkContext& vk) {
     if (descriptorPool_) vkDestroyDescriptorPool(vk.device, descriptorPool_, nullptr);
     if (pipeline_) vkDestroyPipeline(vk.device, pipeline_, nullptr);
@@ -233,40 +242,40 @@ void VideoPass::unbindPool(VkContext& vk) {
     sets_.clear();
 }
 
-void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
-                       VkImageView target, VkExtent2D extent, uint32_t queueFamily,
-                       const float* mvp16) {
-    const ExternalVideoPool::Slot* slot =
-        slotKey >= 0 ? pool.find((uint32_t)slotKey) : nullptr;
-    auto setIt = slotKey >= 0 ? sets_.find((uint32_t)slotKey) : sets_.end();
-    const bool haveVideo = slot && setIt != sets_.end() && pipeline_ != VK_NULL_HANDLE;
-    static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
-
-    // Acquire the sampled image from the external producer. Layout stays
-    // GENERAL both ways: transitioning from UNDEFINED would legally discard
-    // the decoder's pixels.
-    if (haveVideo && !noExternalBarrier) {
-        VkImageMemoryBarrier2 acquire[2]{};
-        uint32_t n = 0;
-        for (uint32_t i = 0; i < 2 && slot->image[i]; ++i, ++n) {
-            acquire[i] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            acquire[i].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            acquire[i].srcAccessMask = VK_ACCESS_2_NONE;
-            acquire[i].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            acquire[i].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-            acquire[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-            acquire[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            acquire[i].srcQueueFamilyIndex = kExternalQueueFamily;
-            acquire[i].dstQueueFamilyIndex = queueFamily;
-            acquire[i].image = slot->image[i];
-            acquire[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+namespace {
+// Ownership transfer barriers for a set of slots. Layout stays GENERAL both
+// ways: transitioning from UNDEFINED would legally discard the decoder's
+// pixels.
+void recordOwnershipBarriers(VkCommandBuffer cmd,
+                             const std::vector<const ExternalVideoPool::Slot*>& slots,
+                             uint32_t fromFamily, uint32_t toFamily, bool toShader) {
+    std::vector<VkImageMemoryBarrier2> barriers;
+    for (const auto* slot : slots) {
+        for (uint32_t i = 0; i < 2 && slot->image[i]; ++i) {
+            VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            b.srcStageMask =
+                toShader ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            b.srcAccessMask = VK_ACCESS_2_NONE; // acquire: none; release: reads need no flush
+            b.dstStageMask =
+                toShader ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_2_NONE;
+            b.dstAccessMask = toShader ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT : VK_ACCESS_2_NONE;
+            b.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            b.srcQueueFamilyIndex = fromFamily;
+            b.dstQueueFamilyIndex = toFamily;
+            b.image = slot->image[i];
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barriers.push_back(b);
         }
-        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = n;
-        dep.pImageMemoryBarriers = acquire;
-        vkCmdPipelineBarrier2(cmd, &dep);
     }
+    if (barriers.empty()) return;
+    VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dep.imageMemoryBarrierCount = (uint32_t)barriers.size();
+    dep.pImageMemoryBarriers = barriers.data();
+    vkCmdPipelineBarrier2(cmd, &dep);
+}
 
+void beginClearedRendering(VkCommandBuffer cmd, VkImageView target, VkExtent2D extent) {
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     color.imageView = target;
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -280,57 +289,107 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
     ri.colorAttachmentCount = 1;
     ri.pColorAttachments = &color;
     vkCmdBeginRendering(cmd, &ri);
+}
+} // namespace
+
+void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
+                       VkImageView target, VkExtent2D extent, uint32_t queueFamily,
+                       const float* mvp16) {
+    if (geometry_ == Geometry::Cube) {
+        // Single stream on all six faces.
+        int64_t faceSlots[6] = {slotKey, slotKey, slotKey, slotKey, slotKey, slotKey};
+        recordCube(cmd, pool, faceSlots, target, extent, queueFamily, mvp16);
+        return;
+    }
+
+    const ExternalVideoPool::Slot* slot =
+        slotKey >= 0 ? pool.find((uint32_t)slotKey) : nullptr;
+    auto setIt = slotKey >= 0 ? sets_.find((uint32_t)slotKey) : sets_.end();
+    const bool haveVideo = slot && setIt != sets_.end() && pipeline_ != VK_NULL_HANDLE;
+    static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
+
+    std::vector<const ExternalVideoPool::Slot*> barrierSlots;
+    if (haveVideo && !noExternalBarrier) barrierSlots.push_back(slot);
+    recordOwnershipBarriers(cmd, barrierSlots, kExternalQueueFamily, queueFamily, true);
+
+    beginClearedRendering(cmd, target, extent);
 
     if (haveVideo) {
-        VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
-        if (geometry_ == Geometry::Fullscreen) {
-            // Letterbox: fit the video into the target preserving aspect ratio.
-            float scale = std::min((float)extent.width / (float)pool.width,
-                                   (float)extent.height / (float)pool.height);
-            float vw = pool.width * scale, vh = pool.height * scale;
-            viewport = {(extent.width - vw) * 0.5f, (extent.height - vh) * 0.5f,
-                        vw, vh, 0.0f, 1.0f};
-        }
+        // Letterbox: fit the video into the target preserving aspect ratio.
+        float scale = std::min((float)extent.width / (float)pool.width,
+                               (float)extent.height / (float)pool.height);
+        float vw = pool.width * scale, vh = pool.height * scale;
+        VkViewport viewport{(extent.width - vw) * 0.5f, (extent.height - vh) * 0.5f,
+                            vw, vh, 0.0f, 1.0f};
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &setIt->second, 0, nullptr);
-        if (geometry_ == Geometry::Cube && mvp16) {
-            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               16 * sizeof(float), mvp16);
-        } else if (planar_) {
+        if (planar_) {
             int32_t pc[2] = {pcMatrix_, pcFullRange_};
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc),
                                pc);
         }
-        vkCmdDraw(cmd, geometry_ == Geometry::Cube ? 36 : 3, 1, 0, 0);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
     vkCmdEndRendering(cmd);
 
-    if (haveVideo && !noExternalBarrier) {
-        VkImageMemoryBarrier2 release[2]{};
-        uint32_t n = 0;
-        for (uint32_t i = 0; i < 2 && slot->image[i]; ++i, ++n) {
-            release[i] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            release[i].srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            release[i].srcAccessMask = VK_ACCESS_2_NONE; // reads need no flush
-            release[i].dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-            release[i].dstAccessMask = VK_ACCESS_2_NONE;
-            release[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-            release[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            release[i].srcQueueFamilyIndex = queueFamily;
-            release[i].dstQueueFamilyIndex = kExternalQueueFamily;
-            release[i].image = slot->image[i];
-            release[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        }
-        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = n;
-        dep.pImageMemoryBarriers = release;
-        vkCmdPipelineBarrier2(cmd, &dep);
+    recordOwnershipBarriers(cmd, barrierSlots, queueFamily, kExternalQueueFamily, false);
+}
+
+void VideoPass::recordCube(VkCommandBuffer cmd, const ExternalVideoPool& pool,
+                           const int64_t faceSlots[6], VkImageView target, VkExtent2D extent,
+                           uint32_t queueFamily, const float* mvp16) {
+    static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
+
+    // Resolve each face to a drawable (slot imported AND descriptor present);
+    // collect the unique slots for the ownership barriers.
+    const ExternalVideoPool::Slot* faceSlot[6] = {};
+    VkDescriptorSet faceSet[6] = {};
+    std::vector<const ExternalVideoPool::Slot*> barrierSlots;
+    bool anyVideo = false;
+    for (int f = 0; f < 6; ++f) {
+        if (faceSlots[f] < 0 || pipeline_ == VK_NULL_HANDLE) continue;
+        const auto* slot = pool.find((uint32_t)faceSlots[f]);
+        auto setIt = sets_.find((uint32_t)faceSlots[f]);
+        if (!slot || setIt == sets_.end()) continue;
+        faceSlot[f] = slot;
+        faceSet[f] = setIt->second;
+        anyVideo = true;
+        if (std::find(barrierSlots.begin(), barrierSlots.end(), slot) == barrierSlots.end())
+            barrierSlots.push_back(slot);
     }
+    if (noExternalBarrier) barrierSlots.clear();
+
+    recordOwnershipBarriers(cmd, barrierSlots, kExternalQueueFamily, queueFamily, true);
+
+    beginClearedRendering(cmd, target, extent);
+
+    if (anyVideo) {
+        VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
+        VkRect2D scissor{{0, 0}, extent};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+        if (mvp16)
+            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               16 * sizeof(float), mvp16);
+        // One draw per face (6 vertices each); faces without a stream are
+        // simply not drawn - back-face culling makes that safe.
+        for (int f = 0; f < 6; ++f) {
+            if (!faceSet[f]) continue;
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                                    &faceSet[f], 0, nullptr);
+            vkCmdDraw(cmd, 6, 1, (uint32_t)f * 6, 0);
+        }
+    }
+
+    vkCmdEndRendering(cmd);
+
+    recordOwnershipBarriers(cmd, barrierSlots, queueFamily, kExternalQueueFamily, false);
 }
 
 void VideoPass::destroy(VkContext& vk) {

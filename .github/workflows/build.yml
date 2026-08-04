@@ -117,4 +117,4 @@ jobs:
           name: vkrender-android
           path: |
             android/renderer/build/outputs/apk/debug/renderer-debug.apk
-            android/decoder/build/outputs/apk/debug/decoder-debug.apk
+            android/decoder/build/outputs/apk/*/debug/*.apk

@@ -676,6 +676,19 @@ bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuff
 }
 #endif // __ANDROID__
 
+void ExternalVideoPool::removeSlot(VkContext& vk, uint32_t key) {
+    auto it = slots.find(key);
+    if (it == slots.end()) return;
+    Slot& s = it->second;
+    for (auto& v : s.view)
+        if (v) vkDestroyImageView(vk.device, v, nullptr);
+    for (auto& img : s.image)
+        if (img) vkDestroyImage(vk.device, img, nullptr);
+    for (auto& m : s.memory)
+        if (m) vkFreeMemory(vk.device, m, nullptr);
+    slots.erase(it);
+}
+
 void ExternalVideoPool::destroy(VkContext& vk) {
     for (auto& [key, s] : slots) {
         for (auto& v : s.view)

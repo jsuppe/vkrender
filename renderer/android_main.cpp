@@ -19,10 +19,12 @@
 #include <media/NdkImageReader.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -89,11 +91,26 @@ Mat4 cubeMvp(float tSec, VkExtent2D extent) {
     return matMul(matPerspective(0.7854f, aspect, 0.1f, 100.0f), model);
 }
 
-// ---- Surface bridge to RendererService (Binder thread) ---------------------
-std::mutex g_readerMutex;
-std::condition_variable g_readerCv;
-AImageReader* g_reader = nullptr;
-ANativeWindow* g_readerWindow = nullptr;
+// ---- Multi-producer stream registry (M11) ----------------------------------
+// One AImageReader per client app, keyed by Binder calling UID. Created on
+// demand from the Binder thread; images are acquired/imported/released only
+// on the render thread. Up to one stream per cube face.
+constexpr size_t kMaxStreams = 6;
+
+struct InputStream {
+    int uid = -1;
+    AImageReader* reader = nullptr;
+    ANativeWindow* window = nullptr; // owned by the reader
+    AImage* currentImage = nullptr;  // render thread only
+    int64_t currentSlot = -1;        // render thread only
+    std::vector<uint32_t> keys;      // slots imported from this reader
+};
+
+std::mutex g_streamsMutex;
+std::condition_variable g_readerCv; // renderer-readiness for binder waits
+bool g_rendererReady = false;
+std::vector<std::unique_ptr<InputStream>> g_streams;
+std::vector<int> g_pendingRelease; // uids to tear down on the render thread
 
 bool extractShaders(android_app* app, const std::string& outDir) {
     const char* names[] = {"fullscreen.vert.spv", "cube.vert.spv", "video_ycbcr.frag.spv",
@@ -145,11 +162,52 @@ void onAppCmd(android_app* app, int32_t cmd) {
 
 } // namespace
 
-// Called from RendererService's binder thread (decoder_jni.cpp).
-ANativeWindow* vkrGetRendererInputWindow() {
-    std::unique_lock<std::mutex> lock(g_readerMutex);
-    g_readerCv.wait_for(lock, std::chrono::seconds(5), [] { return g_readerWindow != nullptr; });
-    return g_readerWindow;
+// Called from RendererService's binder thread (renderer_jni.cpp). Returns the
+// caller's existing stream window, or creates a fresh AImageReader for a new
+// client (max one per cube face). Re-acquire after a client crash returns the
+// same reader - BufferQueue accepts a new producer once the old one is gone.
+ANativeWindow* vkrAcquireStreamWindow(int uid) {
+    std::unique_lock<std::mutex> lock(g_streamsMutex);
+    g_readerCv.wait_for(lock, std::chrono::seconds(5), [] { return g_rendererReady; });
+    if (!g_rendererReady) return nullptr;
+    // A release for this uid may still be queued (release + immediate
+    // re-acquire): wait until the render thread has torn it down, else we
+    // would hand back a window that is about to be destroyed.
+    g_readerCv.wait_for(lock, std::chrono::seconds(2), [uid] {
+        return std::find(g_pendingRelease.begin(), g_pendingRelease.end(), uid) ==
+               g_pendingRelease.end();
+    });
+    if (std::find(g_pendingRelease.begin(), g_pendingRelease.end(), uid) !=
+        g_pendingRelease.end())
+        return nullptr; // render thread paused; client will retry
+    for (auto& s : g_streams)
+        if (s->uid == uid) return s->window;
+    if (g_streams.size() >= kMaxStreams) {
+        VKR_WARN("renderer: stream request from uid %d rejected (%zu faces occupied)", uid,
+                 g_streams.size());
+        return nullptr;
+    }
+    auto s = std::make_unique<InputStream>();
+    s->uid = uid;
+    media_status_t ms = AImageReader_newWithUsage(1920, 1080, AIMAGE_FORMAT_PRIVATE,
+                                                  AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 6,
+                                                  &s->reader);
+    if (ms != AMEDIA_OK || !s->reader) {
+        VKR_ERR("AImageReader_newWithUsage failed for uid %d: %d", uid, ms);
+        return nullptr;
+    }
+    AImageReader_getWindow(s->reader, &s->window);
+    ANativeWindow* window = s->window;
+    g_streams.push_back(std::move(s));
+    VKR_LOG("renderer: stream created for uid %d (%zu total)", uid, g_streams.size());
+    return window;
+}
+
+// Called from the binder thread; actual teardown happens on the render thread
+// (it must sequence with in-flight GPU work).
+void vkrReleaseStream(int uid) {
+    std::lock_guard<std::mutex> lock(g_streamsMutex);
+    g_pendingRelease.push_back(uid);
 }
 
 void android_main(android_app* app) {
@@ -177,21 +235,14 @@ void android_main(android_app* app) {
     vkr::VideoPass pass;
     if (!pass.init(vk, filesDir, vkr::VideoPass::Geometry::Cube)) return;
 
-    // The producer-facing input: created up-front at a nominal size (the
-    // producer overrides buffer dimensions; per-image sizes are authoritative).
+    // Producer streams are created on demand per client UID (binder thread);
+    // from here on acquireInputSurface calls can be served.
     {
-        std::lock_guard<std::mutex> lock(g_readerMutex);
-        media_status_t ms = AImageReader_newWithUsage(1920, 1080, AIMAGE_FORMAT_PRIVATE,
-                                                      AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 6,
-                                                      &g_reader);
-        if (ms != AMEDIA_OK || !g_reader) {
-            VKR_ERR("AImageReader_newWithUsage failed: %d", ms);
-            return;
-        }
-        AImageReader_getWindow(g_reader, &g_readerWindow);
+        std::lock_guard<std::mutex> lock(g_streamsMutex);
+        g_rendererReady = true;
     }
     g_readerCv.notify_all();
-    VKR_LOG("renderer: input surface ready (BufferQueue)");
+    VKR_LOG("renderer: stream service ready (up to %zu producers)", kMaxStreams);
 
     constexpr uint32_t kFramesInFlight = 2;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
@@ -217,8 +268,6 @@ void android_main(android_app* app) {
 
     vkr::ExternalVideoPool pool;
     bool passBound = false;
-    int64_t currentSlot = -1;
-    AImage* currentImage = nullptr; // the image currentSlot samples from
     uint64_t frameIndex = 0;
     ANativeWindow* vkWindow = app->window;
     uint64_t adoptions = 0, renders = 0;
@@ -260,45 +309,100 @@ void android_main(android_app* app) {
         }
         if (!state.windowReady) continue;
 
-        // Latest ready frame from the BufferQueue; older queued frames are
-        // discarded by acquireLatestImage itself (latest-wins, fences
-        // respected by the sync acquire).
-        AImage* image = nullptr;
-        if (AImageReader_acquireLatestImage(g_reader, &image) == AMEDIA_OK && image) {
-            AHardwareBuffer* ahb = nullptr;
-            if (AImage_getHardwareBuffer(image, &ahb) == AMEDIA_OK && ahb) {
-                if (!pool.headerValid) {
-                    int32_t w = 0, h = 0;
-                    AImage_getWidth(image, &w);
-                    AImage_getHeight(image, &h);
-                    vkr::proto::PoolDescMsg header{};
-                    header.width = (uint32_t)w & ~1u;
-                    header.height = (uint32_t)h & ~1u;
-                    header.format = vkr::proto::SharedFormat::NV12;
-                    header.matrix = h >= 720 ? vkr::proto::Matrix::BT709 : vkr::proto::Matrix::BT601;
-                    header.range = vkr::proto::Range::Limited;
-                    header.planeCount = 2;
-                    if (!pool.create(vk, header)) break;
+        int64_t faceSlots[6] = {-1, -1, -1, -1, -1, -1};
+        size_t streamCount = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_streamsMutex);
+
+            // Deferred stream teardown: quiesce the GPU (rare event), retire
+            // every parked image, then drop the stream's slots - its buffers
+            // are freed and their addresses (our keys) may be recycled.
+            if (!g_pendingRelease.empty()) {
+                vkDeviceWaitIdle(vk.device);
+                for (auto& fr : frames) {
+                    for (AImage* retired : fr.retiring) AImage_delete(retired);
+                    fr.retiring.clear();
                 }
-                uint32_t key = keyForBuffer(ahb);
-                bool ok = pool.find(key) != nullptr || pool.addSurfaceAHB(vk, key, ahb);
-                if (ok && !passBound) {
-                    ok = pass.bindPool(vk, pool);
-                    passBound = ok;
-                } else if (ok) {
-                    ok = pass.addSlot(vk, pool, key);
+                for (int uid : g_pendingRelease) {
+                    for (auto it = g_streams.begin(); it != g_streams.end(); ++it) {
+                        if ((*it)->uid != uid) continue;
+                        InputStream& s = **it;
+                        if (s.currentImage) AImage_delete(s.currentImage);
+                        for (uint32_t key : s.keys) {
+                            pass.removeSlot(vk, key);
+                            pool.removeSlot(vk, key);
+                        }
+                        AImageReader_delete(s.reader);
+                        VKR_LOG("renderer: stream released for uid %d (%zu slots freed)", uid,
+                                s.keys.size());
+                        g_streams.erase(it);
+                        break;
+                    }
                 }
-                if (ok) {
-                    // Adopt: previous image retires behind this frame's fence.
-                    if (currentImage)
-                        frames[frameIndex % kFramesInFlight].retiring.push_back(currentImage);
-                    currentImage = image;
-                    currentSlot = (int64_t)key;
-                    ++adoptions;
-                    image = nullptr; // ownership moved to currentImage
-                }
+                g_pendingRelease.clear();
+                g_readerCv.notify_all(); // unblock acquire-after-release waiters
             }
-            if (image) AImage_delete(image); // import failed: return the buffer
+
+            // Latest ready frame per stream; older queued frames are discarded
+            // by acquireLatestImage itself (latest-wins, fences respected by
+            // the sync acquire).
+            for (auto& sp : g_streams) {
+                InputStream& s = *sp;
+                AImage* image = nullptr;
+                if (AImageReader_acquireLatestImage(s.reader, &image) != AMEDIA_OK || !image)
+                    continue;
+                AHardwareBuffer* ahb = nullptr;
+                if (AImage_getHardwareBuffer(image, &ahb) == AMEDIA_OK && ahb) {
+                    if (!pool.headerValid) {
+                        int32_t w = 0, h = 0;
+                        AImage_getWidth(image, &w);
+                        AImage_getHeight(image, &h);
+                        vkr::proto::PoolDescMsg header{};
+                        header.width = (uint32_t)w & ~1u;
+                        header.height = (uint32_t)h & ~1u;
+                        header.format = vkr::proto::SharedFormat::NV12;
+                        header.matrix =
+                            h >= 720 ? vkr::proto::Matrix::BT709 : vkr::proto::Matrix::BT601;
+                        header.range = vkr::proto::Range::Limited;
+                        header.planeCount = 2;
+                        if (!pool.create(vk, header)) {
+                            AImage_delete(image);
+                            continue;
+                        }
+                    }
+                    uint32_t key = keyForBuffer(ahb);
+                    bool isNew = pool.find(key) == nullptr;
+                    bool ok = !isNew || pool.addSurfaceAHB(vk, key, ahb);
+                    if (ok && !passBound) {
+                        ok = pass.bindPool(vk, pool);
+                        passBound = ok;
+                    } else if (ok && isNew) {
+                        ok = pass.addSlot(vk, pool, key);
+                    }
+                    if (ok) {
+                        if (isNew) s.keys.push_back(key);
+                        // Adopt: previous image retires behind this frame's fence.
+                        if (s.currentImage)
+                            frames[frameIndex % kFramesInFlight].retiring.push_back(
+                                s.currentImage);
+                        s.currentImage = image;
+                        s.currentSlot = (int64_t)key;
+                        ++adoptions;
+                        image = nullptr; // ownership moved to the stream
+                    }
+                }
+                if (image) AImage_delete(image); // import failed: return the buffer
+            }
+
+            // Face assignment: streams with content cycle across the six
+            // faces in registry order (1 stream = all faces, 2 = alternating,
+            // 6 = one each).
+            std::vector<int64_t> active;
+            for (auto& sp : g_streams)
+                if (sp->currentSlot >= 0) active.push_back(sp->currentSlot);
+            if (!active.empty())
+                for (int f = 0; f < 6; ++f) faceSlots[f] = active[f % active.size()];
+            streamCount = g_streams.size();
         }
 
         FrameSync& f = frames[frameIndex % kFramesInFlight];
@@ -337,8 +441,10 @@ void android_main(android_app* app) {
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
         Mat4 mvp = cubeMvp((float)((nowNs() - appStartNs) * 1e-9), vk.swapExtent);
-        pass.record(f.cmd, pool, passBound ? currentSlot : -1, vk.swapViews[imageIndex],
-                    vk.swapExtent, vk.queueFamily, mvp.m);
+        if (!passBound)
+            for (int fi = 0; fi < 6; ++fi) faceSlots[fi] = -1;
+        pass.recordCube(f.cmd, pool, faceSlots, vk.swapViews[imageIndex], vk.swapExtent,
+                        vk.queueFamily, mvp.m);
 
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -375,17 +481,18 @@ void android_main(android_app* app) {
 
         ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers)",
+            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers, "
+                    "%zu streams)",
                     (unsigned long long)adoptions, (unsigned long long)renders,
-                    pool.slots.size());
+                    pool.slots.size(), streamCount);
             adoptions = renders = 0;
             rateWindowStart = nowNs();
         }
     }
 
     {
-        std::lock_guard<std::mutex> lock(g_readerMutex);
-        g_readerWindow = nullptr;
+        std::lock_guard<std::mutex> lock(g_streamsMutex);
+        g_rendererReady = false;
     }
     vkDeviceWaitIdle(vk.device);
     for (auto& f : frames) {
@@ -394,12 +501,18 @@ void android_main(android_app* app) {
         vkDestroySemaphore(vk.device, f.renderDoneSem, nullptr);
         vkDestroyFence(vk.device, f.inFlight, nullptr);
     }
-    if (currentImage) AImage_delete(currentImage);
     vkDestroyCommandPool(vk.device, cmdPool, nullptr);
     pass.destroy(vk);
     pool.destroy(vk);
-    if (g_reader) AImageReader_delete(g_reader);
-    g_reader = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_streamsMutex);
+        for (auto& sp : g_streams) {
+            if (sp->currentImage) AImage_delete(sp->currentImage);
+            AImageReader_delete(sp->reader);
+        }
+        g_streams.clear();
+        g_pendingRelease.clear();
+    }
     vk.destroy();
 }
 

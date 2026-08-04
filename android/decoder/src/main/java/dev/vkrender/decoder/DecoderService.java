@@ -81,7 +81,12 @@ public class DecoderService extends Service {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
                 try {
-                    Surface s = IVkRendererService.Stub.asInterface(service).acquireInputSurface();
+                    IVkRendererService renderer = IVkRendererService.Stub.asInterface(service);
+                    // Drop any stale stream from a previous session of ours
+                    // first: a dead producer's imported buffers would otherwise
+                    // accumulate in the renderer across our restarts.
+                    renderer.releaseInputSurface();
+                    Surface s = renderer.acquireInputSurface();
                     if (s != null) result.offer(s);
                 } catch (Exception e) {
                     Log.w(TAG, "acquireInputSurface failed: " + e);

@@ -6,7 +6,10 @@ hands its `Surface` to producer apps over Binder**. BufferQueue — the OS
 machinery behind every Surface — then carries the frames across the app
 boundary with its own queueing, fences, timestamps and backpressure. There
 is no custom frame IPC at all. The renderer draws the video zero-copy onto
-all six faces of a **spinning cube**.
+all six faces of a **spinning cube** — and it is a real compositor: **each
+client app gets its own stream** (keyed by Binder UID, one `AImageReader`
+per client, up to one per cube face), so up to six producer apps render
+simultaneously, one face each (M11; fewer streams cycle across the faces).
 
 ## 1. Architecture
 
@@ -230,6 +233,17 @@ release fences via `AImage_deleteAsync` for the consumed direction.
   calls `nativeAbortSession()` (an atomic the native loops poll) and
   re-binds. Measured on device: abort within ~75 ms of the kill, back to
   full-rate adoption < 10 s after the renderer relaunches.
+- **Client-app death** (M11): the dead client's stream persists and its
+  face(s) freeze on the last delivered frame; the other streams are
+  unaffected. On restart the client calls `releaseInputSurface()` before
+  re-acquiring — the renderer quiesces the GPU, frees the stale stream's
+  imported slots, and hands out a fresh reader (measured: 14 slots freed,
+  ~5 ms swap, pool size flat across restarts). Without the release, each
+  restart's new codec allocates fresh buffers while the old imports linger
+  (observed 27 → 41 slots), marching toward the `kMaxSurfaces` (64) cap —
+  which is why the client releases first and why acquire waits out any
+  pending release for the same UID (the window it would return is about to
+  be destroyed).
 
 ## 8. Known limitations / backlog
 

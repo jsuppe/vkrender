@@ -33,6 +33,8 @@ public:
     bool bindPool(VkContext& vk, const ExternalVideoPool& pool);
     // Adds the descriptor set for one newly imported slot.
     bool addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t key);
+    // Frees one slot's descriptor set (pair with ExternalVideoPool::removeSlot).
+    void removeSlot(VkContext& vk, uint32_t key);
     void unbindPool(VkContext& vk);
 
     // Records: acquire slot from the external queue family, draw into target
@@ -41,6 +43,12 @@ public:
     void record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
                 VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                 const float* mvp16 = nullptr);
+
+    // Cube with per-face streams (M11): faceSlots[6] names the slot each face
+    // samples (-1 = face stays background). Barriers cover each unique slot.
+    void recordCube(VkCommandBuffer cmd, const ExternalVideoPool& pool,
+                    const int64_t faceSlots[6], VkImageView target, VkExtent2D extent,
+                    uint32_t queueFamily, const float* mvp16);
 
 private:
     VkShaderModule loadShader(VkDevice device, const std::string& path);
