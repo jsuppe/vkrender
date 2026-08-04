@@ -44,11 +44,14 @@ public:
                 VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                 const float* mvp16 = nullptr);
 
-    // Cube with per-face streams (M11): faceSlots[6] names the slot each face
-    // samples (-1 = face stays background). Barriers cover each unique slot.
-    void recordCube(VkCommandBuffer cmd, const ExternalVideoPool& pool,
-                    const int64_t faceSlots[6], VkImageView target, VkExtent2D extent,
-                    uint32_t queueFamily, const float* mvp16);
+    // Cube scene with per-face streams (M11/M12): cubeCount cubes, each with
+    // its own column-major mat4 in mvps (16 floats per cube) and six entries
+    // in faceSlots (-1 = face not drawn). Barriers cover each unique slot.
+    // background, if non-null, is drawn first inside the render pass.
+    void recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
+                     const int64_t* faceSlots, uint32_t cubeCount, const float* mvps,
+                     VkImageView target, VkExtent2D extent, uint32_t queueFamily,
+                     class BackgroundPass* background = nullptr, float timeSec = 0.0f);
 
 private:
     VkShaderModule loadShader(VkDevice device, const std::string& path);

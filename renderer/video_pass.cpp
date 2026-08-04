@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "background_pass.h"
 #include "log.h"
 
 namespace vkr {
@@ -296,9 +297,9 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
                        VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                        const float* mvp16) {
     if (geometry_ == Geometry::Cube) {
-        // Single stream on all six faces.
+        // Single cube, single stream on all six faces.
         int64_t faceSlots[6] = {slotKey, slotKey, slotKey, slotKey, slotKey, slotKey};
-        recordCube(cmd, pool, faceSlots, target, extent, queueFamily, mvp16);
+        recordScene(cmd, pool, faceSlots, 1, mvp16, target, extent, queueFamily);
         return;
     }
 
@@ -340,23 +341,23 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
     recordOwnershipBarriers(cmd, barrierSlots, queueFamily, kExternalQueueFamily, false);
 }
 
-void VideoPass::recordCube(VkCommandBuffer cmd, const ExternalVideoPool& pool,
-                           const int64_t faceSlots[6], VkImageView target, VkExtent2D extent,
-                           uint32_t queueFamily, const float* mvp16) {
+void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
+                            const int64_t* faceSlots, uint32_t cubeCount, const float* mvps,
+                            VkImageView target, VkExtent2D extent, uint32_t queueFamily,
+                            BackgroundPass* background, float timeSec) {
     static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
+    const uint32_t faceCount = cubeCount * 6;
 
     // Resolve each face to a drawable (slot imported AND descriptor present);
     // collect the unique slots for the ownership barriers.
-    const ExternalVideoPool::Slot* faceSlot[6] = {};
-    VkDescriptorSet faceSet[6] = {};
+    std::vector<VkDescriptorSet> faceSet(faceCount, VK_NULL_HANDLE);
     std::vector<const ExternalVideoPool::Slot*> barrierSlots;
     bool anyVideo = false;
-    for (int f = 0; f < 6; ++f) {
+    for (uint32_t f = 0; f < faceCount; ++f) {
         if (faceSlots[f] < 0 || pipeline_ == VK_NULL_HANDLE) continue;
         const auto* slot = pool.find((uint32_t)faceSlots[f]);
         auto setIt = sets_.find((uint32_t)faceSlots[f]);
         if (!slot || setIt == sets_.end()) continue;
-        faceSlot[f] = slot;
         faceSet[f] = setIt->second;
         anyVideo = true;
         if (std::find(barrierSlots.begin(), barrierSlots.end(), slot) == barrierSlots.end())
@@ -368,22 +369,31 @@ void VideoPass::recordCube(VkCommandBuffer cmd, const ExternalVideoPool& pool,
 
     beginClearedRendering(cmd, target, extent);
 
+    if (background) background->draw(cmd, extent, timeSec);
+
     if (anyVideo) {
         VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-        if (mvp16)
-            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               16 * sizeof(float), mvp16);
-        // One draw per face (6 vertices each); faces without a stream are
-        // simply not drawn - back-face culling makes that safe.
-        for (int f = 0; f < 6; ++f) {
-            if (!faceSet[f]) continue;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
-                                    &faceSet[f], 0, nullptr);
-            vkCmdDraw(cmd, 6, 1, (uint32_t)f * 6, 0);
+        // One draw per face (6 vertices each) with its cube's MVP; faces
+        // without a stream are simply not drawn - back-face culling makes
+        // that safe, and the cubes never overlap on screen.
+        for (uint32_t c = 0; c < cubeCount; ++c) {
+            bool pushed = false;
+            for (uint32_t f = 0; f < 6; ++f) {
+                VkDescriptorSet set = faceSet[c * 6 + f];
+                if (!set) continue;
+                if (!pushed && mvps) {
+                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                       16 * sizeof(float), mvps + c * 16);
+                    pushed = true;
+                }
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                                        0, 1, &set, 0, nullptr);
+                vkCmdDraw(cmd, 6, 1, f * 6, 0);
+            }
         }
     }
 

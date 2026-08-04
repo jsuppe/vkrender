@@ -104,6 +104,7 @@ endif()
 set(VKR_SHADERS
     ${CMAKE_SOURCE_DIR}/renderer/shaders/fullscreen.vert
     ${CMAKE_SOURCE_DIR}/renderer/shaders/cube.vert
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/vaporwave.frag
     ${CMAKE_SOURCE_DIR}/renderer/shaders/video_ycbcr.frag
     ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag)
 set(VKR_SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/shaders)
@@ -125,7 +126,8 @@ add_executable(vkrenderer
     renderer/main.cpp
     renderer/vk_context.cpp
     renderer/external_video_image.cpp
-    renderer/video_pass.cpp)
+    renderer/video_pass.cpp
+    renderer/background_pass.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
 add_custom_command(TARGET vkrenderer POST_BUILD

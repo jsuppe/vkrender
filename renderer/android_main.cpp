@@ -24,6 +24,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -31,6 +32,7 @@
 
 #include <volk.h>
 
+#include "background_pass.h"
 #include "external_video_image.h"
 #include "log.h"
 #include "video_pass.h"
@@ -83,19 +85,26 @@ Mat4 matPerspective(float fovyRad, float aspect, float zNear, float zFar) {
     return r;
 }
 
-// Model spins around two axes, sits 4 units down -Z, 45° vertical FOV.
-Mat4 cubeMvp(float tSec, VkExtent2D extent) {
-    Mat4 model = matMul(matRotY(tSec * 0.9f), matRotX(tSec * 0.37f));
-    model.m[14] -= 4.0f; // translate along -Z (view space)
+// One cube of the M12 scene: spins around two axes (spin flips per cube, a
+// phase keeps them visibly different), scaled and offset vertically so both
+// cubes fit fully inside a 45°-FOV portrait view at z = -7.5 (half-height
+// there is 3.11; |yOffset| + scaledHalfDiagonal = 1.55 + 1.47 < 3.11).
+Mat4 cubeMvp(float tSec, VkExtent2D extent, float yOffset, float spin, float phase) {
+    Mat4 model = matMul(matRotY(spin * tSec * 0.9f + phase), matRotX(tSec * 0.37f + phase));
+    constexpr float kScale = 0.85f;
+    for (int c = 0; c < 3; ++c)
+        for (int r = 0; r < 3; ++r) model.m[c * 4 + r] *= kScale;
+    model.m[13] += yOffset;
+    model.m[14] -= 7.5f;
     float aspect = extent.height ? (float)extent.width / (float)extent.height : 1.0f;
     return matMul(matPerspective(0.7854f, aspect, 0.1f, 100.0f), model);
 }
 
-// ---- Multi-producer stream registry (M11) ----------------------------------
+// ---- Multi-producer stream registry (M11/M12) ------------------------------
 // One AImageReader per client app, keyed by Binder calling UID. Created on
 // demand from the Binder thread; images are acquired/imported/released only
-// on the render thread. Up to one stream per cube face.
-constexpr size_t kMaxStreams = 6;
+// on the render thread. Up to one stream per cube face, two cubes.
+constexpr size_t kMaxStreams = 12;
 
 struct InputStream {
     int uid = -1;
@@ -113,8 +122,8 @@ std::vector<std::unique_ptr<InputStream>> g_streams;
 std::vector<int> g_pendingRelease; // uids to tear down on the render thread
 
 bool extractShaders(android_app* app, const std::string& outDir) {
-    const char* names[] = {"fullscreen.vert.spv", "cube.vert.spv", "video_ycbcr.frag.spv",
-                           "nv12_planar.frag.spv"};
+    const char* names[] = {"fullscreen.vert.spv", "cube.vert.spv", "vaporwave.frag.spv",
+                           "video_ycbcr.frag.spv", "nv12_planar.frag.spv"};
     for (const char* name : names) {
         std::string assetPath = std::string("shaders/") + name;
         AAsset* asset =
@@ -234,6 +243,8 @@ void android_main(android_app* app) {
     }
     vkr::VideoPass pass;
     if (!pass.init(vk, filesDir, vkr::VideoPass::Geometry::Cube)) return;
+    vkr::BackgroundPass background;
+    if (!background.init(vk, filesDir)) VKR_WARN("renderer: vaporwave backdrop unavailable");
 
     // Producer streams are created on demand per client UID (binder thread);
     // from here on acquireInputSurface calls can be served.
@@ -309,7 +320,8 @@ void android_main(android_app* app) {
         }
         if (!state.windowReady) continue;
 
-        int64_t faceSlots[6] = {-1, -1, -1, -1, -1, -1};
+        int64_t faceSlots[12];
+        for (int fi = 0; fi < 12; ++fi) faceSlots[fi] = -1;
         size_t streamCount = 0;
         {
             std::lock_guard<std::mutex> lock(g_streamsMutex);
@@ -394,14 +406,14 @@ void android_main(android_app* app) {
                 if (image) AImage_delete(image); // import failed: return the buffer
             }
 
-            // Face assignment: streams with content cycle across the six
-            // faces in registry order (1 stream = all faces, 2 = alternating,
-            // 6 = one each).
+            // Face assignment: streams with content cycle across the twelve
+            // faces (two cubes) in registry order (1 stream = everywhere,
+            // 12 = one per face).
             std::vector<int64_t> active;
             for (auto& sp : g_streams)
                 if (sp->currentSlot >= 0) active.push_back(sp->currentSlot);
             if (!active.empty())
-                for (int f = 0; f < 6; ++f) faceSlots[f] = active[f % active.size()];
+                for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % active.size()];
             streamCount = g_streams.size();
         }
 
@@ -440,11 +452,17 @@ void android_main(android_app* app) {
         dep.pImageMemoryBarriers = &toColor;
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
-        Mat4 mvp = cubeMvp((float)((nowNs() - appStartNs) * 1e-9), vk.swapExtent);
+        float tSec = (float)((nowNs() - appStartNs) * 1e-9);
+        float mvps[32];
+        Mat4 top = cubeMvp(tSec, vk.swapExtent, 1.55f, 1.0f, 0.0f);
+        Mat4 bottom = cubeMvp(tSec, vk.swapExtent, -1.55f, -1.0f, 2.1f);
+        memcpy(mvps, top.m, sizeof(top.m));
+        memcpy(mvps + 16, bottom.m, sizeof(bottom.m));
         if (!passBound)
-            for (int fi = 0; fi < 6; ++fi) faceSlots[fi] = -1;
-        pass.recordCube(f.cmd, pool, faceSlots, vk.swapViews[imageIndex], vk.swapExtent,
-                        vk.queueFamily, mvp.m);
+            for (int fi = 0; fi < 12; ++fi) faceSlots[fi] = -1;
+        pass.recordScene(f.cmd, pool, faceSlots, 2, mvps, vk.swapViews[imageIndex],
+                         vk.swapExtent, vk.queueFamily, background.valid() ? &background : nullptr,
+                         tSec);
 
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -502,6 +520,7 @@ void android_main(android_app* app) {
         vkDestroyFence(vk.device, f.inFlight, nullptr);
     }
     vkDestroyCommandPool(vk.device, cmdPool, nullptr);
+    background.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);
     {

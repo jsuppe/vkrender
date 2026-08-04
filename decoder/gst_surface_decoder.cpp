@@ -179,32 +179,40 @@ bool GstSurfaceDecoder::ensureCodec(GstCaps* caps, ANativeWindow* window) {
 
     VKR_LOG("decoder: stream: %s %dx%d -> renderer surface (gstreamer transport)", mime, w, h);
 
+    const char* swName = g_str_equal(mime, "video/avc") ? "c2.android.avc.decoder"
+                                                        : "c2.android.hevc.decoder";
     char qemu[92] = {0};
     __system_property_get("ro.boot.qemu", qemu);
-    if (qemu[0] == '1') {
-        const char* swName = g_str_equal(mime, "video/avc") ? "c2.android.avc.decoder"
-                                                            : "c2.android.hevc.decoder";
-        codec_ = AMediaCodec_createCodecByName(swName);
-        if (codec_) VKR_LOG("decoder: emulator detected, using %s", swName);
+    const bool emulator = qemu[0] == '1';
+
+    // Hardware first (software on the emulator - goldfish stalls in surface
+    // mode), then the software codec as fallback: vendors cap concurrent
+    // hardware sessions, and with many client apps decoding at once (M12)
+    // create/configure/start can fail on the instance limit.
+    for (int attempt = 0; attempt < 2 && !codec_; ++attempt) {
+        bool wantSw = emulator || attempt == 1;
+        codec_ = wantSw ? AMediaCodec_createCodecByName(swName)
+                        : AMediaCodec_createDecoderByType(mime);
+        if (!codec_) continue;
+        AMediaFormat* format = AMediaFormat_new();
+        AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, w > 0 ? w : 1280);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, h > 0 ? h : 720);
+        media_status_t ms = AMediaCodec_configure(codec_, format, window, nullptr, 0);
+        AMediaFormat_delete(format);
+        if (ms == AMEDIA_OK && AMediaCodec_start(codec_) == AMEDIA_OK) {
+            if (wantSw) VKR_LOG("decoder: using software codec %s", swName);
+            break;
+        }
+        VKR_WARN("decoder: %s codec configure/start failed (%d), %s", wantSw ? "software" : "hardware",
+                 ms, attempt == 0 ? "trying software" : "giving up");
+        AMediaCodec_delete(codec_);
+        codec_ = nullptr;
+        if (emulator) break; // sw already failed; nothing left to try
     }
-    if (!codec_) codec_ = AMediaCodec_createDecoderByType(mime);
     if (!codec_) {
-        VKR_ERR("AMediaCodec create failed (%s)", mime);
-        return false;
-    }
-    AMediaFormat* format = AMediaFormat_new();
-    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, w > 0 ? w : 1280);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, h > 0 ? h : 720);
-    media_status_t ms = AMediaCodec_configure(codec_, format, window, nullptr, 0);
-    AMediaFormat_delete(format);
-    if (ms != AMEDIA_OK) {
-        VKR_ERR("AMediaCodec_configure(renderer surface) failed: %d", ms);
+        VKR_ERR("no usable codec for %s - surface may be dead", mime);
         surfaceDead_ = true;
-        return false;
-    }
-    if (AMediaCodec_start(codec_) != AMEDIA_OK) {
-        VKR_ERR("AMediaCodec_start failed");
         return false;
     }
     codecMime_ = mime;

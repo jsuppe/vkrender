@@ -5,11 +5,11 @@ also the most platform-native: the renderer **owns an `AImageReader` and
 hands its `Surface` to producer apps over Binder**. BufferQueue — the OS
 machinery behind every Surface — then carries the frames across the app
 boundary with its own queueing, fences, timestamps and backpressure. There
-is no custom frame IPC at all. The renderer draws the video zero-copy onto
-all six faces of a **spinning cube** — and it is a real compositor: **each
+is no custom frame IPC at all. The renderer is a real compositor: **each
 client app gets its own stream** (keyed by Binder UID, one `AImageReader`
-per client, up to one per cube face), so up to six producer apps render
-simultaneously, one face each (M11; fewer streams cycle across the faces).
+per client), rendered zero-copy onto the faces of **two spinning cubes**
+over a procedural vaporwave backdrop — up to twelve producer apps at once,
+one face each (fewer streams cycle across the faces; M11/M12).
 
 ## 1. Architecture
 

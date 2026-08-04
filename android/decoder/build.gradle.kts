@@ -18,16 +18,16 @@ android {
         }
     }
 
-    // Six installable client packages from the same sources: the renderer
+    // Twelve installable client packages from the same sources: the renderer
     // composites one stream per client app (Binder UID), one per cube face,
-    // so the full demo needs six distinct packages (M11).
+    // two cubes (M12).
     flavorDimensions += "instance"
     productFlavors {
         create("primary") {
             dimension = "instance"
             // keeps applicationId dev.vkrender.decoder
         }
-        for (n in 2..6) {
+        for (n in 2..12) {
             create("client$n") {
                 dimension = "instance"
                 applicationId = "dev.vkrender.decoder$n"

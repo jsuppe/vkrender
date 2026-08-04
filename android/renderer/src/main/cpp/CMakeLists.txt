@@ -25,6 +25,7 @@ add_library(vkrender_renderer SHARED
     ${REPO}/renderer/vk_context.cpp
     ${REPO}/renderer/external_video_image.cpp
     ${REPO}/renderer/video_pass.cpp
+    ${REPO}/renderer/background_pass.cpp
     ${REPO}/renderer/android_main.cpp
     renderer_jni.cpp
     ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)

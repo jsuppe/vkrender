@@ -198,6 +198,30 @@ face; barriers cover the unique slots).
   (testsrc2 + SMPTE bars on adjacent faces), 300 adoptions/5 s = 2 × 30 fps
   exact, 27-28 slot imports stable across client restarts.
 
+## M12 — Dual cubes, 12 streams, vaporwave scene (done, 2026-08-04)
+
+Scaled the compositor to **twelve simultaneous client apps** — two spinning
+cubes stacked vertically (counter-rotating, both fully in frame), one
+stream per face — over a procedural vaporwave backdrop
+([vaporwave.frag](renderer/shaders/vaporwave.frag): violet-to-orange sunset
+sky, striped synthwave sun on the horizon, neon perspective grid scrolling
+toward the camera; drawn by the new `BackgroundPass` inside the same render
+pass, before the cubes).
+
+- `VideoPass::recordScene` generalizes the cube path to N cubes (per-cube
+  MVP push constants, per-face descriptor sets, barriers over unique slots,
+  single render pass).
+- `kMaxSurfaces` 128 → 256: twelve concurrent codec sessions imported ~200
+  slots on the TCL tablet.
+- Codec hardening: hardware decoder first, **software fallback** when
+  create/configure/start fails — vendors cap concurrent hardware sessions
+  and twelve at once can exceed the limit.
+- Twelve decoder flavors (`decoder` + `decoder2..12`). Verified on the TCL
+  tablet: 12 distinct patterns live (testsrc2, SMPTE HD/classic bars,
+  mandelbrot, gradients, rgbtestsrc, testsrc, sierpinski, game-of-life,
+  cellauto, yuvtestsrc, colorspectrum), ~1350 adoptions/5 s aggregate,
+  presents locked at 60 Hz.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
