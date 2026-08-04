@@ -8,7 +8,9 @@ CMakeUserPresets.json
 android/ffmpeg-android/
 android/local.properties
 android/.gradle/
-android/app/build/
 android/build/
-android/app/.cxx/
+android/renderer/build/
+android/renderer/.cxx/
+android/decoder/build/
+android/decoder/.cxx/
 android/gstreamer-android/

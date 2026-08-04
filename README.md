@@ -149,7 +149,7 @@ Validation layers are enabled automatically in Debug builds when
 common/    protocol + IPC (named pipe on Windows, SEQPACKET UDS on POSIX)
 decoder/   GStreamer RTSP + platform decode, shared pool, fences (vkdecoder)
 renderer/  Vulkan context, external-memory import, video pass   (vkrenderer)
-android/   Gradle project: renderer activity + decoder service (see docs/ANDROID.md)
+android/   two APKs: renderer service app (Vulkan cube) + decoder client app (see docs/ANDROID.md)
 scripts/   Android GStreamer prebuilt fetch/prune, legacy FFmpeg cross-build
 ```
 

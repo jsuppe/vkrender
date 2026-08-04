@@ -3,19 +3,18 @@ plugins {
 }
 
 android {
-    namespace = "dev.vkrender"
+    namespace = "dev.vkrender.renderer"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "dev.vkrender"
+        applicationId = "dev.vkrender.renderer"
         minSdk = 29
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
         ndk {
-            // x86_64 for the emulator; arm64 for devices (FFmpeg is prebuilt
-            // for both by scripts/build_ffmpeg_android.sh).
+            // x86_64 for the emulator; arm64 for devices.
             abiFilters += listOf("x86_64", "arm64-v8a")
         }
     }

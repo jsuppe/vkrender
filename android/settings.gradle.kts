@@ -12,4 +12,7 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "vkrender"
-include(":app")
+// M10: two independent APKs — the renderer service app and the decoder
+// client app — talking only through Binder (AIDL Surface handoff).
+include(":renderer")
+include(":decoder")

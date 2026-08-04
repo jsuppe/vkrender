@@ -4,34 +4,30 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="dev.vkrender.permission.BIND_RENDERER" />
+
+    <!-- Package visibility (API 30+): we bind the renderer app's service. -->
+    <queries>
+        <package android:name="dev.vkrender.renderer" />
+    </queries>
 
     <application
-        android:label="vkrender"
+        android:label="vkrender decoder"
         android:allowBackup="false">
 
-        <!-- Renderer process: NativeActivity driven by android_main.cpp -->
+        <!-- Thin launcher: kicks the foreground service with the stream url
+             and finishes; the service is the real client. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
-            <meta-data
-                android:name="android.app.lib_name"
-                android:value="vkrender_native" />
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Renderer-owned Surface handed to producers over Binder (M8) -->
-        <service
-            android:name=".RendererService"
-            android:exported="false" />
-
-        <!-- Decoder in its own OS process: the zero-copy boundary under test -->
         <service
             android:name=".DecoderService"
-            android:process=":decoder"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
     </application>

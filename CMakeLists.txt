@@ -103,6 +103,7 @@ endif()
 # --- shader compilation ------------------------------------------------------
 set(VKR_SHADERS
     ${CMAKE_SOURCE_DIR}/renderer/shaders/fullscreen.vert
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/cube.vert
     ${CMAKE_SOURCE_DIR}/renderer/shaders/video_ycbcr.frag
     ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag)
 set(VKR_SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/shaders)

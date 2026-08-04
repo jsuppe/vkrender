@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdio>
 #include <mutex>
@@ -41,6 +42,53 @@ int64_t nowNs() {
         .count();
 }
 
+// ---- Minimal column-major mat4 helpers for the cube MVP --------------------
+struct Mat4 {
+    float m[16]; // column-major, m[col*4+row]
+};
+
+Mat4 matMul(const Mat4& a, const Mat4& b) {
+    Mat4 r{};
+    for (int c = 0; c < 4; ++c)
+        for (int row = 0; row < 4; ++row)
+            for (int k = 0; k < 4; ++k) r.m[c * 4 + row] += a.m[k * 4 + row] * b.m[c * 4 + k];
+    return r;
+}
+
+Mat4 matRotY(float a) {
+    Mat4 r{};
+    float c = cosf(a), s = sinf(a);
+    r.m[0] = c; r.m[2] = -s; r.m[5] = 1.0f; r.m[8] = s; r.m[10] = c; r.m[15] = 1.0f;
+    return r;
+}
+
+Mat4 matRotX(float a) {
+    Mat4 r{};
+    float c = cosf(a), s = sinf(a);
+    r.m[0] = 1.0f; r.m[5] = c; r.m[6] = s; r.m[9] = -s; r.m[10] = c; r.m[15] = 1.0f;
+    return r;
+}
+
+// Vulkan conventions: depth 0..1, clip Y down (the Y flip lives in m[5]).
+Mat4 matPerspective(float fovyRad, float aspect, float zNear, float zFar) {
+    Mat4 r{};
+    float f = 1.0f / tanf(fovyRad * 0.5f);
+    r.m[0] = f / aspect;
+    r.m[5] = -f;
+    r.m[10] = zFar / (zNear - zFar);
+    r.m[11] = -1.0f;
+    r.m[14] = (zNear * zFar) / (zNear - zFar);
+    return r;
+}
+
+// Model spins around two axes, sits 4 units down -Z, 45° vertical FOV.
+Mat4 cubeMvp(float tSec, VkExtent2D extent) {
+    Mat4 model = matMul(matRotY(tSec * 0.9f), matRotX(tSec * 0.37f));
+    model.m[14] -= 4.0f; // translate along -Z (view space)
+    float aspect = extent.height ? (float)extent.width / (float)extent.height : 1.0f;
+    return matMul(matPerspective(0.7854f, aspect, 0.1f, 100.0f), model);
+}
+
 // ---- Surface bridge to RendererService (Binder thread) ---------------------
 std::mutex g_readerMutex;
 std::condition_variable g_readerCv;
@@ -48,7 +96,8 @@ AImageReader* g_reader = nullptr;
 ANativeWindow* g_readerWindow = nullptr;
 
 bool extractShaders(android_app* app, const std::string& outDir) {
-    const char* names[] = {"fullscreen.vert.spv", "video_ycbcr.frag.spv", "nv12_planar.frag.spv"};
+    const char* names[] = {"fullscreen.vert.spv", "cube.vert.spv", "video_ycbcr.frag.spv",
+                           "nv12_planar.frag.spv"};
     for (const char* name : names) {
         std::string assetPath = std::string("shaders/") + name;
         AAsset* asset =
@@ -126,7 +175,7 @@ void android_main(android_app* app) {
         return;
     }
     vkr::VideoPass pass;
-    if (!pass.init(vk, filesDir)) return;
+    if (!pass.init(vk, filesDir, vkr::VideoPass::Geometry::Cube)) return;
 
     // The producer-facing input: created up-front at a nominal size (the
     // producer overrides buffer dimensions; per-image sizes are authoritative).
@@ -174,6 +223,7 @@ void android_main(android_app* app) {
     ANativeWindow* vkWindow = app->window;
     uint64_t adoptions = 0, renders = 0;
     int64_t rateWindowStart = nowNs();
+    const int64_t appStartNs = nowNs();
 
     auto keyForBuffer = [](AHardwareBuffer* ahb) {
         uint64_t v = (uint64_t)(uintptr_t)ahb;
@@ -286,8 +336,9 @@ void android_main(android_app* app) {
         dep.pImageMemoryBarriers = &toColor;
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
+        Mat4 mvp = cubeMvp((float)((nowNs() - appStartNs) * 1e-9), vk.swapExtent);
         pass.record(f.cmd, pool, passBound ? currentSlot : -1, vk.swapViews[imageIndex],
-                    vk.swapExtent, vk.queueFamily);
+                    vk.swapExtent, vk.queueFamily, mvp.m);
 
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;

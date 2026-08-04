@@ -271,12 +271,14 @@ bool GstSurfaceDecoder::feedAccessUnit(GstBuffer* buffer) {
     return drainDecoder();
 }
 
-int GstSurfaceDecoder::run(const std::string& url, ANativeWindow* window) {
+int GstSurfaceDecoder::run(const std::string& url, ANativeWindow* window,
+                           const std::atomic<bool>* abortFlag) {
     gstInitOnce();
     uint32_t backoffMs = 1000;
     surfaceDead_ = false;
+    auto aborted = [abortFlag] { return abortFlag && abortFlag->load(); };
 
-    while (!surfaceDead_) {
+    while (!surfaceDead_ && !aborted()) {
         VKR_LOG("decoder: connecting to %s (gstreamer)", url.c_str());
         if (!buildPipeline(url)) {
             teardownPipeline();
@@ -287,7 +289,7 @@ int GstSurfaceDecoder::run(const std::string& url, ANativeWindow* window) {
 
         bool streamOk = true;
         bool firstSample = true;
-        while (streamOk && !surfaceDead_) {
+        while (streamOk && !surfaceDead_ && !aborted()) {
             if (GstMessage* m = gst_bus_pop_filtered(bus_, GST_MESSAGE_ERROR)) {
                 GError* e = nullptr;
                 gchar* dbg = nullptr;
@@ -322,10 +324,10 @@ int GstSurfaceDecoder::run(const std::string& url, ANativeWindow* window) {
         }
         teardownPipeline();
         closeCodec();
-        if (!surfaceDead_) std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!surfaceDead_ && !aborted()) std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    VKR_LOG("decoder: session over (surface dead), decoded=%llu",
+    VKR_LOG("decoder: session over (%s), decoded=%llu", aborted() ? "aborted" : "surface dead",
             (unsigned long long)decodedFrames_);
     return 0;
 }

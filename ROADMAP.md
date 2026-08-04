@@ -149,6 +149,30 @@ Replacing FFmpeg with GStreamer end-to-end (motivation: team familiarity).
 - FFmpeg now remains only as the desktop test-stream publisher CLI (dev
   tooling, not product).
 
+## M10 — Android two-APK split + spinning-cube scene (done, 2026-08-04)
+
+The M8 Binder seam promoted to a real app boundary (primary deployment
+target is Android):
+
+- **Renderer service APK** (`dev.vkrender.renderer`): NativeActivity +
+  exported `RendererService` behind a signature-level `BIND_RENDERER`
+  permission. Vulkan only — no GStreamer. Renders the video zero-copy onto
+  all six faces of a spinning cube (`cube.vert` MVP push constant,
+  back-face culling instead of a depth buffer; winding verified on device —
+  mirrored timestamp text is the inside-out tell).
+- **Decoder client APK** (`dev.vkrender.decoder`): binds the renderer app
+  by explicit component (+ `<queries>` for package visibility), receives
+  the `Surface` over AIDL, decodes the RTSP stream into it. GStreamer +
+  MediaCodec only — no Vulkan.
+- Lifecycle hardening found during verification: MediaCodec feeding an
+  abandoned Surface stalls **silently** when the renderer app dies; the
+  kept-alive Binder connection's `onServiceDisconnected` now aborts the
+  native session (~75 ms) and the client re-binds (verified: kill renderer
+  → relaunch → full-rate again < 10 s).
+- Verified on the TCL tablet (~150 adoptions/5 s = exact 30 fps, 13-buffer
+  zero-copy pool, hardware codec) and the API 36 emulator. CI builds both
+  APKs.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

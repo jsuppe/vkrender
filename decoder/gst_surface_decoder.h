@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -20,8 +21,11 @@ namespace vkr {
 class GstSurfaceDecoder {
 public:
     // One session into the given surface; RTSP failures reconnect internally,
-    // returns when the surface dies.
-    int run(const std::string& url, ANativeWindow* window);
+    // returns when the surface dies or *abortFlag becomes true (set from
+    // another thread, e.g. when Binder reports the renderer app died — a
+    // MediaCodec feeding an abandoned surface can stall without any error).
+    int run(const std::string& url, ANativeWindow* window,
+            const std::atomic<bool>* abortFlag = nullptr);
 
 private:
     bool buildPipeline(const std::string& url);

@@ -1,4 +1,4 @@
-package dev.vkrender;
+package dev.vkrender.decoder;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -16,23 +16,30 @@ import android.view.Surface;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
+import dev.vkrender.IVkRendererService;
+
 /**
- * Decoder process host (android:process=":decoder", foreground service).
- * M8 architecture: binds the renderer's RendererService over Binder, receives
- * its input Surface, and hands it to the native RTSP+MediaCodec pipeline -
- * which simply decodes INTO that surface. BufferQueue carries the frames
- * cross-process; there is no custom frame IPC anymore.
+ * The decoder client app (M10: its own APK). Binds the RENDERER APP's
+ * RendererService over Binder, receives its input Surface, and hands it to
+ * the native GStreamer+MediaCodec pipeline - which simply decodes INTO that
+ * surface. BufferQueue carries the frames across the app boundary; there is
+ * no custom frame IPC.
  */
 public class DecoderService extends Service {
     static {
-        System.loadLibrary("vkrender_native");
+        System.loadLibrary("vkrender_decoder");
     }
 
     private static final String TAG = "vkrender";
     private static final String CHANNEL_ID = "vkrender.decoder";
+    private static final String RENDERER_PACKAGE = "dev.vkrender.renderer";
+    private static final String RENDERER_SERVICE = "dev.vkrender.renderer.RendererService";
 
     /** Runs one decode session into the surface; returns when it is unusable. */
     private native void nativeRunSession(String url, Surface surface);
+
+    /** Aborts the running session (renderer app died - the codec may stall silently). */
+    private native void nativeAbortSession();
 
     private Thread worker;
     private volatile boolean stopping = false;
@@ -50,17 +57,18 @@ public class DecoderService extends Service {
     }
 
     /**
-     * Bind -> acquire surface -> decode session -> on failure (renderer died,
-     * surface abandoned) unbind and retry.
+     * Bind -> acquire surface -> decode session -> on failure (renderer app
+     * died or not installed, surface abandoned) unbind and retry.
      */
     private void sessionLoop(String url) {
         while (!stopping) {
             Surface surface = acquireRendererSurface();
             if (surface == null) {
+                Log.i(TAG, "decoder: renderer app not reachable, retrying");
                 sleepMs(1000);
                 continue;
             }
-            Log.i(TAG, "decoder: got renderer surface, starting session");
+            Log.i(TAG, "decoder: got renderer surface (cross-app), starting session");
             nativeRunSession(url, surface);
             Log.i(TAG, "decoder: session ended, re-acquiring surface");
             sleepMs(500);
@@ -81,9 +89,18 @@ public class DecoderService extends Service {
             }
 
             @Override
-            public void onServiceDisconnected(ComponentName name) {}
+            public void onServiceDisconnected(ComponentName name) {
+                // The renderer process died. Its surface is abandoned; the
+                // codec feeding it may stall without an error - force the
+                // native session out so the loop re-binds.
+                Log.i(TAG, "decoder: renderer disconnected, aborting session");
+                nativeAbortSession();
+            }
         };
-        Intent intent = new Intent(this, RendererService.class);
+        // Explicit cross-app component; requires the signature-level
+        // BIND_RENDERER permission and the <queries> manifest entry.
+        Intent intent = new Intent();
+        intent.setComponent(new ComponentName(RENDERER_PACKAGE, RENDERER_SERVICE));
         if (!bindService(intent, conn, Context.BIND_AUTO_CREATE)) return null;
         try {
             Surface s = result.poll(5, java.util.concurrent.TimeUnit.SECONDS);
@@ -113,7 +130,7 @@ public class DecoderService extends Service {
         nm.createNotificationChannel(channel);
 
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("vkrender")
+                .setContentTitle("vkrender decoder")
                 .setContentText("Decoding stream")
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setOngoing(true)

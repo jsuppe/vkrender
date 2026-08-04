@@ -19,7 +19,13 @@ namespace vkr {
 // announces them (Linux) or all at once (Windows).
 class VideoPass {
 public:
-    bool init(VkContext& vk, const std::string& shaderDir);
+    // Fullscreen: letterboxed quad (desktop). Cube: spinning cube sampling the
+    // video on all six faces — combined-sampler mode only, caller supplies the
+    // MVP each frame via record()'s mvp16 (Android M10).
+    enum class Geometry { Fullscreen, Cube };
+
+    bool init(VkContext& vk, const std::string& shaderDir,
+              Geometry geometry = Geometry::Fullscreen);
     void destroy(VkContext& vk);
 
     // Builds sampler/pipeline for a stream header and descriptors for any
@@ -29,16 +35,19 @@ public:
     bool addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t key);
     void unbindPool(VkContext& vk);
 
-    // Records: acquire slot from the external queue family, letterboxed draw
-    // into target, release back. Unknown key records a plain clear.
+    // Records: acquire slot from the external queue family, draw into target
+    // (letterboxed quad, or the cube when geometry is Cube and mvp16 is a
+    // column-major mat4), release back. Unknown key records a plain clear.
     void record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
-                VkImageView target, VkExtent2D extent, uint32_t queueFamily);
+                VkImageView target, VkExtent2D extent, uint32_t queueFamily,
+                const float* mvp16 = nullptr);
 
 private:
     VkShaderModule loadShader(VkDevice device, const std::string& path);
 
     std::string shaderDir_;
     VkFormat targetFormat_ = VK_FORMAT_UNDEFINED;
+    Geometry geometry_ = Geometry::Fullscreen;
 
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;

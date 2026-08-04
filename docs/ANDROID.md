@@ -1,28 +1,45 @@
-# Android backend — renderer-owned Surface, BufferQueue zero-copy (M8)
+# Android backend — two APKs, renderer-owned Surface, BufferQueue zero-copy (M10)
 
-Android is the third backend, and after two architecture generations it is
+Android is the third backend, and after three architecture generations it is
 also the most platform-native: the renderer **owns an `AImageReader` and
-hands its `Surface` to producers over Binder**. BufferQueue — the OS
-machinery behind every Surface — then carries the frames cross-process with
-its own queueing, fences, timestamps and backpressure. There is no custom
-frame IPC at all.
+hands its `Surface` to producer apps over Binder**. BufferQueue — the OS
+machinery behind every Surface — then carries the frames across the app
+boundary with its own queueing, fences, timestamps and backpressure. There
+is no custom frame IPC at all. The renderer draws the video zero-copy onto
+all six faces of a **spinning cube**.
 
 ## 1. Architecture
 
-One APK, **two OS processes**:
+**Two independent APKs** (M10; M8 had the same seam as two processes inside
+one APK):
 
 ```
-┌── :decoder process ─────────────────┐    ┌── main process ──────────────────┐
+┌── dev.vkrender.decoder (client APK) ┐    ┌── dev.vkrender.renderer (service APK)
 │ DecoderService (foreground service) │    │ MainActivity : NativeActivity    │
-│  binds RendererService ────────────────► │ RendererService (AIDL):          │
-│  ◄─── Surface (Parcelable) ─────────│    │   returns the reader's Surface   │
-│  └ decoder_jni → GstSurfaceDecoder  │    │  └ android_main.cpp              │
-│ GStreamer rtspsrc→parsebin (demux)  │ Buf │ owns AImageReader (GPU_SAMPLED) │
-│ AMediaCodec decodes INTO the        │ferQ │ per vsync: acquireLatestImage → │
-│  renderer's Surface;                │ueue │  AHardwareBuffer → Vulkan import │
-│  releaseOutputBuffer = delivery     │───► │  (cached per buffer) → sample    │
+│  binds RendererService ────────────────► │ RendererService (AIDL, exported, │
+│  ◄─── Surface (Parcelable) ─────────│    │   signature permission):         │
+│  └ decoder_jni → GstSurfaceDecoder  │    │   returns the reader's Surface   │
+│ GStreamer rtspsrc→parsebin (demux)  │ Buf │  └ android_main.cpp             │
+│ AMediaCodec decodes INTO the        │ferQ │ owns AImageReader (GPU_SAMPLED) │
+│  renderer's Surface;                │ueue │ per vsync: acquireLatestImage → │
+│  releaseOutputBuffer = delivery     │───► │  AHardwareBuffer → Vulkan import │
+│ (no Vulkan dependency at all)       │    │  → sample on a spinning cube     │
 └─────────────────────────────────────┘    └──────────────────────────────────┘
 ```
+
+The dependency split is total: the renderer APK links Vulkan/volk and ships
+the shaders but has **no GStreamer**; the decoder APK links the static
+GStreamer prebuilts and MediaCodec but has **no Vulkan**. The only shared
+artifact is the AIDL file (a copy lives in each module — the AIDL package
+`dev.vkrender` is the Binder interface descriptor and must match exactly).
+
+Cross-app security: the renderer manifest declares
+`dev.vkrender.permission.BIND_RENDERER` with `protectionLevel="signature"`
+and exports `RendererService` behind it; the decoder requests that
+permission and declares `<queries><package
+android:name="dev.vkrender.renderer"/></queries>` for API-30+ package
+visibility, then binds with an explicit `ComponentName`. Both debug APKs are
+signed with the same debug key, satisfying the signature check.
 
 - **AIDL** ([IVkRendererService.aidl](../android/app/src/main/aidl/dev/vkrender/IVkRendererService.aidl)):
   `Surface acquireInputSurface()`. `Surface` is Parcelable, so the Binder
@@ -47,6 +64,14 @@ One APK, **two OS processes**:
   cached; the acquired `AImage` is held while its buffer is being sampled and
   deleted only after the frame fence that last read it retires — the entire
   consumed-handshake of previous generations reduced to a local vector.
+- **Scene** (M10): the video is sampled onto a cube spinning around two axes
+  (`cube.vert`: 36 embedded vertices + an MVP push constant;
+  [video_pass.cpp](../renderer/video_pass.cpp) `Geometry::Cube`). A solo
+  convex object needs no depth attachment — back-face culling alone is
+  correct. The winding was verified on device: with the projection's Y-flip
+  the outward faces rasterize counter-clockwise; when this is wrong the cube
+  looks inside-out and the timestamp text on the test pattern reads
+  mirrored, which is the fastest tell.
 
 What M8 deleted relative to M7 (see git history for the old design): the
 Unix-socket frame protocol, AHB handle passing, the SurfaceDesc/FrameReady/
@@ -61,15 +86,19 @@ the SDK, JDK 17+, and the GStreamer Android prebuilts (§3).
 
 ```bash
 # android/local.properties must point at your SDK: sdk.dir=...
-gradle -p android assembleDebug     # or open android/ in Android Studio
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+gradle -p android assembleDebug     # builds BOTH APKs (or open android/ in Android Studio)
+adb install -r android/renderer/build/outputs/apk/debug/renderer-debug.apk
+adb install -r android/decoder/build/outputs/apk/debug/decoder-debug.apk
 ```
 
-The Gradle module drives the repo's sources through
-[android/app/src/main/cpp/CMakeLists.txt](../android/app/src/main/cpp/CMakeLists.txt)
-(volk + Vulkan-Headers via FetchContent; `x86_64` and `arm64-v8a` ABIs).
-Shader SPIR-V ships as APK assets (`android/app/src/main/assets/shaders/`,
-regenerate from a desktop build's `build/shaders/`).
+Two application modules drive the repo's sources:
+[android/renderer/src/main/cpp/CMakeLists.txt](../android/renderer/src/main/cpp/CMakeLists.txt)
+(volk + Vulkan-Headers via FetchContent) and
+[android/decoder/src/main/cpp/CMakeLists.txt](../android/decoder/src/main/cpp/CMakeLists.txt)
+(static GStreamer via pkg-config, §3); `x86_64` and `arm64-v8a` ABIs.
+Shader SPIR-V ships as renderer-APK assets
+(`android/renderer/src/main/assets/shaders/`, regenerate from a desktop
+build's `build/shaders/`).
 
 ## 3. GStreamer for Android (M9 transport/demux)
 
@@ -122,17 +151,21 @@ ffmpeg -re -stream_loop -1 -f lavfi -i testsrc2=size=1280x720:rate=30 \
   -c:v libx264 -preset veryfast -tune zerolatency -g 30 -pix_fmt yuv420p \
   -f rtsp rtsp://127.0.0.1:8556/test &
 
-# app
-adb shell am start -n dev.vkrender/.MainActivity --es url rtsp://10.0.2.2:8556/test
-adb logcat -s vkrender:*        # pipeline logs from both processes
+# renderer app first (owns the Surface), then the decoder client
+adb shell am start -n dev.vkrender.renderer/.MainActivity
+adb shell am start -n dev.vkrender.decoder/.MainActivity --es url rtsp://10.0.2.2:8556/test
+adb logcat -s vkrender:*        # pipeline logs from both apps
 ```
 
-Expected logs: `decoder: connecting to ... (gstreamer)` →
+Expected logs: `decoder: got renderer surface (cross-app)` →
+`decoder: connecting to ... (gstreamer)` →
 `decoder: parsebin stream: video/x-h264...` →
 `decoder: stream: video/avc WxH -> renderer surface (gstreamer transport)` →
 `renderer: imported AHardwareBuffer surface key=... (N total, zero-copy)`
 (one per distinct buffer, then they cycle) → the 5-second
 `renderer: N adoptions / M presents` telemetry (adoptions ≈ stream fps × 5).
+The visible result is the test pattern animating on every face of a
+spinning cube.
 
 ## 5. Emulator vs real devices
 
@@ -190,6 +223,13 @@ release fences via `AImage_deleteAsync` for the consumed direction.
   ring never starves; on wake the activity's replacement `ANativeWindow` is
   detected and the Vulkan surface + swapchain are rebuilt (verified across
   sleep/wake).
+- **Renderer-app death** (M10): a MediaCodec feeding an abandoned Surface
+  can stall silently — no error, no EOS, output just stops. The decoder
+  keeps its Binder connection for the session's duration precisely so
+  `onServiceDisconnected` fires when the renderer process dies; it then
+  calls `nativeAbortSession()` (an atomic the native loops poll) and
+  re-binds. Measured on device: abort within ~75 ms of the kill, back to
+  full-rate adoption < 10 s after the renderer relaunches.
 
 ## 8. Known limitations / backlog
 

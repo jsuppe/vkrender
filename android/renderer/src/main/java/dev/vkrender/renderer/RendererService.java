@@ -1,19 +1,21 @@
-package dev.vkrender;
+package dev.vkrender.renderer;
 
 import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
 import android.view.Surface;
 
+import dev.vkrender.IVkRendererService;
+
 /**
- * Runs in the renderer (main) process. Bridges the native renderer's
- * AImageReader Surface to producers over Binder. The native side creates the
- * reader at startup (android_main); nativeAcquireInputSurface blocks briefly
- * until it exists.
+ * Bridges the native renderer's AImageReader Surface to producer apps over
+ * Binder. Exported behind the signature-level BIND_RENDERER permission. The
+ * native side creates the reader at startup (android_main);
+ * nativeAcquireInputSurface blocks briefly until it exists.
  */
 public class RendererService extends Service {
     static {
-        System.loadLibrary("vkrender_native");
+        System.loadLibrary("vkrender_renderer");
     }
 
     private static native Surface nativeAcquireInputSurface();

@@ -41,9 +41,10 @@ VkShaderModule VideoPass::loadShader(VkDevice device, const std::string& path) {
     return mod;
 }
 
-bool VideoPass::init(VkContext& vk, const std::string& shaderDir) {
+bool VideoPass::init(VkContext& vk, const std::string& shaderDir, Geometry geometry) {
     shaderDir_ = shaderDir;
     targetFormat_ = vk.swapFormat;
+    geometry_ = geometry;
     return true;
 }
 
@@ -82,18 +83,29 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     if (vkCreateDescriptorSetLayout(vk.device, &dslci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
+    if (geometry_ == Geometry::Cube && planar_) {
+        // cube.vert claims push-constant offset 0 for the MVP; the planar
+        // fragment shader's constants would collide. The cube path is Android,
+        // where AHB import always yields combined mode, so this cannot happen.
+        VKR_ERR("cube geometry requires combined-sampler mode");
+        return false;
+    }
     VkPushConstantRange pcRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 2 * sizeof(int32_t)};
+    if (geometry_ == Geometry::Cube)
+        pcRange = {VK_SHADER_STAGE_VERTEX_BIT, 0, 16 * sizeof(float)};
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     plci.setLayoutCount = 1;
     plci.pSetLayouts = &setLayout_;
-    if (planar_) {
+    if (planar_ || geometry_ == Geometry::Cube) {
         plci.pushConstantRangeCount = 1;
         plci.pPushConstantRanges = &pcRange;
     }
     if (vkCreatePipelineLayout(vk.device, &plci, nullptr, &pipelineLayout_) != VK_SUCCESS)
         return false;
 
-    VkShaderModule vert = loadShader(vk.device, shaderDir_ + "/fullscreen.vert.spv");
+    VkShaderModule vert = loadShader(
+        vk.device,
+        shaderDir_ + (geometry_ == Geometry::Cube ? "/cube.vert.spv" : "/fullscreen.vert.spv"));
     VkShaderModule frag = loadShader(
         vk.device, shaderDir_ + (planar_ ? "/nv12_planar.frag.spv" : "/video_ycbcr.frag.spv"));
     if (!vert || !frag) return false;
@@ -116,7 +128,12 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     vp.scissorCount = 1;
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = VK_CULL_MODE_NONE;
+    // Cube: back-face culling stands in for depth (solo convex object).
+    // Winding verified empirically on device: with the projection's Y-flip the
+    // outward faces rasterize counter-clockwise (mirrored timestamp text on
+    // the faces is the tell when this is wrong).
+    rs.cullMode = geometry_ == Geometry::Cube ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -217,7 +234,8 @@ void VideoPass::unbindPool(VkContext& vk) {
 }
 
 void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
-                       VkImageView target, VkExtent2D extent, uint32_t queueFamily) {
+                       VkImageView target, VkExtent2D extent, uint32_t queueFamily,
+                       const float* mvp16) {
     const ExternalVideoPool::Slot* slot =
         slotKey >= 0 ? pool.find((uint32_t)slotKey) : nullptr;
     auto setIt = slotKey >= 0 ? sets_.find((uint32_t)slotKey) : sets_.end();
@@ -264,24 +282,30 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
     vkCmdBeginRendering(cmd, &ri);
 
     if (haveVideo) {
-        // Letterbox: fit the video into the target preserving aspect ratio.
-        float scale = std::min((float)extent.width / (float)pool.width,
-                               (float)extent.height / (float)pool.height);
-        float vw = pool.width * scale, vh = pool.height * scale;
-        VkViewport viewport{(extent.width - vw) * 0.5f, (extent.height - vh) * 0.5f,
-                            vw, vh, 0.0f, 1.0f};
+        VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
+        if (geometry_ == Geometry::Fullscreen) {
+            // Letterbox: fit the video into the target preserving aspect ratio.
+            float scale = std::min((float)extent.width / (float)pool.width,
+                                   (float)extent.height / (float)pool.height);
+            float vw = pool.width * scale, vh = pool.height * scale;
+            viewport = {(extent.width - vw) * 0.5f, (extent.height - vh) * 0.5f,
+                        vw, vh, 0.0f, 1.0f};
+        }
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &setIt->second, 0, nullptr);
-        if (planar_) {
+        if (geometry_ == Geometry::Cube && mvp16) {
+            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               16 * sizeof(float), mvp16);
+        } else if (planar_) {
             int32_t pc[2] = {pcMatrix_, pcFullRange_};
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc),
                                pc);
         }
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdDraw(cmd, geometry_ == Geometry::Cube ? 36 : 3, 1, 0, 0);
     }
 
     vkCmdEndRendering(cmd);
