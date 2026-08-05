@@ -8,6 +8,7 @@
 // Draws an animated diagonal gradient. CPU writes land in the same pages the
 // compositor's GPU samples (udmabuf = memfd pages as a dma-buf).
 
+#define _GNU_SOURCE // memfd_create, F_ADD_SEALS
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
