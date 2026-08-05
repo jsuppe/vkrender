@@ -35,8 +35,12 @@
 #include "background_pass.h"
 #include "external_video_image.h"
 #include "log.h"
+#include "scene_math.h"
 #include "video_pass.h"
 #include "vk_context.h"
+
+using vkr::cubeMvp;
+using vkr::Mat4;
 
 namespace {
 
@@ -46,59 +50,7 @@ int64_t nowNs() {
         .count();
 }
 
-// ---- Minimal column-major mat4 helpers for the cube MVP --------------------
-struct Mat4 {
-    float m[16]; // column-major, m[col*4+row]
-};
-
-Mat4 matMul(const Mat4& a, const Mat4& b) {
-    Mat4 r{};
-    for (int c = 0; c < 4; ++c)
-        for (int row = 0; row < 4; ++row)
-            for (int k = 0; k < 4; ++k) r.m[c * 4 + row] += a.m[k * 4 + row] * b.m[c * 4 + k];
-    return r;
-}
-
-Mat4 matRotY(float a) {
-    Mat4 r{};
-    float c = cosf(a), s = sinf(a);
-    r.m[0] = c; r.m[2] = -s; r.m[5] = 1.0f; r.m[8] = s; r.m[10] = c; r.m[15] = 1.0f;
-    return r;
-}
-
-Mat4 matRotX(float a) {
-    Mat4 r{};
-    float c = cosf(a), s = sinf(a);
-    r.m[0] = 1.0f; r.m[5] = c; r.m[6] = s; r.m[9] = -s; r.m[10] = c; r.m[15] = 1.0f;
-    return r;
-}
-
-// Vulkan conventions: depth 0..1, clip Y down (the Y flip lives in m[5]).
-Mat4 matPerspective(float fovyRad, float aspect, float zNear, float zFar) {
-    Mat4 r{};
-    float f = 1.0f / tanf(fovyRad * 0.5f);
-    r.m[0] = f / aspect;
-    r.m[5] = -f;
-    r.m[10] = zFar / (zNear - zFar);
-    r.m[11] = -1.0f;
-    r.m[14] = (zNear * zFar) / (zNear - zFar);
-    return r;
-}
-
-// One cube of the M12 scene: spins around two axes (spin flips per cube, a
-// phase keeps them visibly different), scaled and offset vertically so both
-// cubes fit fully inside a 45°-FOV portrait view at z = -7.5 (half-height
-// there is 3.11; |yOffset| + scaledHalfDiagonal = 1.55 + 1.47 < 3.11).
-Mat4 cubeMvp(float tSec, VkExtent2D extent, float yOffset, float spin, float phase) {
-    Mat4 model = matMul(matRotY(spin * tSec * 0.9f + phase), matRotX(tSec * 0.37f + phase));
-    constexpr float kScale = 0.85f;
-    for (int c = 0; c < 3; ++c)
-        for (int r = 0; r < 3; ++r) model.m[c * 4 + r] *= kScale;
-    model.m[13] += yOffset;
-    model.m[14] -= 7.5f;
-    float aspect = extent.height ? (float)extent.width / (float)extent.height : 1.0f;
-    return matMul(matPerspective(0.7854f, aspect, 0.1f, 100.0f), model);
-}
+// Mat4/cubeMvp live in scene_math.h (shared with the desktop compositor).
 
 // ---- Multi-producer stream registry (M11/M12) ------------------------------
 // One AImageReader per client app, keyed by Binder calling UID. Created on
@@ -454,8 +406,8 @@ void android_main(android_app* app) {
 
         float tSec = (float)((nowNs() - appStartNs) * 1e-9);
         float mvps[32];
-        Mat4 top = cubeMvp(tSec, vk.swapExtent, 1.55f, 1.0f, 0.0f);
-        Mat4 bottom = cubeMvp(tSec, vk.swapExtent, -1.55f, -1.0f, 2.1f);
+        Mat4 top = cubeMvp(tSec, vk.swapExtent, 0.0f, 1.55f, 1.0f, 0.0f);
+        Mat4 bottom = cubeMvp(tSec, vk.swapExtent, 0.0f, -1.55f, -1.0f, 2.1f);
         memcpy(mvps, top.m, sizeof(top.m));
         memcpy(mvps + 16, bottom.m, sizeof(bottom.m));
         if (!passBound)

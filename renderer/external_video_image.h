@@ -37,6 +37,13 @@ public:
         VkImage image[2] = {};
         VkImageView view[2] = {};
         VkDeviceMemory memory[4] = {};
+        // false for renderer-owned slots (M13 wl_shm upload path): no external
+        // queue-family ownership transfer applies to those.
+        bool external = true;
+        // Owned slots only: persistently mapped host-visible memory + layout.
+        void* mapped = nullptr;
+        uint64_t rowPitch = 0;
+        uint32_t width = 0, height = 0;
     };
 
     // Windows: full import of a PoolDesc (textures + fences).
@@ -60,6 +67,13 @@ public:
     // stream goes away: its AHardwareBuffers are freed and their addresses
     // (our slot keys) can be reused by a later allocation.
     void removeSlot(VkContext& vk, uint32_t key);
+
+    // M13 wl_shm fallback: a renderer-owned LINEAR host-visible BGRA image the
+    // caller fills via updateOwnedSurface (CPU upload - the non-zero-copy
+    // path for clients without dma-buf support).
+    bool addOwnedSurface(VkContext& vk, uint32_t key, uint32_t width, uint32_t height);
+    bool updateOwnedSurface(VkContext& vk, uint32_t key, const void* pixels, uint64_t srcStride,
+                            uint32_t width, uint32_t height);
 
     void destroy(VkContext& vk);
 

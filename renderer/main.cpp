@@ -18,11 +18,15 @@
 #include <GLFW/glfw3.h>
 #include <volk.h>
 
+#include "dump_util.h"
 #include "external_video_image.h"
 #include "ipc.h"
 #include "log.h"
 #include "video_pass.h"
 #include "vk_context.h"
+#ifndef _WIN32
+#include "wayland_compositor.h"
+#endif
 
 // vkrenderer [--pipe vkrender] [--pacing latest|pts] [--headless N [--dump out.ppm]]
 //
@@ -74,103 +78,48 @@ struct FrameSync {
     std::optional<uint64_t> pendingConsumed;
 };
 
-// Writes the offscreen target as a binary PPM for headless verification.
-bool dumpTarget(vkr::VkContext& vk, VkCommandPool cmdPool, const char* path) {
-    const uint32_t w = vk.swapExtent.width, h = vk.swapExtent.height;
-    VkBuffer buf = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
-    VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bci.size = (VkDeviceSize)w * h * 4;
-    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    vkCreateBuffer(vk.device, &bci, nullptr, &buf);
-    VkMemoryRequirements req;
-    vkGetBufferMemoryRequirements(vk.device, buf, &req);
-    VkPhysicalDeviceMemoryProperties mp;
-    vkGetPhysicalDeviceMemoryProperties(vk.phys, &mp);
-    uint32_t type = 0;
-    for (uint32_t t = 0; t < mp.memoryTypeCount; ++t) {
-        if ((req.memoryTypeBits & (1u << t)) &&
-            (mp.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-            (mp.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-            type = t;
-            break;
-        }
-    }
-    VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    mai.allocationSize = req.size;
-    mai.memoryTypeIndex = type;
-    vkAllocateMemory(vk.device, &mai, nullptr, &mem);
-    vkBindBufferMemory(vk.device, buf, mem, 0);
-
-    VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    cbai.commandPool = cmdPool;
-    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cbai.commandBufferCount = 1;
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(vk.device, &cbai, &cmd);
-    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &bi);
-    VkBufferImageCopy region{};
-    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.imageExtent = {w, h, 1};
-    vkCmdCopyImageToBuffer(cmd, vk.swapImages[0], VK_IMAGE_LAYOUT_GENERAL, buf, 1, &region);
-    vkEndCommandBuffer(cmd);
-    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    si.commandBufferCount = 1;
-    si.pCommandBuffers = &cmd;
-    vkQueueSubmit(vk.queue, 1, &si, VK_NULL_HANDLE);
-    vkQueueWaitIdle(vk.queue);
-
-    void* data = nullptr;
-    vkMapMemory(vk.device, mem, 0, VK_WHOLE_SIZE, 0, &data);
-    FILE* f = fopen(path, "wb");
-    bool ok = f != nullptr;
-    if (f) {
-        fprintf(f, "P6\n%u %u\n255\n", w, h);
-        const uint8_t* px = (const uint8_t*)data;
-        std::vector<uint8_t> row(w * 3);
-        for (uint32_t y = 0; y < h; ++y) {
-            for (uint32_t x = 0; x < w; ++x) {
-                const uint8_t* p = px + ((size_t)y * w + x) * 4; // BGRA
-                row[x * 3 + 0] = p[2];
-                row[x * 3 + 1] = p[1];
-                row[x * 3 + 2] = p[0];
-            }
-            fwrite(row.data(), 1, row.size(), f);
-        }
-        fclose(f);
-    }
-    vkUnmapMemory(vk.device, mem);
-    vkFreeCommandBuffers(vk.device, cmdPool, 1, &cmd);
-    vkDestroyBuffer(vk.device, buf, nullptr);
-    vkFreeMemory(vk.device, mem, nullptr);
-    if (ok) VKR_LOG("renderer: wrote %s (%ux%u)", path, w, h);
-    return ok;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
     std::string pipe = "vkrender";
     std::string dumpPath = "headless.ppm";
     bool ptsPacing = false;
+    bool waylandMode = false;
+    std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dumpPath = argv[++i];
         else if (!strcmp(argv[i], "--headless") && i + 1 < argc) headlessFrames = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
+        else if (!strcmp(argv[i], "--wayland")) {
+            waylandMode = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') waylandSocket = argv[++i];
+        } else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
             std::string mode = argv[++i];
             if (mode == "pts") ptsPacing = true;
             else if (mode != "latest") { fprintf(stderr, "bad --pacing\n"); return 1; }
         } else {
             fprintf(stderr,
                     "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
-                    "[--headless N [--dump out.ppm]]\n");
+                    "[--wayland [socket]] [--headless N [--dump out.ppm]]\n");
             return 1;
         }
     }
+#ifndef _WIN32
+    if (waylandMode) {
+        vkr::WaylandOptions wopts;
+        wopts.socketName = waylandSocket;
+        wopts.headlessFrames = headlessFrames;
+        wopts.dumpPath = dumpPath;
+        wopts.shaderDir = exeDir() + "/shaders";
+        return vkr::runWaylandCompositor(wopts);
+    }
+#else
+    if (waylandMode) {
+        fprintf(stderr, "--wayland is Linux-only\n");
+        return 1;
+    }
+#endif
     const bool headless = headlessFrames > 0;
     const bool dbgNoTimelineWait = getenv("VKR_NO_TIMELINE_WAIT") != nullptr;
     const bool dbgNoVideoDraw = getenv("VKR_NO_VIDEO_DRAW") != nullptr;
@@ -547,7 +496,7 @@ int main(int argc, char** argv) {
     if (headless) {
         vkQueueWaitIdle(vk.queue);
         if (videoFramesSeen >= headlessFrames) {
-            dumpTarget(vk, cmdPool, dumpPath.c_str());
+            vkrDumpTarget(vk, cmdPool, dumpPath.c_str());
             VKR_LOG("renderer: headless OK, %d video frames", videoFramesSeen);
         } else {
             exitCode = 2;

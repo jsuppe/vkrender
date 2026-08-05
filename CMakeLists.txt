@@ -127,9 +127,40 @@ add_executable(vkrenderer
     renderer/vk_context.cpp
     renderer/external_video_image.cpp
     renderer/video_pass.cpp
-    renderer/background_pass.cpp)
+    renderer/background_pass.cpp
+    renderer/dump_util.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
+
+# --- Wayland compositor mode (M13, Linux only) -------------------------------
+# vkrenderer --wayland: a minimal Wayland server so ordinary clients
+# (gstreamer waylandsink, mpv, ...) are zero-copy producers. Protocol glue is
+# generated from the vendored XMLs by wayland-scanner.
+if(NOT WIN32)
+    pkg_check_modules(WLSERVER REQUIRED IMPORTED_TARGET wayland-server>=1.20)
+    find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+    set(VKR_WL_PROTOCOLS
+        ${CMAKE_SOURCE_DIR}/third_party/wayland-protocols/xdg-shell.xml
+        ${CMAKE_SOURCE_DIR}/third_party/wayland-protocols/linux-dmabuf-v1.xml)
+    set(VKR_WL_GEN_DIR ${CMAKE_BINARY_DIR}/wayland-gen)
+    file(MAKE_DIRECTORY ${VKR_WL_GEN_DIR})
+    set(VKR_WL_GEN_SOURCES "")
+    foreach(_proto ${VKR_WL_PROTOCOLS})
+        get_filename_component(_pname ${_proto} NAME_WE)
+        set(_hdr ${VKR_WL_GEN_DIR}/${_pname}-server-protocol.h)
+        set(_src ${VKR_WL_GEN_DIR}/${_pname}-protocol.c)
+        add_custom_command(OUTPUT ${_hdr} ${_src}
+            COMMAND ${WAYLAND_SCANNER} server-header ${_proto} ${_hdr}
+            COMMAND ${WAYLAND_SCANNER} private-code ${_proto} ${_src}
+            DEPENDS ${_proto}
+            COMMENT "wayland-scanner ${_pname}")
+        # Header listed as a source too so it exists before the .cpp compiles.
+        list(APPEND VKR_WL_GEN_SOURCES ${_src} ${_hdr})
+    endforeach()
+    target_sources(vkrenderer PRIVATE renderer/wayland_compositor.cpp ${VKR_WL_GEN_SOURCES})
+    target_include_directories(vkrenderer PRIVATE ${VKR_WL_GEN_DIR})
+    target_link_libraries(vkrenderer PRIVATE PkgConfig::WLSERVER)
+endif()
 add_custom_command(TARGET vkrenderer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${VKR_SHADER_OUT_DIR} "$<TARGET_FILE_DIR:vkrenderer>/shaders")

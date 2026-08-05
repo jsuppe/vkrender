@@ -310,7 +310,7 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
     static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
 
     std::vector<const ExternalVideoPool::Slot*> barrierSlots;
-    if (haveVideo && !noExternalBarrier) barrierSlots.push_back(slot);
+    if (haveVideo && !noExternalBarrier && slot->external) barrierSlots.push_back(slot);
     recordOwnershipBarriers(cmd, barrierSlots, kExternalQueueFamily, queueFamily, true);
 
     beginClearedRendering(cmd, target, extent);
@@ -360,7 +360,10 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
         if (!slot || setIt == sets_.end()) continue;
         faceSet[f] = setIt->second;
         anyVideo = true;
-        if (std::find(barrierSlots.begin(), barrierSlots.end(), slot) == barrierSlots.end())
+        // Owned (shm-upload) slots have no external producer: no ownership
+        // transfer barriers apply.
+        if (slot->external &&
+            std::find(barrierSlots.begin(), barrierSlots.end(), slot) == barrierSlots.end())
             barrierSlots.push_back(slot);
     }
     if (noExternalBarrier) barrierSlots.clear();

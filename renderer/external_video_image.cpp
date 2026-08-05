@@ -689,6 +689,131 @@ void ExternalVideoPool::removeSlot(VkContext& vk, uint32_t key) {
     slots.erase(it);
 }
 
+bool ExternalVideoPool::addOwnedSurface(VkContext& vk, uint32_t key, uint32_t width,
+                                        uint32_t height) {
+    if (slots.count(key)) return true;
+    if (slots.size() >= proto::kMaxSurfaces) {
+        VKR_ERR("too many surfaces (%zu)", slots.size());
+        return false;
+    }
+
+    Slot slot;
+    slot.external = false;
+    slot.width = width;
+    slot.height = height;
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = VK_FORMAT_B8G8R8A8_UNORM;
+    ici.extent = {width, height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_LINEAR; // CPU-writable, sampled directly
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    ici.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    if (vkCreateImage(vk.device, &ici, nullptr, &slot.image[0]) != VK_SUCCESS) {
+        VKR_ERR("owned surface image creation failed (%ux%u)", width, height);
+        return false;
+    }
+
+    VkMemoryRequirements req;
+    vkGetImageMemoryRequirements(vk.device, slot.image[0], &req);
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(vk.phys, &mp);
+    int memType = -1;
+    for (uint32_t t = 0; t < mp.memoryTypeCount; ++t) {
+        constexpr VkMemoryPropertyFlags want =
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        if ((req.memoryTypeBits & (1u << t)) && (mp.memoryTypes[t].propertyFlags & want) == want) {
+            memType = (int)t;
+            break;
+        }
+    }
+    auto fail = [&](const char* what) {
+        VKR_ERR("%s (owned surface %u)", what, key);
+        if (slot.view[0]) vkDestroyImageView(vk.device, slot.view[0], nullptr);
+        vkDestroyImage(vk.device, slot.image[0], nullptr);
+        if (slot.memory[0]) vkFreeMemory(vk.device, slot.memory[0], nullptr);
+        return false;
+    };
+    if (memType < 0) return fail("no host-visible memory type");
+
+    VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    mai.allocationSize = req.size;
+    mai.memoryTypeIndex = (uint32_t)memType;
+    if (vkAllocateMemory(vk.device, &mai, nullptr, &slot.memory[0]) != VK_SUCCESS)
+        return fail("owned surface allocation failed");
+    if (vkBindImageMemory(vk.device, slot.image[0], slot.memory[0], 0) != VK_SUCCESS)
+        return fail("owned surface bind failed");
+    if (vkMapMemory(vk.device, slot.memory[0], 0, VK_WHOLE_SIZE, 0, &slot.mapped) != VK_SUCCESS)
+        return fail("owned surface map failed");
+
+    VkImageSubresource sub{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+    VkSubresourceLayout layout;
+    vkGetImageSubresourceLayout(vk.device, slot.image[0], &sub, &layout);
+    slot.rowPitch = layout.rowPitch;
+
+    if (!makeView(vk, slot.image[0], VK_FORMAT_B8G8R8A8_UNORM, VK_NULL_HANDLE, &slot.view[0]))
+        return fail("owned surface view failed");
+
+    // One-time PREINITIALIZED -> GENERAL transition (sampling layout).
+    VkCommandPool tmpPool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    cpci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    cpci.queueFamilyIndex = vk.queueFamily;
+    vkCreateCommandPool(vk.device, &cpci, nullptr, &tmpPool);
+    VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cbai.commandPool = tmpPool;
+    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    vkAllocateCommandBuffers(vk.device, &cbai, &cmd);
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &bi);
+    VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    b.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+    b.srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
+    b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    b.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    b.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    b.image = slot.image[0];
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &b;
+    vkCmdPipelineBarrier2(cmd, &dep);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    vkQueueSubmit(vk.queue, 1, &si, VK_NULL_HANDLE);
+    vkQueueWaitIdle(vk.queue);
+    vkDestroyCommandPool(vk.device, tmpPool, nullptr);
+
+    slots.emplace(key, slot);
+    VKR_LOG("renderer: created owned surface key=%u %ux%u (shm upload path, %zu total)", key,
+            width, height, slots.size());
+    return true;
+}
+
+bool ExternalVideoPool::updateOwnedSurface(VkContext& vk, uint32_t key, const void* pixels,
+                                          uint64_t srcStride, uint32_t width, uint32_t height) {
+    (void)vk;
+    auto it = slots.find(key);
+    if (it == slots.end() || it->second.external || !it->second.mapped) return false;
+    Slot& s = it->second;
+    uint32_t copyW = width < s.width ? width : s.width;
+    uint32_t copyH = height < s.height ? height : s.height;
+    const uint8_t* src = (const uint8_t*)pixels;
+    uint8_t* dst = (uint8_t*)s.mapped;
+    for (uint32_t y = 0; y < copyH; ++y)
+        memcpy(dst + y * s.rowPitch, src + y * srcStride, (size_t)copyW * 4);
+    return true;
+}
+
 void ExternalVideoPool::destroy(VkContext& vk) {
     for (auto& [key, s] : slots) {
         for (auto& v : s.view)
