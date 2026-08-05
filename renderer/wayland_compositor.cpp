@@ -37,6 +37,7 @@
 #include "xdg-shell-server-protocol.h"
 
 #include "background_pass.h"
+#include "dump_util.h"
 #include "external_video_image.h"
 #include "log.h"
 #include "scene_math.h"
