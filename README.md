@@ -115,6 +115,12 @@ gives any D3D11 app a renderer-owned shared-texture ring with GPU-side
 fencing; each client is one stream on the scene. Demo:
 `vkr_client_demo.exe`.
 
+**Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine
+a discoverable cast target ("vkrender") and feeds the cast into the scene
+as a normal producer stream. Disable Windows' "Projecting to this PC"
+first; phones need a Miracast-capable Wi-Fi adapter on the receiver,
+Windows senders work over the LAN.
+
 **Multi-window + controls (M15, `--serve`/`--wayland`)**: repeatable
 `--window WxH+X+Y` spans one seamless scene across windows/displays.
 Runtime keys: `L` layout (two-cubes / single-cube / stream wall), `SPACE`

@@ -143,6 +143,12 @@ if(WIN32)
 
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
+
+    # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
+    # cppwinrt projection headers and WindowsApp.lib).
+    add_executable(vkr_miracast client/miracast_receiver.cpp)
+    target_link_libraries(vkr_miracast PRIVATE vkrender_client d3d11 dxgi windowsapp)
+    target_compile_options(vkr_miracast PRIVATE /EHsc /await)
 endif()
 
 # --- Wayland compositor mode (M13, Linux only) -------------------------------

@@ -312,6 +312,28 @@ and `--wayland`):
   layout switching and per-stream removal live via keyboard, dynamic
   client connect/disconnect reflected in the scene.
 
+## M16 — Miracast receiver (Windows) (built, 2026-08-05; live-cast test pending)
+
+`vkr_miracast [pipe] [name]`
+([client/miracast_receiver.cpp](client/miracast_receiver.cpp)): the machine
+becomes a discoverable Miracast sink ("vkrender") via the public
+`Windows.Media.Miracast.MiracastReceiver` API, and the cast is **just
+another producer**: `MediaSourceCreated` → `MediaPlayer` in frame-server
+mode → `CopyFrameToVideoSurface` into dequeued `vkrender_client` ring
+textures → one more stream on the scene, curated like any other (M15
+controls apply).
+
+- Requirements: Windows 1809+, and Windows' own "Projecting to this PC"
+  feature must not claim the sink role. Phone/tablet senders need a
+  Miracast-capable Wi-Fi adapter on the receiver (Wi-Fi Direct); Windows
+  senders on the same LAN can connect over infrastructure (MS-MICE).
+  Cast audio is discarded (video-only scene).
+- Status: builds + session starts + service ring connected on the dev box
+  (Ethernet-only, so Wi-Fi Direct discovery is unavailable there);
+  end-to-end cast pending a sender device on suitable hardware.
+- Linux/Android receiver stacks (Wi-Fi Direct + WFD RTSP, no public sink
+  API) stay on the backlog.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
