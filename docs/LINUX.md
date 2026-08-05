@@ -272,3 +272,50 @@ Expected log lines proving the zero-copy path:
 | Combined-mode NV12 import (`VkSamplerYcbcrConversion`) | — | implemented; needs Intel iHD or AMD radeonsi hardware to exercise (§5 procedure applies verbatim) |
 | Windowed renderer on X11/Wayland | — | code path identical to the Windows GLFW loop; needs a desktop session to exercise |
 | Explicit GPU-side sync (sync_file) | — | not implemented; producer-side `vaSyncSurface` in use (see §1) |
+
+## 8. Wayland compositor mode (M13)
+
+`vkrenderer --wayland [socket] [--headless N --dump out.ppm]` runs the
+renderer as a **minimal Wayland compositor** - the Linux equivalent of the
+Android renderer-service architecture. Ordinary Wayland clients are the
+producers; no vkrender code, protocol, or library is needed on the client
+side:
+
+```bash
+vkrenderer --wayland vkrender-0 &
+WAYLAND_DISPLAY=vkrender-0 gst-launch-1.0 rtspsrc location=rtsp://cam/stream \
+  ! decodebin3 ! waylandsink
+```
+
+Each client surface becomes one stream on the two-cube vaporwave scene
+(up to 12; waylandsink's black "area" surface is filtered out by preferring
+content-bearing subsurfaces). Frame callbacks fire per composited frame, so
+clients pace to the compositor's refresh; `wl_buffer.release` is deferred
+until the frame fences that sampled a buffer retire - the same lifecycle as
+Android's `AImage` retirement.
+
+Buffer paths:
+
+- **dma-buf** (`zwp_linux_dmabuf_v1` v3): formats/modifiers advertised from
+  the Vulkan driver's `VK_EXT_image_drm_format_modifier` query (NV12 incl.
+  the per-plane fallback modifiers, ARGB/XRGB8888). Buffers import through
+  the same explicit-layout path as the IPC `SurfaceDesc` flow. Implicit
+  sync is bridged by exporting the buffer's write fences with
+  `DMA_BUF_IOCTL_EXPORT_SYNC_FILE` (kernel 5.18+) and polling before
+  sampling. Note: NVIDIA's Vulkan declines to import system-RAM (udmabuf)
+  dma-bufs - GPU-allocated buffers (VAAPI on Intel/AMD) are the real
+  zero-copy clients; the failure is handled cleanly (buffer released).
+- **wl_shm**: CPU upload into renderer-owned linear images (double-buffered
+  per stream). Not zero-copy, but works with *every* client and driver -
+  this is the hardware-agnostic fallback for VMs (issue #8): on the NVIDIA
+  VAAPI shim, waylandsink negotiates sysmem and lands here automatically.
+
+Protocol XMLs are vendored under `third_party/wayland-protocols/` and
+compiled by `wayland-scanner` at build time (`libwayland-dev` required; the
+test client `vkr_wl_dmabuf_client` additionally uses `/dev/udmabuf` to
+exercise the dmabuf protocol without a VAAPI driver).
+
+Verified on melchior (headless over SSH): single + three simultaneous
+`videotestsrc ! waylandsink` clients, and full RTSP -> `decodebin3` ->
+`waylandsink` at exact 30 fps (150 adoptions / 5 s), PPM dumps
+pixel-correct.

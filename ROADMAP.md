@@ -222,6 +222,41 @@ pass, before the cubes).
   cellauto, yuvtestsrc, colorspectrum), ~1350 adoptions/5 s aggregate,
   presents locked at 60 Hz.
 
+## M13 — Wayland compositor front door (done, 2026-08-04)
+
+The Linux equivalent of the Android Binder/BufferQueue architecture:
+`vkrenderer --wayland [socket]` runs a **minimal Wayland compositor**
+([renderer/wayland_compositor.cpp](renderer/wayland_compositor.cpp)) —
+ordinary Wayland clients are producers with **zero custom code**:
+
+```bash
+vkrenderer --wayland vkrender-0 &
+WAYLAND_DISPLAY=vkrender-0 gst-launch-1.0 rtspsrc location=rtsp://... ! decodebin3 ! waylandsink
+```
+
+- Protocol surface: `wl_compositor`, `wl_subcompositor` (waylandsink parks
+  video on a subsurface), `wl_shm`, xdg-shell (configure dance), and
+  `zwp_linux_dmabuf_v1` v3 with format/modifier advertisement from the
+  Vulkan driver's `VK_EXT_image_drm_format_modifier` query (vendored
+  protocol XMLs + build-time wayland-scanner codegen).
+- Buffers: dma-bufs import zero-copy through the M6 `SurfaceDesc` path
+  (implicit-sync bridged via `DMA_BUF_IOCTL_EXPORT_SYNC_FILE` polling,
+  mirroring Android's fence handling); `wl_shm` buffers take a CPU-upload
+  path into renderer-owned linear images — which is also the
+  hardware-agnostic VM answer from [#8](https://github.com/jsuppe/vkrender/issues/8).
+  `wl_buffer.release` is deferred behind frame fences exactly like
+  Android's `AImage` retirement; frame callbacks pace clients at composite
+  rate.
+- Same scene as Android: streams land on the two-cube vaporwave scene
+  (side-by-side in landscape), up to 12.
+- **Verified on melchior** (RTX 3090, headless over SSH): stock
+  `videotestsrc ! waylandsink`, three simultaneous clients, and full
+  RTSP → `decodebin3` → `waylandsink` at exact 30 fps. The udmabuf test
+  client ([test/wayland_dmabuf_client.c](test/wayland_dmabuf_client.c))
+  verified the dmabuf protocol path end-to-end; NVIDIA declines to import
+  system-RAM dma-bufs (clean failure + release), so dmabuf zero-copy lands
+  with Intel/AMD hardware ([#2](https://github.com/jsuppe/vkrender/issues/2)).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

@@ -102,6 +102,12 @@ Options: `--pipe <name>` on both ends to run multiple instances;
 `--pacing latest|pts` on the renderer (default `latest` = lowest latency,
 `pts` = smooth clock-anchored playback).
 
+**Linux compositor mode (M13)**: `vkrenderer --wayland [socket]` turns the
+renderer into a minimal Wayland compositor — any Wayland client (GStreamer
+`waylandsink`, mpv, ...) becomes a zero-copy video producer, one stream per
+client on the two-cube scene. See [ROADMAP.md](ROADMAP.md#m13) and
+docs/LINUX.md.
+
 Codecs: H.264 and H.265 (8-bit and 10-bit) verified via the D3D11 hardware
 decoders; 10-bit sources are shared as RGB10A2. AV1 should work on
 AV1-capable GPUs but is untested (no AV1-over-RTSP local loop test).
