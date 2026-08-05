@@ -160,6 +160,25 @@ if(NOT WIN32)
     target_sources(vkrenderer PRIVATE renderer/wayland_compositor.cpp ${VKR_WL_GEN_SOURCES})
     target_include_directories(vkrenderer PRIVATE ${VKR_WL_GEN_DIR})
     target_link_libraries(vkrenderer PRIVATE PkgConfig::WLSERVER)
+
+    # Test client: feeds the compositor a udmabuf-backed ARGB dma-buf through
+    # zwp_linux_dmabuf (client-side protocol glue generated here too).
+    pkg_check_modules(WLCLIENT IMPORTED_TARGET wayland-client>=1.20)
+    if(WLCLIENT_FOUND)
+        set(VKR_WL_CLIENT_GEN "")
+        foreach(_proto ${VKR_WL_PROTOCOLS})
+            get_filename_component(_pname ${_proto} NAME_WE)
+            set(_chdr ${VKR_WL_GEN_DIR}/${_pname}-client-protocol.h)
+            add_custom_command(OUTPUT ${_chdr}
+                COMMAND ${WAYLAND_SCANNER} client-header ${_proto} ${_chdr}
+                DEPENDS ${_proto}
+                COMMENT "wayland-scanner client ${_pname}")
+            list(APPEND VKR_WL_CLIENT_GEN ${_chdr} ${VKR_WL_GEN_DIR}/${_pname}-protocol.c)
+        endforeach()
+        add_executable(vkr_wl_dmabuf_client test/wayland_dmabuf_client.c ${VKR_WL_CLIENT_GEN})
+        target_include_directories(vkr_wl_dmabuf_client PRIVATE ${VKR_WL_GEN_DIR})
+        target_link_libraries(vkr_wl_dmabuf_client PRIVATE PkgConfig::WLCLIENT)
+    endif()
 endif()
 add_custom_command(TARGET vkrenderer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
