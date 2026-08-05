@@ -768,7 +768,11 @@ bool hasContentChild(Ctx& ctx, Stream* s) {
 // ---- the compositor loop ----------------------------------------------------
 
 int runWaylandCompositor(const WaylandOptions& options) {
-    const bool headless = options.headlessFrames > 0;
+    // N > 0: verification mode (wait for N frames, dump, exit; 60 s deadline).
+    // N < 0: endless headless service (SSH-only receiver boxes); periodic
+    // dumps via VKR_SNAPSHOT_SECONDS land in scene-headless.ppm.
+    const bool headless = options.headlessFrames != 0;
+    const bool finite = options.headlessFrames > 0;
 
     VkContext vk;
     uint32_t initW = options.windows.empty() ? 1280 : (uint32_t)options.windows[0].width;
@@ -822,14 +826,23 @@ int runWaylandCompositor(const WaylandOptions& options) {
 
     while (!quit) {
         if (headless) {
-            if (ctx.videoFramesSeen >= options.headlessFrames) break;
-            if (nowNs() > headlessDeadline) {
+            if (finite && ctx.videoFramesSeen >= options.headlessFrames) break;
+            if (finite && nowNs() > headlessDeadline) {
                 VKR_ERR("compositor headless: no %d frames within 60 s (saw %d)",
                         options.headlessFrames, ctx.videoFramesSeen);
                 exitCode = 2;
                 break;
             }
             usleep(16000);
+            static double snapshotEvery =
+                getenv("VKR_SNAPSHOT_SECONDS") ? atof(getenv("VKR_SNAPSHOT_SECONDS")) : 0.0;
+            static int64_t lastSnap = nowNs();
+            if (!finite && snapshotEvery > 0.0 &&
+                (double)(nowNs() - lastSnap) * 1e-9 >= snapshotEvery) {
+                lastSnap = nowNs();
+                vkQueueWaitIdle(vk.queue);
+                vkrDumpTarget(vk, host.commandPool(), "scene-headless.ppm");
+            }
         }
 
         wl_event_loop_dispatch(ctx.loop, 0);
@@ -893,7 +906,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     }
 
     vkDeviceWaitIdle(vk.device);
-    if (headless && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
+    if (finite && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
     for (auto& e : ctx.retiring) releaseBuffer(e.second);
