@@ -115,6 +115,12 @@ gives any D3D11 app a renderer-owned shared-texture ring with GPU-side
 fencing; each client is one stream on the scene. Demo:
 `vkr_client_demo.exe`.
 
+**AirPlay receiver (M17, Linux)**: run the compositor
+(`vkrenderer --wayland vkrender-0 --headless -1` on a headless box) and
+`WAYLAND_DISPLAY=vkrender-0 uxplay -n vkrender -nh -vs waylandsink` —
+Apple devices see "vkrender" in Screen Mirroring and the mirror becomes a
+scene stream. (`apt install uxplay`; avahi must be running.)
+
 **Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine
 a discoverable cast target ("vkrender") and feeds the cast into the scene
 as a normal producer stream. Disable Windows' "Projecting to this PC"

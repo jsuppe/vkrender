@@ -334,6 +334,29 @@ controls apply).
 - Linux/Android receiver stacks (Wi-Fi Direct + WFD RTSP, no public sink
   API) stay on the backlog.
 
+## M17 — AirPlay receiver via UxPlay (Linux) (done, 2026-08-05; live cast pending sender)
+
+The M13 compositor makes AirPlay nearly free: **UxPlay** (open-source
+AirPlay mirroring server, Ubuntu-packaged) renders through GStreamer, so
+pointing its sink at our socket turns every AirPlay mirror into a vkrender
+stream with zero integration code:
+
+```bash
+vkrenderer --wayland vkrender-0 --headless -1 &   # endless headless service
+WAYLAND_DISPLAY=vkrender-0 uxplay -n vkrender -nh -vs waylandsink
+```
+
+- New `--headless -1`: endless headless service mode (SSH-only receiver
+  boxes) with periodic scene dumps via `VKR_SNAPSHOT_SECONDS` →
+  `scene-headless.ppm`.
+- Verified on melchior: uxplay attaches to the compositor and the machine
+  advertises `vkrender` on `_airplay._tcp`/`_raop._tcp` (confirmed by raw
+  mDNS query; avahi running). Apple senders on the LAN list it under
+  Screen Mirroring; the mirror lands as a scene stream (shm path on the
+  NVIDIA box). End-to-end video pending an Apple sender device.
+- Windows AirPlay would need a UxPlay Windows build + a GStreamer sink
+  bridging to vkrender_client - backlog.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
