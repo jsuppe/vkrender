@@ -74,6 +74,13 @@ for abi in "${ABIS[@]}"; do
             missing="$missing ${flag#-l}" # NDK system libs (m, dl, log, ...)
         fi
     done
+    # M18: the AirPlay APK links OpenSSL from these prebuilts; keep it even if
+    # it is not part of the GStreamer static-link closure (headers arrive with
+    # the full include/ copy above).
+    for name in libssl.a libcrypto.a; do
+        [ -f "$src/lib/$name" ] && cp "$src/lib/$name" "$out/lib/$name"
+    done
+
     echo "   kept $(du -sh "$out" | cut -f1); system libs resolved by NDK:$missing"
 done
 

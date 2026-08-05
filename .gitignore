@@ -13,4 +13,6 @@ android/renderer/build/
 android/renderer/.cxx/
 android/decoder/build/
 android/decoder/.cxx/
+android/airplay/build/
+android/airplay/.cxx/
 android/gstreamer-android/

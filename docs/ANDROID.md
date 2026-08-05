@@ -245,6 +245,39 @@ release fences via `AImage_deleteAsync` for the consumed direction.
   pending release for the same UID (the window it would return is about to
   be destroyed).
 
+## 7b. AirPlay receiver APK (M18)
+
+A third, optional producer app — `dev.vkrender.airplay`
+([android/airplay/](../android/airplay)) — turns the tablet into an
+**AirPlay screen-mirroring sink**. It binds `RendererService` for a Surface
+exactly like the decoder client, then runs the ported UxPlay RAOP +
+mirroring core: the `video_process` callback delivers H.264 access units
+(annex-B, SPS/PPS in-band) that feed `AMediaCodec` decoding into that
+Surface — the same decode tail as §3's GStreamer path with the transport
+replaced by AirPlay.
+
+Discovery uses an Android-specific `dnssd` shim
+([dnssd_android.c](../android/airplay/src/main/cpp/dnssd_android.c)) that
+builds the standard `_raop._tcp`/`_airplay._tcp` TXT records and hands
+registration to Java's `NsdManager` — no bundled mDNS daemon. libplist and
+the FairPlay/pairing crypto link against the OpenSSL static libs that ship
+in the GStreamer Android prebuilts (§3).
+
+```bash
+adb install -r android/airplay/build/outputs/apk/debug/airplay-debug.apk
+adb shell am start -n dev.vkrender.renderer/.MainActivity   # renderer first
+adb shell am start -n dev.vkrender.airplay/.MainActivity    # then the sink
+# iPhone/iPad/Mac on the same (multicast-friendly) Wi-Fi -> Screen Mirroring -> "vkrender"
+```
+
+**GPLv3**: this APK vendors the UxPlay mirroring core, so distributing it
+publicly triggers GPLv3 obligations *for this app only* — the renderer and
+decoder APKs are separate processes/APKs communicating over Binder and are
+unaffected (the M10 split contains the license boundary). Google Cast
+mirroring is deliberately absent: it is attestation-locked (senders verify
+a Google-signed device certificate), so no third-party receiver — app or
+native — can accept a phone's Cast mirror.
+
 ## 8. Known limitations / backlog
 
 - Real-device verification (colors, hardware codecs, arm64) —

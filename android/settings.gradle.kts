@@ -16,3 +16,5 @@ rootProject.name = "vkrender"
 // client app — talking only through Binder (AIDL Surface handoff).
 include(":renderer")
 include(":decoder")
+
+include(":airplay")

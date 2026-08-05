@@ -109,7 +109,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Assemble APKs (renderer + decoder)
+      - name: Assemble APKs (renderer + decoder + airplay)
         run: gradle -p android assembleDebug
 
       - uses: actions/upload-artifact@v4
@@ -118,3 +118,4 @@ jobs:
           path: |
             android/renderer/build/outputs/apk/debug/renderer-debug.apk
             android/decoder/build/outputs/apk/*/debug/*.apk
+            android/airplay/build/outputs/apk/debug/airplay-debug.apk

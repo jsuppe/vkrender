@@ -357,6 +357,34 @@ WAYLAND_DISPLAY=vkrender-0 uxplay -n vkrender -nh -vs waylandsink
 - Windows AirPlay would need a UxPlay Windows build + a GStreamer sink
   bridging to vkrender_client - backlog.
 
+## M18 — AirPlay receiver on the Android renderer (built, 2026-08-05; live cast pending)
+
+A third producer APK (`dev.vkrender.airplay`) makes the Android tablet an
+**AirPlay screen-mirroring sink** - so iPhones/iPads/Macs mirror to the
+cube. No attestation wall (unlike Google Cast); the phone sees "vkrender"
+in Screen Mirroring and the mirror becomes a scene stream.
+
+- The UxPlay/RPiPlay RAOP + mirroring core (`third_party/uxplay/lib`, GPLv3)
+  is compiled for the NDK; its `video_process` callback (H.264 access units,
+  SPS/PPS in-band) feeds `AMediaCodec` decoding into the renderer's Binder
+  Surface - the exact decode tail as the M9 decoder, minus the transport.
+  libplist and the FairPlay/pairing crypto link against the OpenSSL static
+  libs already in the GStreamer Android prebuilts.
+- Discovery: an Android `dnssd` shim
+  ([android/airplay/.../dnssd_android.c](android/airplay/src/main/cpp/dnssd_android.c))
+  builds the standard `_raop._tcp`/`_airplay._tcp` TXT records but delegates
+  registration to Java's **NsdManager** (no bundled mDNS daemon).
+- Lifecycle mirrors the decoder client: binds `RendererService` for a
+  Surface, one AirPlay session at a time, foreground service.
+- **Verified on the API-36 emulator**: native init, raop server bind, and
+  both NSD services register (`A2B5E5BA1D33@vkrender` on `_raop._tcp`,
+  `vkrender` on `_airplay._tcp`). Live iPhone → tablet mirroring pending a
+  device on a multicast-friendly Wi-Fi network (the emulator NAT can't
+  reach a real sender).
+- **License note**: the AirPlay APK is GPLv3 (vendored UxPlay core); the
+  other vkrender APKs are unaffected (separate process over Binder - the
+  M10 split contains the obligation to this one app).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
