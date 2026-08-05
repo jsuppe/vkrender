@@ -203,8 +203,8 @@ if(WIN32)
     # M20: WebRTC (WHIP) receiver -> producer. whipserversrc does all the
     # WebRTC work; this is just a decode->ring bridge (shared design with the
     # Linux/Android receivers).
-    add_executable(vkr_webrtc client/webrtc_win.cpp)
-    target_link_libraries(vkr_webrtc PRIVATE vkrender_client GStreamer::win d3d11 dxgi)
+    add_executable(vkr_webrtc client/webrtc_win.cpp client/whip_mdns_win.c)
+    target_link_libraries(vkr_webrtc PRIVATE vkrender_client GStreamer::win d3d11 dxgi dnsapi)
     target_compile_options(vkr_webrtc PRIVATE /EHsc)
 
     add_executable(vkr_airplay client/airplay_win.cpp

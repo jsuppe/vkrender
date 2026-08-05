@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.ServiceInfo;
+import android.net.nsd.NsdManager;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -40,9 +42,15 @@ public class WebrtcService extends Service {
     private native boolean nativeSurfaceDead();
     private native void nativeStop();
 
+    private static final String WHIP_SERVICE_TYPE = "_vkrender-whip._tcp";
+
     private Thread worker;
     private volatile boolean stopping = false;
     private volatile boolean rendererAlive = false;
+
+    private NsdManager nsdManager;
+    private NsdManager.RegistrationListener regListener;
+    private volatile boolean advertised = false;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -71,6 +79,7 @@ public class WebrtcService extends Service {
             }
             Log.i(TAG, "webrtc: WHIP receiver up on port " + WHIP_PORT
                     + " - POST an SDP offer to http://<this-ip>:" + WHIP_PORT + "/whip/endpoint");
+            advertise();
             while (!stopping && !nativeSurfaceDead() && rendererAlive) sleepMs(1000);
             nativeStop();
             Log.i(TAG, "webrtc: session ended, re-acquiring surface");
@@ -114,6 +123,47 @@ public class WebrtcService extends Service {
         }
     }
 
+    /** Advertise _vkrender-whip._tcp so the Flutter sender auto-discovers us. */
+    private void advertise() {
+        if (advertised) return;
+        NsdServiceInfo info = new NsdServiceInfo();
+        info.setServiceName("vkrender");
+        info.setServiceType(WHIP_SERVICE_TYPE);
+        info.setPort(WHIP_PORT);
+        info.setAttribute("path", "/whip/endpoint");
+        nsdManager = getSystemService(NsdManager.class);
+        regListener = new NsdManager.RegistrationListener() {
+            @Override
+            public void onServiceRegistered(NsdServiceInfo info) {
+                Log.i(TAG, "webrtc: mDNS registered " + info.getServiceName());
+            }
+            @Override
+            public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
+                Log.w(TAG, "webrtc: mDNS registration failed: " + errorCode);
+            }
+            @Override
+            public void onServiceUnregistered(NsdServiceInfo info) {}
+            @Override
+            public void onUnregistrationFailed(NsdServiceInfo info, int errorCode) {}
+        };
+        try {
+            nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, regListener);
+            advertised = true;
+        } catch (Exception e) {
+            Log.w(TAG, "webrtc: mDNS register threw: " + e);
+        }
+    }
+
+    private void unadvertise() {
+        if (advertised && nsdManager != null && regListener != null) {
+            try {
+                nsdManager.unregisterService(regListener);
+            } catch (Exception ignored) {
+            }
+        }
+        advertised = false;
+    }
+
     private static void sleepMs(long ms) {
         try {
             Thread.sleep(ms);
@@ -142,6 +192,7 @@ public class WebrtcService extends Service {
     @Override
     public void onDestroy() {
         stopping = true;
+        unadvertise();
         nativeStop();
         super.onDestroy();
     }

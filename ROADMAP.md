@@ -458,6 +458,38 @@ producer-ring code on any platform. Each receiver is a thin GStreamer
 front-end onto the front door that already existed — Windows ring texture,
 Linux Wayland surface, Android Binder Surface.
 
+## M21 — cross-platform Flutter WHIP sender ([sender/](sender/))
+
+The counterpart to M20: a single Flutter app (Android, iOS, Windows, macOS,
+Linux, web) that captures this device's **screen or camera** and casts it
+*into* a vkrender scene over WHIP. Because the receivers run `whipserversrc`
+(a WHIP *server*), the sender is just another WHIP client — **zero receiver
+changes** beyond the discovery advertisement below.
+
+- **Phase A (done, builds on web + Windows + Android)** — the reusable core:
+  `whip_client.dart` (POST offer → `201` answer → `DELETE` on stop, no
+  signaling server), `webrtc_sender.dart` (capture + `RTCPeerConnection` +
+  **H.264 codec-preference forcing** — the Android receiver is H.264-only, so
+  a default VP8 negotiation would connect but decode nothing there),
+  `flutter_webrtc` 1.6.0. Android `mediaProjection` foreground service for
+  `getDisplayMedia` on Android 14+. iOS/macOS permissions + entitlements +
+  `NSBonjourServices` scaffolded (need a Mac to build; iOS screen share still
+  wants a ReplayKit broadcast extension).
+- **Phase B (done) — zero-config discovery.** All three receivers now
+  advertise **`_vkrender-whip._tcp`** (TXT `path=/whip/endpoint`) on port
+  8889, and the app browses for it via mDNS with a manual `host:port`
+  fallback:
+  - Windows — [client/whip_mdns_win.c](client/whip_mdns_win.c), a standalone
+    `DnsServiceRegister` helper (deliberately *not* the AirPlay
+    `dnssd_win.c`, which pulls in GPLv3 UxPlay headers — keeps `vkr_webrtc`
+    MPL/LGPL). Built into `vkr_webrtc.exe`, verified compiling/linking.
+  - Android — `NsdManager` registration in `WebrtcService.java`.
+  - Linux — [scripts/webrtc_receiver_linux.sh](scripts/webrtc_receiver_linux.sh)
+    runs the `whipserversrc → waylandsink` pipeline and `avahi-publish-service`
+    together.
+- **Pending** — iOS ReplayKit extension; live end-to-end phone-screen cast
+  (same real-device bucket as the M16–M20 receivers).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

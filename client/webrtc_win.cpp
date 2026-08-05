@@ -6,7 +6,10 @@
 // decode each received video track and upload the frames into a dequeued
 // vkrender_client ring texture - the cast becomes one more scene stream.
 //
-//   vkr_webrtc [pipe] [port]
+//   vkr_webrtc [pipe] [port] [name]
+//
+// It advertises itself over mDNS as `_vkrender-whip._tcp` (TXT path=/whip/
+// endpoint) so the Flutter sender discovers it with no manual address entry.
 //
 // The SAME whipserversrc core drives the Linux and Android receivers (there
 // the sink differs: waylandsink into the compositor / MediaCodec into the
@@ -29,6 +32,7 @@
 #include <string>
 
 #include "vkrender_client.h"
+#include "whip_mdns_win.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -121,7 +125,8 @@ void onPadAdded(GstElement*, GstPad* pad, gpointer) {
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     const char* pipe = argc > 1 ? argv[1] : "vkrender";
-    int port = argc > 2 ? atoi(argv[2]) : 8080;
+    int port = argc > 2 ? atoi(argv[2]) : 8889;
+    const char* name = argc > 3 ? argv[3] : "vkrender";
 
     gst_init(&argc, &argv);
 
@@ -154,6 +159,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("webrtc: WHIP endpoint on http://0.0.0.0:%d  (POST an SDP offer to stream)\n", port);
+
+    // Advertise on the LAN so the Flutter sender auto-discovers us.
+    whip_mdns_register(name, "/whip/endpoint", (unsigned short)port);
 
     // Pump the bus for errors; frames flow via the appsink callback.
     GstBus* bus = gst_element_get_bus(g_pipeline);
