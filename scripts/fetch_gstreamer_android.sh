@@ -86,6 +86,17 @@ for abi in "${ABIS[@]}"; do
     done
 
     echo "   kept $(du -sh "$out" | cut -f1); system libs resolved by NDK:$missing"
+
+    # Drop the ~3 GB unpruned extraction for this ABI as soon as its closure is
+    # copied. On a cache miss CI extracts two ABIs and links two ~350 MB
+    # RelWithDebInfo .so files on a ~20 GB runner disk; leaving both full trees
+    # around exhausts it (LLVM "No space left on device"). The cache-hit path
+    # never extracts, so this just makes the miss path match its footprint.
+    rm -rf "$src"
 done
+
+# The 1.5 GB tarball is only needed while extracting; the pruned closures are
+# self-contained.
+rm -f "$tarball"
 
 echo "== done: $DEST"
