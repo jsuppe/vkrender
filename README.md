@@ -108,6 +108,13 @@ renderer into a minimal Wayland compositor — any Wayland client (GStreamer
 client on the two-cube scene. See [ROADMAP.md](ROADMAP.md#m13) and
 docs/LINUX.md.
 
+**Windows service mode (M14)**: `vkrenderer --serve [pipe]` +
+[client/vkrender_client.h](client/vkrender_client.h) — a four-call C API
+(`vkrConnect` / `vkrDequeueBuffer` / `vkrQueueBuffer` / `vkrDisconnect`)
+gives any D3D11 app a renderer-owned shared-texture ring with GPU-side
+fencing; each client is one stream on the scene. Demo:
+`vkr_client_demo.exe`.
+
 Codecs: H.264 and H.265 (8-bit and 10-bit) verified via the D3D11 hardware
 decoders; 10-bit sources are shared as RGB10A2. AV1 should work on
 AV1-capable GPUs but is untested (no AV1-over-RTSP local loop test).

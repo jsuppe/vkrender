@@ -58,7 +58,9 @@ IpcChannel IpcChannel::listen(const std::string& name) {
         pipePath(name).c_str(),
         PIPE_ACCESS_DUPLEX,
         PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-        1, kPipeBufferSize, kPipeBufferSize, 0, nullptr);
+        // Unlimited instances: the M14 service accept-loop re-listens on the
+        // same name while earlier clients stay connected.
+        PIPE_UNLIMITED_INSTANCES, kPipeBufferSize, kPipeBufferSize, 0, nullptr);
     if (pipe == INVALID_HANDLE_VALUE) {
         VKR_ERR("CreateNamedPipe(%s) failed: %lu", name.c_str(), GetLastError());
         return ch;

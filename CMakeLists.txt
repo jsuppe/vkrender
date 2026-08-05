@@ -131,6 +131,18 @@ add_executable(vkrenderer
     renderer/dump_util.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
+if(WIN32)
+    # M14: producer-facing service mode (--serve) + client library + demo.
+    target_sources(vkrenderer PRIVATE renderer/win_service.cpp)
+    target_link_libraries(vkrenderer PRIVATE d3d11 dxgi)
+
+    add_library(vkrender_client SHARED client/vkrender_client.cpp)
+    target_include_directories(vkrender_client PUBLIC client)
+    target_link_libraries(vkrender_client PRIVATE vkr_common d3d11 dxgi)
+
+    add_executable(vkr_client_demo test/win_client_demo.cpp)
+    target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
+endif()
 
 # --- Wayland compositor mode (M13, Linux only) -------------------------------
 # vkrenderer --wayland: a minimal Wayland server so ordinary clients

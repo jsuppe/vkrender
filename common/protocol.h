@@ -26,6 +26,9 @@ enum class MsgType : uint32_t {
     StreamStatus = 7,  // decoder -> renderer: source connectivity for UI
     SurfaceDesc = 8,   // decoder -> renderer: one shared surface (Linux: dma-buf
                        // fd travels as SCM_RIGHTS ancillary data on this message)
+    ClientHello = 9,   // M14 (Windows service mode): producer client -> renderer;
+                       // the renderer replies Hello (adapter LUID) + PoolDesc
+                       // whose handles are already duplicated into the client.
 };
 
 #pragma pack(push, 4)
@@ -97,6 +100,19 @@ struct FrameConsumedMsg {
 
 struct StreamStatusMsg {
     StreamPhase phase;
+};
+
+// M14: a producer client asks the Windows renderer service for a buffer ring.
+// The service allocates the shared textures + fence pair (renderer-owned pool,
+// mirroring Android's AImageReader) and answers with PoolDesc. Slot reuse is
+// client-side: track the readyValue signaled per slot and reuse a slot only
+// once consumedFence.GetCompletedValue() >= that value.
+struct ClientHelloMsg {
+    uint32_t clientPid; // for handle duplication into the client process
+    uint32_t width;
+    uint32_t height;
+    SharedFormat format; // BGRA8 supported
+    uint32_t poolSize;   // requested ring depth, clamped to kMaxPoolSize
 };
 
 // Linux: announces one decoder surface. The dma-buf fd(s) ride along as

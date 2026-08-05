@@ -24,7 +24,9 @@
 #include "log.h"
 #include "video_pass.h"
 #include "vk_context.h"
-#ifndef _WIN32
+#ifdef _WIN32
+#include "win_service.h"
+#else
 #include "wayland_compositor.h"
 #endif
 
@@ -85,6 +87,7 @@ int main(int argc, char** argv) {
     std::string dumpPath = "headless.ppm";
     bool ptsPacing = false;
     bool waylandMode = false;
+    bool serveMode = false;
     std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
     for (int i = 1; i < argc; ++i) {
@@ -94,6 +97,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--wayland")) {
             waylandMode = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') waylandSocket = argv[++i];
+        } else if (!strcmp(argv[i], "--serve")) {
+            serveMode = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') pipe = argv[++i];
         } else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
             std::string mode = argv[++i];
             if (mode == "pts") ptsPacing = true;
@@ -101,11 +107,28 @@ int main(int argc, char** argv) {
         } else {
             fprintf(stderr,
                     "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
-                    "[--wayland [socket]] [--headless N [--dump out.ppm]]\n");
+                    "[--wayland [socket]] [--serve [pipe]] [--headless N [--dump out.ppm]]\n");
             return 1;
         }
     }
-#ifndef _WIN32
+#ifdef _WIN32
+    if (waylandMode) {
+        fprintf(stderr, "--wayland is Linux-only\n");
+        return 1;
+    }
+    if (serveMode) {
+        vkr::WinServeOptions sopts;
+        sopts.pipeName = pipe;
+        sopts.headlessFrames = headlessFrames;
+        sopts.dumpPath = dumpPath;
+        sopts.shaderDir = exeDir() + "/shaders";
+        return vkr::runWinService(sopts);
+    }
+#else
+    if (serveMode) {
+        fprintf(stderr, "--serve is Windows-only (use --wayland here)\n");
+        return 1;
+    }
     if (waylandMode) {
         vkr::WaylandOptions wopts;
         wopts.socketName = waylandSocket;
@@ -113,11 +136,6 @@ int main(int argc, char** argv) {
         wopts.dumpPath = dumpPath;
         wopts.shaderDir = exeDir() + "/shaders";
         return vkr::runWaylandCompositor(wopts);
-    }
-#else
-    if (waylandMode) {
-        fprintf(stderr, "--wayland is Linux-only\n");
-        return 1;
     }
 #endif
     const bool headless = headlessFrames > 0;

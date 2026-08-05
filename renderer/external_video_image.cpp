@@ -232,23 +232,31 @@ bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
     }
 
 #ifdef _WIN32
-    if (desc.poolSize == 0 || desc.poolSize > proto::kMaxPoolSize) return false;
+    if (desc.poolSize > proto::kMaxPoolSize) return false;
     if (!checkImportCapability(vk.phys, format)) return false;
-    for (uint32_t i = 0; i < desc.poolSize; ++i) {
-        Slot slot;
-        if (!importWin32Slot(vk, format, width, height, desc.textureHandle[i], &slot, conversion)) {
+    if (desc.poolSize == 0) {
+        // M14 service mode: header only; slots arrive via addSurfaceWin32 and
+        // the fence pairs live per client, outside the pool.
+        VKR_LOG("renderer: stream header %ux%u fmt=%d, dynamic win32 surfaces", width, height,
+                (int)format);
+    } else {
+        for (uint32_t i = 0; i < desc.poolSize; ++i) {
+            Slot slot;
+            if (!importWin32Slot(vk, format, width, height, desc.textureHandle[i], &slot,
+                                 conversion)) {
+                destroy(vk);
+                return false;
+            }
+            slots.emplace(i, slot);
+        }
+        if (!importTimelineSemaphore(vk.device, desc.readyFenceHandle, &readySem) ||
+            !importTimelineSemaphore(vk.device, desc.consumedFenceHandle, &consumedSem)) {
             destroy(vk);
             return false;
         }
-        slots.emplace(i, slot);
+        VKR_LOG("renderer: imported pool %ux%u fmt=%d x%u (zero-copy)", width, height,
+                (int)format, (uint32_t)slots.size());
     }
-    if (!importTimelineSemaphore(vk.device, desc.readyFenceHandle, &readySem) ||
-        !importTimelineSemaphore(vk.device, desc.consumedFenceHandle, &consumedSem)) {
-        destroy(vk);
-        return false;
-    }
-    VKR_LOG("renderer: imported pool %ux%u fmt=%d x%u (zero-copy)", width, height, (int)format,
-            (uint32_t)slots.size());
 #else
     // Linux: stream header only; surfaces arrive incrementally as SurfaceDesc.
     VKR_LOG("renderer: stream header %ux%u fmt=%d, awaiting dma-buf surfaces", width, height,
@@ -690,6 +698,31 @@ void ExternalVideoPool::removeSlot(VkContext& vk, uint32_t key) {
         if (m) vkFreeMemory(vk.device, m, nullptr);
     slots.erase(it);
 }
+
+#ifdef _WIN32
+bool ExternalVideoPool::addSurfaceWin32(VkContext& vk, uint32_t key, uint64_t handleValue,
+                                        uint32_t w, uint32_t h) {
+    if (!headerValid) {
+        VKR_ERR("addSurfaceWin32 before pool header");
+        return false;
+    }
+    if (slots.count(key)) return true;
+    if (slots.size() >= proto::kMaxSurfaces) {
+        VKR_ERR("too many surfaces (%zu)", slots.size());
+        return false;
+    }
+    Slot slot;
+    if (!importWin32Slot(vk, format, w, h, handleValue, &slot, conversion)) return false;
+    slots.emplace(key, slot);
+    VKR_LOG("renderer: imported win32 surface key=%u %ux%u (%zu total, zero-copy)", key, w, h,
+            slots.size());
+    return true;
+}
+
+bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemaphore* out) {
+    return importTimelineSemaphore(vk.device, handleValue, out);
+}
+#endif
 
 bool ExternalVideoPool::addOwnedSurface(VkContext& vk, uint32_t key, uint32_t width,
                                         uint32_t height) {

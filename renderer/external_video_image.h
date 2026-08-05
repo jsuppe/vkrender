@@ -62,6 +62,14 @@ public:
     bool addSurfaceAHB(VkContext& vk, uint32_t key, struct AHardwareBuffer* buffer);
 #endif
 
+#ifdef _WIN32
+    // M14 service mode: import one shared D3D11 texture dynamically (handle
+    // valid in this process). Uses the pool's format; create() must have run
+    // with poolSize == 0 (header-only).
+    bool addSurfaceWin32(VkContext& vk, uint32_t key, uint64_t handleValue, uint32_t w,
+                         uint32_t h);
+#endif
+
     // Destroys one slot's Vulkan resources (caller must ensure no GPU work
     // references it - e.g. after vkDeviceWaitIdle). Needed when a producer
     // stream goes away: its AHardwareBuffers are freed and their addresses
@@ -97,5 +105,11 @@ public:
     proto::Matrix matrix = proto::Matrix::BT709;
     proto::Range range = proto::Range::Limited;
 };
+
+#ifdef _WIN32
+// Imports a shared D3D11/D3D12 fence handle as a Vulkan timeline semaphore
+// (M14 service mode has one ready/consumed pair per client, outside the pool).
+bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemaphore* out);
+#endif
 
 } // namespace vkr

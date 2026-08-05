@@ -257,6 +257,34 @@ WAYLAND_DISPLAY=vkrender-0 gst-launch-1.0 rtspsrc location=rtsp://... ! decodebi
   system-RAM dma-bufs (clean failure + release), so dmabuf zero-copy lands
   with Intel/AMD hardware ([#2](https://github.com/jsuppe/vkrender/issues/2)).
 
+## M14 — Windows client library + service mode (done, 2026-08-04)
+
+Windows has no OS producer protocol (no Binder, no Wayland), so we ship the
+"Surface" ourselves — completing the client-of-a-service model on all three
+platforms:
+
+- **`vkrenderer --serve [pipe]`**: the renderer owns each client's buffer
+  ring (mirroring `AImageReader`). A D3D11 allocator device creates shared
+  NT-handle BGRA textures + a shared ready/consumed fence pair per client
+  (the M2 machinery, ownership inverted), imports them into Vulkan through
+  the proven M3 paths (`addSurfaceWin32` dynamic import, header-only pool),
+  duplicates the handles into the client process, and composites client
+  streams on the two-cube vaporwave scene. Sync is fully GPU-side: submit
+  waits each client's readySem at its frame value and signals consumedSem
+  per the M2 contract.
+- **`vkrender_client.dll`** ([client/vkrender_client.h](client/vkrender_client.h)):
+  a four-call C API — `vkrConnect` (pass your D3D11 device or let the
+  library create one on the renderer's adapter), `vkrDequeueBuffer`
+  (backpressure via a GPU-driven consumed-fence wait), `vkrQueueBuffer`
+  (fence signal + flush + FrameReady), `vkrDisconnect`. BufferQueue
+  semantics on Windows in ~300 lines.
+- Named pipe listener fixed to `PIPE_UNLIMITED_INSTANCES` so the accept
+  loop serves N clients concurrently.
+- **Verified on the RTX 5090**: four demo producers
+  ([test/win_client_demo.cpp](test/win_client_demo.cpp), each with its own
+  D3D11 device and animated pattern) at ~569 adoptions/5 s aggregate,
+  16 imported slots, clean per-client teardown.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
