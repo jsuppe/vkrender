@@ -15,4 +15,6 @@ android/decoder/build/
 android/decoder/.cxx/
 android/airplay/build/
 android/airplay/.cxx/
+android/webrtc/build/
+android/webrtc/.cxx/
 android/gstreamer-android/

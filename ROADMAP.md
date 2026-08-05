@@ -414,6 +414,50 @@ UxPlay core as Android (M18), ported to **MSVC**:
 - Status: runs, advertises, connects to the service ring; live iPhone cast
   end-to-end pending an Apple sender. GPLv3 (vendored UxPlay core).
 
+## M20 — WebRTC (WHIP) receiver on all three platforms (Windows+Linux verified, 2026-08-05; Android built)
+
+The clearest *shared-implementation* win of the cast family: **one WebRTC
+stack — GStreamer `webrtcbin` plus the gst-plugins-rs `whipserversrc` — on
+all three platforms**, so a browser (or OBS, or any WHIP sender) can push
+its camera/screen into the scene as a producer. No per-OS receiver logic:
+the *same* GStreamer pipeline shape runs everywhere; only the terminal sink
+differs, matching each platform's existing producer front door.
+
+- **Signaling**: WHIP (WebRTC-HTTP Ingestion Protocol) — a single HTTP POST
+  of the SDP offer. `whipserversrc` runs the HTTP endpoint in-process
+  (`signaller::host-addr=http://0.0.0.0:PORT`, endpoint path `/whip/endpoint`);
+  no external signaling server. ICE/DTLS/SRTP via libnice + GStreamer's
+  dtls/srtp plugins. gst-plugins-rs is MPL-2.0 — permissive, unlike the
+  AirPlay APK's GPLv3.
+- **Windows** ([client/webrtc_win.cpp](client/webrtc_win.cpp), `vkr_webrtc.exe`) —
+  **verified end-to-end**: `whipserversrc ! decodebin ! videoconvert !
+  appsink(BGRA)`, each frame `UpdateSubresource`'d into a dequeued
+  `vkrender_client` ring texture (same producer path as Miracast/AirPlay).
+  Keys the video pad off its pad *name* (`video…`) because the caps `media`
+  field is still NULL at `pad-added`. 300+ frames of an SMPTE WHIP sender
+  landed on the cubes.
+- **Linux** — **verified end-to-end**: the receiver is literally one
+  gst-launch line — `whipserversrc ! decodebin ! videoconvert ! waylandsink`
+  — into the M13 Wayland compositor, exactly like AirPlay via UxPlay. (The
+  Ubuntu GStreamer packages don't ship `whipserversrc`; built
+  `gst-plugin-webrtc` from gst-plugins-rs with `cargo build --release` and
+  dropped `libgstrswebrtc.so` into the user plugin dir.)
+- **Android** ([android/webrtc](android/webrtc), `dev.vkrender.webrtc`) —
+  **APK builds with the full WebRTC static-link closure** (webrtcbin, nice,
+  dtls, srtp, rtpmanagerbad, and the Rust rswebrtc/rsrtp/webrtchttp plugins
+  all link and `GST_PLUGIN_STATIC_REGISTER` cleanly for both arm64 and
+  x86_64). Pipeline `whipserversrc ! rtph264depay ! h264parse ! appsink`
+  feeds H.264 access units to the same `AirplayVideoSink` (M18) →
+  `AMediaCodec` → renderer Binder Surface. Startup SIGSEGV on the x86_64
+  emulator is under investigation (the emulator has been unrepresentative
+  throughout this project — gfxstream color, codec stalls); real-device
+  verification pending, consistent with how M16–M19 shipped.
+
+Design payoff: adding WebRTC touched **zero** of the renderer/compositor/
+producer-ring code on any platform. Each receiver is a thin GStreamer
+front-end onto the front door that already existed — Windows ring texture,
+Linux Wayland surface, Android Binder Surface.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

@@ -138,6 +138,16 @@ as a normal producer stream. Disable Windows' "Projecting to this PC"
 first; phones need a Miracast-capable Wi-Fi adapter on the receiver,
 Windows senders work over the LAN.
 
+**WebRTC / WHIP receiver (M20, all three platforms)**: one shared GStreamer
+stack — `whipserversrc` (WebRTC-HTTP Ingestion) — lets any browser, OBS, or
+WHIP sender push into the scene as a producer. No signaling server: POST the
+SDP offer to `http://<host>:PORT/whip/endpoint`. **Windows** `vkr_webrtc.exe`
+and **Linux** (`whipserversrc ! decodebin ! waylandsink` into the compositor)
+are verified end-to-end; **Android** (`dev.vkrender.webrtc` APK) builds with
+the full WebRTC stack linked, device verification pending. gst-plugins-rs is
+MPL-2.0. Adding it touched zero renderer/producer code — each receiver is a
+thin front-end onto the front door that already existed.
+
 **Multi-window + controls (M15, `--serve`/`--wayland`)**: repeatable
 `--window WxH+X+Y` spans one seamless scene across windows/displays.
 Runtime keys: `L` layout (two-cubes / single-cube / stream wall), `SPACE`
