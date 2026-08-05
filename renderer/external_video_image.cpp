@@ -12,6 +12,8 @@
 
 #include "external_video_image.h"
 
+#include <cstring>
+
 #include <vector>
 
 #include "log.h"
