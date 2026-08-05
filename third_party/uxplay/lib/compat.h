@@ -18,8 +18,14 @@
 #if defined(WIN32)
 #include <ws2tcpip.h>
 #include <windows.h>
-#ifndef snprintf
+/* MSVC's UCRT (>=1900) provides a real snprintf and errors if it is macro'd;
+ * only the legacy MinGW/old-MSVC path needs the _snprintf alias. */
+#if !defined(snprintf) && (!defined(_MSC_VER) || _MSC_VER < 1900)
 #define snprintf _snprintf
+#endif
+/* Winsock has no SOL_TCP; IPPROTO_TCP is the setsockopt level for TCP_NODELAY. */
+#ifndef SOL_TCP
+#define SOL_TCP IPPROTO_TCP
 #endif
 #else
 #include <sys/types.h>

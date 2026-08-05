@@ -385,6 +385,35 @@ in Screen Mirroring and the mirror becomes a scene stream.
   other vkrender APKs are unaffected (separate process over Binder - the
   M10 split contains the obligation to this one app).
 
+## M19 — AirPlay receiver on Windows (native producer) (built, 2026-08-05; live cast pending)
+
+`vkr_airplay.exe` makes a Windows box an AirPlay screen-mirroring sink,
+feeding the cast into the scene as a producer stream - the same vendored
+UxPlay core as Android (M18), ported to **MSVC**:
+
+- **Win32 pthread/unistd shim** ([third_party/win_compat](third_party/win_compat)):
+  the UxPlay core is written for pthread; a ~150-line shim maps it onto
+  CRITICAL_SECTION / CONDITION_VARIABLE / CreateThread, with **lazy mutex
+  init** so a zero-initialized handle (POSIX `PTHREAD_MUTEX_INITIALIZER`
+  semantics, which `httpd_t`'s `run_mutex` relies on) is still lockable.
+- **Native discovery**: `client/dnssd_win.c` registers `_raop._tcp` /
+  `_airplay._tcp` through Win32 `DnsServiceRegister` (dnsapi) - **no Bonjour
+  install**. Confirmed advertising on the LAN (avahi-browse from another
+  host sees the machine's `vkrender` service).
+- **Decode**: GStreamer `appsrc -> h264parse -> avdec_h264 -> BGRA appsink`
+  (software; the d3d11 hardware decoder crashed during state change on this
+  stack), each frame `UpdateSubresource`'d into a dequeued `vkrender_client`
+  ring texture. OpenSSL for the FairPlay/pairing crypto comes from the
+  GStreamer MSVC install.
+- Portability fixes to the vendored deps (all guarded, Android/Linux
+  unaffected): libplist GNU statement-expression macros (`get_unaligned`,
+  `UINT_TO_HOST`), MSVC `snprintf`/`SOL_TCP`, and `&(size_t){N}` compound
+  literals in crypto.c that MSVC miscompiled (the ed25519/x25519 key-length
+  out-params) - these caused a real heap/critical-section crash chain that
+  took the receiver down until fixed.
+- Status: runs, advertises, connects to the service ring; live iPhone cast
+  end-to-end pending an Apple sender. GPLv3 (vendored UxPlay core).
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

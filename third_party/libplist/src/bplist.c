@@ -87,6 +87,16 @@ union plist_uint_ptr
     uint64_t *u64ptr;
 };
 
+/* vkrender: MSVC has no statement-expressions/typeof; read via memcpy. The
+ * be*toh callers ignore any zero high bits from the smaller-width reads. */
+#if defined(_MSC_VER)
+static __inline unsigned long long vkr_get_unaligned(const void *ptr, int size) {
+    unsigned long long v = 0;
+    memcpy(&v, ptr, size);
+    return v;
+}
+#define get_unaligned(ptr) vkr_get_unaligned((ptr), sizeof(*(ptr)))
+#else
 #define get_unaligned(ptr)			  \
   ({                                              \
     struct __attribute__((packed)) {		  \
@@ -94,6 +104,7 @@ union plist_uint_ptr
     } *__p = (void *) (ptr);			  \
     __p->__v;					  \
   })
+#endif
 
 
 #ifndef bswap16
@@ -148,6 +159,19 @@ union plist_uint_ptr
 #define beNtoh(x,n) be64toh((x) << ((8-(n)) << 3))
 #endif
 
+#if defined(_MSC_VER)
+/* vkrender: read min(n,8) big-endian bytes into a host uint64 (no GNU
+ * statement-expressions). For n>8 the low 8 bytes are taken, matching the
+ * original's x+(n-8) offset. */
+static __inline unsigned long long vkr_uint_to_host(const unsigned char *x, int n) {
+    const unsigned char *p = (n > 8) ? x + (n - 8) : x;
+    int m = (n >= 8) ? 8 : n;
+    unsigned long long v = 0;
+    for (int i = 0; i < m; ++i) v = (v << 8) | p[i];
+    return v;
+}
+#define UINT_TO_HOST(x, n) vkr_uint_to_host((const unsigned char *)(x), (int)(n))
+#else
 #define UINT_TO_HOST(x, n) \
 	({ \
 		union plist_uint_ptr __up; \
@@ -159,6 +183,7 @@ union plist_uint_ptr
 		beNtoh( get_unaligned(__up.u64ptr), n) \
 		)))); \
 	})
+#endif
 
 #define get_needed_bytes(x) \
 		( ((uint64_t)(x)) < (1ULL << 8) ? 1 : \

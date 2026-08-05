@@ -127,6 +127,11 @@ core); needs a multicast-friendly Wi-Fi network.
 Apple devices see "vkrender" in Screen Mirroring and the mirror becomes a
 scene stream. (`apt install uxplay`; avahi must be running.)
 
+**AirPlay receiver (M19, Windows)**: `vkr_airplay.exe` makes the machine a
+discoverable AirPlay mirroring sink ("vkrender") via native
+`DnsServiceRegister` (no Bonjour) and feeds the cast into the scene as a
+producer. Needs the GStreamer runtime on PATH. GPLv3 (vendored UxPlay core).
+
 **Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine
 a discoverable cast target ("vkrender") and feeds the cast into the scene
 as a normal producer stream. Disable Windows' "Projecting to this PC"

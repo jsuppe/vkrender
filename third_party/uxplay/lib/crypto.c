@@ -233,7 +233,9 @@ x25519_key_t *x25519_key_from_raw(const unsigned char data[X25519_KEY_SIZE]) {
 
 void x25519_key_get_raw(unsigned char data[X25519_KEY_SIZE], const x25519_key_t *key) {
     assert(key);
-    if (!EVP_PKEY_get_raw_public_key(key->pkey, data, &(size_t) {X25519_KEY_SIZE})) {
+    /* vkrender: &(size_t){N} compound literal miscompiles on MSVC; use a var. */
+    size_t rawlen = X25519_KEY_SIZE;
+    if (!EVP_PKEY_get_raw_public_key(key->pkey, data, &rawlen)) {
         handle_error(__func__);
     }
 }
@@ -261,7 +263,8 @@ void x25519_derive_secret(unsigned char secret[X25519_KEY_SIZE], const x25519_ke
     if (!EVP_PKEY_derive_set_peer(pctx, theirs->pkey)) {
         handle_error(__func__);
     }
-    if (!EVP_PKEY_derive(pctx, secret, &(size_t) {X25519_KEY_SIZE})) {
+    size_t secretlen = X25519_KEY_SIZE; /* vkrender: MSVC compound-literal fix */
+    if (!EVP_PKEY_derive(pctx, secret, &secretlen)) {
         handle_error(__func__);
     }
     EVP_PKEY_CTX_free(pctx);
@@ -434,7 +437,9 @@ ed25519_key_t *ed25519_key_from_raw(const unsigned char data[ED25519_KEY_SIZE]) 
 
 void ed25519_key_get_raw(unsigned char data[ED25519_KEY_SIZE], const ed25519_key_t *key) {
     assert(key);
-    if (!EVP_PKEY_get_raw_public_key(key->pkey, data, &(size_t) {ED25519_KEY_SIZE})) {
+    /* vkrender: &(size_t){N} compound literal miscompiles on MSVC; use a var. */
+    size_t rawlen = ED25519_KEY_SIZE;
+    if (!EVP_PKEY_get_raw_public_key(key->pkey, data, &rawlen)) {
         handle_error(__func__);
     }
 }
