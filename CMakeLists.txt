@@ -200,6 +200,13 @@ if(WIN32)
 
     # OpenSSL's file BIOs (the FairPlay keyfile) pass CRT FILE* across the DLL
     # boundary, which requires applink.c compiled into the main exe.
+    # M20: WebRTC (WHIP) receiver -> producer. whipserversrc does all the
+    # WebRTC work; this is just a decode->ring bridge (shared design with the
+    # Linux/Android receivers).
+    add_executable(vkr_webrtc client/webrtc_win.cpp)
+    target_link_libraries(vkr_webrtc PRIVATE vkrender_client GStreamer::win d3d11 dxgi)
+    target_compile_options(vkr_webrtc PRIVATE /EHsc)
+
     add_executable(vkr_airplay client/airplay_win.cpp
         "${GST_ROOT}/include/openssl/applink.c")
     target_include_directories(vkr_airplay PRIVATE ${UX} "${GST_ROOT}/include")
