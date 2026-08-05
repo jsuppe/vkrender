@@ -1,17 +1,11 @@
-// M14: Windows renderer service - see win_service.h for the architecture.
+// M14/M15: Windows renderer service - see win_service.h for the architecture.
 //
 // The service allocates each client's ring with D3D11 (shared NT-handle BGRA
 // textures + a shared ready/consumed fence pair - the exact M2 machinery,
 // ownership inverted), imports everything into Vulkan through the proven M3
-// paths, and composites client streams on the two-cube vaporwave scene.
-//
-// Sync contract (per client, identical to the M2/M3 timeline model):
-//  - client signals readyFence = ++V after rendering slot S, sends
-//    FrameReady{S, V, pts};
-//  - the service waits readySem >= V before sampling and signals
-//    consumedSem = V-1, promising to never again read frames <= V-1;
-//  - the client reuses slot S only once consumedFence >= the last value it
-//    signaled for S (that logic lives in the client library).
+// paths, and hands the streams to the SceneHost (M15: multi-window spanning,
+// layouts, controls). Per-client fence waits/signals ride the host's frame
+// submit as extras.
 
 #ifdef _WIN32
 
@@ -36,12 +30,11 @@
 #include <GLFW/glfw3.h>
 #include <volk.h>
 
-#include "background_pass.h"
 #include "dump_util.h"
 #include "external_video_image.h"
 #include "ipc.h"
 #include "log.h"
-#include "scene_math.h"
+#include "scene_host.h"
 #include "video_pass.h"
 #include "vk_context.h"
 
@@ -80,8 +73,6 @@ struct PendingConnection {
 std::mutex g_acceptMutex;
 std::vector<std::unique_ptr<PendingConnection>> g_pending;
 
-// Accept thread: each accepted pipe instance reads the ClientHello, then the
-// connection is handed to the render thread for allocation + import.
 void acceptLoop(std::string pipeName) {
     for (;;) {
         IpcChannel ch = IpcChannel::listen(pipeName);
@@ -116,14 +107,16 @@ int runWinService(const WinServeOptions& options) {
     const bool headless = options.headlessFrames > 0;
 
     VkContext vk;
-    if (!vk.init(1280, 720, "vkrender service", headless)) return 1;
+    uint32_t initW = options.windows.empty() ? 1280 : (uint32_t)options.windows[0].width;
+    uint32_t initH = options.windows.empty() ? 720 : (uint32_t)options.windows[0].height;
+    if (!vk.init(initW, initH, "vkrender service", headless)) return 1;
 
     VideoPass pass;
     if (!pass.init(vk, options.shaderDir, VideoPass::Geometry::Cube)) return 1;
-    BackgroundPass background;
-    if (!background.init(vk, options.shaderDir))
-        VKR_WARN("service: vaporwave backdrop unavailable");
     ExternalVideoPool pool;
+
+    SceneHost host;
+    if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
     // D3D11 allocator device on the same adapter as the Vulkan device.
     ComPtr<ID3D11Device5> d3d;
@@ -164,42 +157,13 @@ int runWinService(const WinServeOptions& options) {
     VKR_LOG("service: listening on pipe '%s' (producer clients welcome)",
             options.pipeName.c_str());
 
-    constexpr uint32_t kFramesInFlight = 2;
-    VkCommandPool cmdPool = VK_NULL_HANDLE;
-    VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cpci.queueFamilyIndex = vk.queueFamily;
-    vkCreateCommandPool(vk.device, &cpci, nullptr, &cmdPool);
-
-    struct FrameSync {
-        VkSemaphore acquireSem = VK_NULL_HANDLE;
-        VkSemaphore renderDoneSem = VK_NULL_HANDLE;
-        VkFence inFlight = VK_NULL_HANDLE;
-        VkCommandBuffer cmd = VK_NULL_HANDLE;
-    } frames[kFramesInFlight];
-    for (auto& f : frames) {
-        VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSem);
-        vkCreateSemaphore(vk.device, &sci, nullptr, &f.renderDoneSem);
-        VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-        fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        vkCreateFence(vk.device, &fci, nullptr, &f.inFlight);
-        VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        cbai.commandPool = cmdPool;
-        cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cbai.commandBufferCount = 1;
-        vkAllocateCommandBuffers(vk.device, &cbai, &f.cmd);
-    }
-
     std::vector<std::unique_ptr<Client>> clients;
     uint32_t nextClientId = 1;
     bool passBound = false;
     bool passNeedsBind = false;
-    uint64_t frameIndex = 0;
-    uint64_t adoptions = 0, renders = 0;
+    uint64_t adoptions = 0;
     int videoFramesSeen = 0;
     int64_t rateWindowStart = nowNs();
-    const int64_t appStartNs = nowNs();
     const int64_t headlessDeadline = nowNs() + 60ll * 1000000000ll;
     int exitCode = 0;
 
@@ -218,8 +182,6 @@ int runWinService(const WinServeOptions& options) {
         VKR_LOG("service: client %u gone (%zu slots freed)", c.id, c.keys.size());
     };
 
-    // Allocate a ring for a newly accepted client and duplicate the handles
-    // into its process. Runs on the render thread.
     auto integrateClient = [&](PendingConnection& pc) -> std::unique_ptr<Client> {
         auto c = std::make_unique<Client>();
         c->channel = std::move(pc.channel);
@@ -336,11 +298,8 @@ int runWinService(const WinServeOptions& options) {
         return c;
     };
 
-    while (true) {
-        if (vk.window) {
-            glfwPollEvents();
-            if (glfwWindowShouldClose(vk.window)) break;
-        }
+    bool quit = false;
+    while (!quit) {
         if (headless) {
             if (videoFramesSeen >= options.headlessFrames) break;
             if (nowNs() > headlessDeadline) {
@@ -352,7 +311,6 @@ int runWinService(const WinServeOptions& options) {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
-        // New connections (allocation happens here, on the render thread).
         {
             std::vector<std::unique_ptr<PendingConnection>> pending;
             {
@@ -368,7 +326,6 @@ int runWinService(const WinServeOptions& options) {
             }
         }
 
-        // Drain clients: latest FrameReady wins per client.
         for (auto it = clients.begin(); it != clients.end();) {
             Client& c = **it;
             while (auto msg = c.channel.tryRecv()) {
@@ -393,163 +350,43 @@ int runWinService(const WinServeOptions& options) {
             }
         }
 
-        int64_t faceSlots[12];
-        for (int i = 0; i < 12; ++i) faceSlots[i] = -1;
-        {
-            std::vector<int64_t> active;
-            for (auto& c : clients)
-                if (c->currentSlot >= 0) active.push_back(c->currentSlot);
-            if (!active.empty())
-                for (int i = 0; i < 12; ++i) faceSlots[i] = active[i % active.size()];
-        }
-
-        FrameSync& f = frames[frameIndex % kFramesInFlight];
-        ++frameIndex;
-        vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
-
-        uint32_t imageIndex = 0;
-        if (!headless) {
-            VkResult ar = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX,
-                                                f.acquireSem, VK_NULL_HANDLE, &imageIndex);
-            if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
-                if (!vk.recreateSwapchain()) {
-                    glfwWaitEventsTimeout(0.1);
-                    continue;
-                }
-                if (ar == VK_ERROR_OUT_OF_DATE_KHR) continue;
-            } else if (ar != VK_SUCCESS) {
-                break;
-            }
-        }
-        vkResetFences(vk.device, 1, &f.inFlight);
-
-        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(f.cmd, &bi);
-
-        VkImageMemoryBarrier2 toColor{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        toColor.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        toColor.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        toColor.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        toColor.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        toColor.image = vk.swapImages[imageIndex];
-        toColor.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &toColor;
-        vkCmdPipelineBarrier2(f.cmd, &dep);
-
-        float tSec = (float)((nowNs() - appStartNs) * 1e-9);
-        float mvps[32];
-        bool wide = vk.swapExtent.width >= vk.swapExtent.height;
-        Mat4 a = cubeMvp(tSec, vk.swapExtent, wide ? -1.55f : 0.0f, wide ? 0.0f : 1.55f, 1.0f,
-                         0.0f);
-        Mat4 b = cubeMvp(tSec, vk.swapExtent, wide ? 1.55f : 0.0f, wide ? 0.0f : -1.55f, -1.0f,
-                         2.1f);
-        memcpy(mvps, a.m, sizeof(a.m));
-        memcpy(mvps + 16, b.m, sizeof(b.m));
-        if (!passBound)
-            for (int i = 0; i < 12; ++i) faceSlots[i] = -1;
-        pass.recordScene(f.cmd, pool, faceSlots, 2, mvps, vk.swapViews[imageIndex],
-                         vk.swapExtent, vk.queueFamily,
-                         background.valid() ? &background : nullptr, tSec);
-
-        VkImageMemoryBarrier2 fin{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        fin.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        fin.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        fin.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-        fin.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        fin.newLayout = headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        fin.image = vk.swapImages[imageIndex];
-        fin.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        dep.pImageMemoryBarriers = &fin;
-        vkCmdPipelineBarrier2(f.cmd, &dep);
-
-        vkEndCommandBuffer(f.cmd);
-
-        // Waits: swapchain acquire + every visible client's ready value.
-        std::vector<VkSemaphore> waitSems;
-        std::vector<VkPipelineStageFlags> waitStages;
-        std::vector<uint64_t> waitValues;
-        if (!headless) {
-            waitSems.push_back(f.acquireSem);
-            waitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-            waitValues.push_back(0);
-        }
-        std::vector<VkSemaphore> signalSems;
-        std::vector<uint64_t> signalValues;
-        if (!headless) {
-            signalSems.push_back(f.renderDoneSem);
-            signalValues.push_back(0);
-        }
+        std::vector<SceneHost::StreamRef> streams;
+        SceneHost::Extras extras;
         for (auto& cp : clients) {
             Client& c = *cp;
+            streams.push_back({(uint64_t)c.id, c.currentSlot});
             if (c.currentSlot >= 0 && c.readySem) {
-                waitSems.push_back(c.readySem);
-                waitStages.push_back(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-                waitValues.push_back(c.currentReady);
+                extras.waitSems.push_back(c.readySem);
+                extras.waitValues.push_back(c.currentReady);
             }
             if (c.pendingConsumed && c.consumedSem) {
-                signalSems.push_back(c.consumedSem);
-                signalValues.push_back(c.pendingConsumed);
+                extras.signalSems.push_back(c.consumedSem);
+                extras.signalValues.push_back(c.pendingConsumed);
                 c.lastConsumedSignal = c.pendingConsumed;
                 c.pendingConsumed = 0;
             }
         }
 
-        VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
-        timeline.waitSemaphoreValueCount = (uint32_t)waitValues.size();
-        timeline.pWaitSemaphoreValues = waitValues.data();
-        timeline.signalSemaphoreValueCount = (uint32_t)signalValues.size();
-        timeline.pSignalSemaphoreValues = signalValues.data();
-
-        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        si.pNext = &timeline;
-        si.waitSemaphoreCount = (uint32_t)waitSems.size();
-        si.pWaitSemaphores = waitSems.data();
-        si.pWaitDstStageMask = waitStages.data();
-        si.commandBufferCount = 1;
-        si.pCommandBuffers = &f.cmd;
-        si.signalSemaphoreCount = (uint32_t)signalSems.size();
-        si.pSignalSemaphores = signalSems.data();
-        if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) break;
-
-        if (!headless) {
-            VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-            pi.waitSemaphoreCount = 1;
-            pi.pWaitSemaphores = &f.renderDoneSem;
-            pi.swapchainCount = 1;
-            pi.pSwapchains = &vk.swapchain;
-            pi.pImageIndices = &imageIndex;
-            VkResult pr = vkQueuePresentKHR(vk.queue, &pi);
-            if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR)
-                vk.recreateSwapchain();
+        if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
+            exitCode = 1;
+            break;
         }
 
-        ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("service: %llu adoptions / %llu frames in 5s (pool %zu slots, %zu clients)",
-                    (unsigned long long)adoptions, (unsigned long long)renders,
-                    pool.slots.size(), clients.size());
-            adoptions = renders = 0;
+            VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients)",
+                    (unsigned long long)adoptions, pool.slots.size(), clients.size());
+            adoptions = 0;
             rateWindowStart = nowNs();
         }
     }
 
     vkDeviceWaitIdle(vk.device);
     if (headless && exitCode == 0 && videoFramesSeen >= options.headlessFrames)
-        vkrDumpTarget(vk, cmdPool, options.dumpPath.c_str());
+        vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
     for (auto& c : clients) teardownClient(*c);
     clients.clear();
-    for (auto& f : frames) {
-        vkDestroySemaphore(vk.device, f.acquireSem, nullptr);
-        vkDestroySemaphore(vk.device, f.renderDoneSem, nullptr);
-        vkDestroyFence(vk.device, f.inFlight, nullptr);
-    }
-    vkDestroyCommandPool(vk.device, cmdPool, nullptr);
-    background.destroy(vk);
+    host.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);
     vk.destroy();

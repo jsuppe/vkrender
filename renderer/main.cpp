@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
     bool serveMode = false;
     std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
+    std::vector<vkr::WindowSpec> windowSpecs; // M15: --window WxH+X+Y (repeatable)
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dumpPath = argv[++i];
@@ -100,6 +101,15 @@ int main(int argc, char** argv) {
         } else if (!strcmp(argv[i], "--serve")) {
             serveMode = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') pipe = argv[++i];
+        } else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
+            vkr::WindowSpec spec;
+            if (sscanf(argv[++i], "%dx%d+%d+%d", &spec.width, &spec.height, &spec.x,
+                       &spec.y) < 2 ||
+                spec.width <= 0 || spec.height <= 0) {
+                fprintf(stderr, "bad --window (want WxH+X+Y, e.g. 1920x1080+0+0)\n");
+                return 1;
+            }
+            windowSpecs.push_back(spec);
         } else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
             std::string mode = argv[++i];
             if (mode == "pts") ptsPacing = true;
@@ -107,7 +117,8 @@ int main(int argc, char** argv) {
         } else {
             fprintf(stderr,
                     "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
-                    "[--wayland [socket]] [--serve [pipe]] [--headless N [--dump out.ppm]]\n");
+                    "[--wayland [socket]] [--serve [pipe]] "
+                    "[--window WxH+X+Y]... [--headless N [--dump out.ppm]]\n");
             return 1;
         }
     }
@@ -122,6 +133,7 @@ int main(int argc, char** argv) {
         sopts.headlessFrames = headlessFrames;
         sopts.dumpPath = dumpPath;
         sopts.shaderDir = exeDir() + "/shaders";
+        sopts.windows = windowSpecs;
         return vkr::runWinService(sopts);
     }
 #else
@@ -135,6 +147,7 @@ int main(int argc, char** argv) {
         wopts.headlessFrames = headlessFrames;
         wopts.dumpPath = dumpPath;
         wopts.shaderDir = exeDir() + "/shaders";
+        wopts.windows = windowSpecs;
         return vkr::runWaylandCompositor(wopts);
     }
 #endif

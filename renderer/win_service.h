@@ -12,6 +12,9 @@
 #ifdef _WIN32
 
 #include <string>
+#include <vector>
+
+#include "scene_host.h"
 
 namespace vkr {
 
@@ -20,6 +23,7 @@ struct WinServeOptions {
     int headlessFrames = 0; // 0 = windowed
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;
+    std::vector<WindowSpec> windows; // M15: canvas-spanning windows
 };
 
 int runWinService(const WinServeOptions& options);

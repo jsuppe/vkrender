@@ -115,6 +115,13 @@ gives any D3D11 app a renderer-owned shared-texture ring with GPU-side
 fencing; each client is one stream on the scene. Demo:
 `vkr_client_demo.exe`.
 
+**Multi-window + controls (M15, `--serve`/`--wayland`)**: repeatable
+`--window WxH+X+Y` spans one seamless scene across windows/displays.
+Runtime keys: `L` layout (two-cubes / single-cube / stream wall), `SPACE`
+pause, `-`/`=` speed, `B` backdrop, `1`-`9` remove/restore a stream from
+the scene (`0` all), `P` snapshot each window to `scene-w<N>.ppm`, `ESC`
+quit.
+
 Codecs: H.264 and H.265 (8-bit and 10-bit) verified via the D3D11 hardware
 decoders; 10-bit sources are shared as RGB10A2. AV1 should work on
 AV1-capable GPUs but is untested (no AV1-over-RTSP local loop test).

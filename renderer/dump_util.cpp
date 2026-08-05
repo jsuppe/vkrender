@@ -6,7 +6,13 @@
 #include "log.h"
 
 bool vkrDumpTarget(vkr::VkContext& vk, VkCommandPool cmdPool, const char* path) {
-    const uint32_t w = vk.swapExtent.width, h = vk.swapExtent.height;
+    return vkrDumpImage(vk, cmdPool, vk.swapImages[0], vk.swapExtent, VK_IMAGE_LAYOUT_GENERAL,
+                        path);
+}
+
+bool vkrDumpImage(vkr::VkContext& vk, VkCommandPool cmdPool, VkImage image, VkExtent2D extent,
+                  VkImageLayout srcLayout, const char* path) {
+    const uint32_t w = extent.width, h = extent.height;
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -41,10 +47,31 @@ bool vkrDumpTarget(vkr::VkContext& vk, VkCommandPool cmdPool, const char* path) 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &bi);
+    auto barrier = [&](VkImageLayout from, VkImageLayout to) {
+        VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        b.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+        b.oldLayout = from;
+        b.newLayout = to;
+        b.image = image;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &b;
+        vkCmdPipelineBarrier2(cmd, &dep);
+    };
+    const bool needTransition = srcLayout != VK_IMAGE_LAYOUT_GENERAL &&
+                                srcLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    if (needTransition) barrier(srcLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.imageExtent = {w, h, 1};
-    vkCmdCopyImageToBuffer(cmd, vk.swapImages[0], VK_IMAGE_LAYOUT_GENERAL, buf, 1, &region);
+    vkCmdCopyImageToBuffer(cmd, image,
+                           needTransition ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : srcLayout,
+                           buf, 1, &region);
+    if (needTransition) barrier(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, srcLayout);
     vkEndCommandBuffer(cmd);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;

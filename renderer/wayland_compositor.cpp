@@ -1,4 +1,4 @@
-// M13: minimal Wayland compositor front door for the Linux renderer.
+﻿// M13: minimal Wayland compositor front door for the Linux renderer.
 // See wayland_compositor.h for the architecture story.
 //
 // Implemented protocol surface (the subset gstreamer's waylandsink needs):
@@ -131,7 +131,6 @@ struct Stream {
     std::vector<wl_resource*> firedFrameCbs; // to signal after next composite
 };
 
-constexpr uint32_t kFramesInFlight = 2;
 constexpr size_t kMaxStreams = 12;
 
 struct Ctx {
@@ -150,8 +149,11 @@ struct Ctx {
     uint32_t nextSlotKey = 1;
     uint32_t configureSerial = 1;
 
-    // wl_buffers whose last GPU read is fenced by frame i.
-    std::vector<wl_resource*> retiring[kFramesInFlight];
+    // wl_buffers whose last GPU read is fenced by the frame they were retired
+    // in; released once the host has waited that frame's fence (two frames
+    // in flight -> released when frameCounter advances past retireFrame + 2).
+    std::vector<std::pair<uint64_t, wl_resource*>> retiring;
+    uint64_t frameCounter = 0;
     // slots whose backing wl_buffer was destroyed -> remove after idle.
     std::vector<uint32_t> slotsToRemove;
 
@@ -168,8 +170,9 @@ Stream* streamFromSurface(wl_resource* surface) {
 // ---- helpers ----------------------------------------------------------------
 
 void scrubRetiring(Ctx& ctx, wl_resource* buffer) {
-    for (auto& list : ctx.retiring)
-        list.erase(std::remove(list.begin(), list.end(), buffer), list.end());
+    ctx.retiring.erase(std::remove_if(ctx.retiring.begin(), ctx.retiring.end(),
+                                      [&](const auto& e) { return e.second == buffer; }),
+                       ctx.retiring.end());
 }
 
 void releaseBuffer(wl_resource* buffer) {
@@ -440,13 +443,12 @@ void surfaceDestroyed(wl_resource* resource) {
         if (s->waitingSyncFd >= 0) close(s->waitingSyncFd);
     }
     // currentBuffer may still be sampled by in-flight frames; it stays on the
-    // retiring lists (or gets released below with the shm slots removal).
+    // retiring list (or gets released below with the shm slots removal).
     if (s->currentBuffer) {
         bool queued = false;
-        for (auto& list : ctx.retiring)
-            if (std::find(list.begin(), list.end(), s->currentBuffer) != list.end())
-                queued = true;
-        if (!queued) ctx.retiring[0].push_back(s->currentBuffer);
+        for (auto& e : ctx.retiring)
+            if (e.second == s->currentBuffer) queued = true;
+        if (!queued) ctx.retiring.push_back({ctx.frameCounter, s->currentBuffer});
     }
     for (uint32_t key : s->shmKey)
         if (key) ctx.slotsToRemove.push_back(key);
@@ -683,7 +685,7 @@ void handleDmabufCommit(Stream* s, wl_resource* buffer) {
 }
 
 // Adopt ready buffers: import on first sight, then swap the stream's current.
-void adoptStreams(Ctx& ctx, uint64_t frameIndex) {
+void adoptStreams(Ctx& ctx) {
     for (Stream* s : ctx.streams) {
         if (!s->waitingBuffer) continue;
         if (s->waitingSyncFd >= 0) {
@@ -744,8 +746,7 @@ void adoptStreams(Ctx& ctx, uint64_t frameIndex) {
             buf->slotKey = desc.slotKey;
         }
         // Previous buffer retires behind this frame's fence.
-        if (s->currentBuffer)
-            ctx.retiring[frameIndex % kFramesInFlight].push_back(s->currentBuffer);
+        if (s->currentBuffer) ctx.retiring.push_back({ctx.frameCounter, s->currentBuffer});
         s->currentBuffer = s->waitingBuffer;
         s->currentSlot = (int64_t)buf->slotKey;
         s->waitingBuffer = nullptr;
@@ -770,14 +771,16 @@ int runWaylandCompositor(const WaylandOptions& options) {
     const bool headless = options.headlessFrames > 0;
 
     VkContext vk;
-    if (!vk.init(1280, 720, "vkrender compositor", headless)) return 1;
+    uint32_t initW = options.windows.empty() ? 1280 : (uint32_t)options.windows[0].width;
+    uint32_t initH = options.windows.empty() ? 720 : (uint32_t)options.windows[0].height;
+    if (!vk.init(initW, initH, "vkrender compositor", headless)) return 1;
 
     VideoPass pass;
     if (!pass.init(vk, options.shaderDir, VideoPass::Geometry::Cube)) return 1;
-    BackgroundPass background;
-    if (!background.init(vk, options.shaderDir))
-        VKR_WARN("compositor: vaporwave backdrop unavailable");
     ExternalVideoPool pool;
+
+    SceneHost host;
+    if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
     Ctx ctx;
     ctx.vk = &vk;
@@ -785,7 +788,6 @@ int runWaylandCompositor(const WaylandOptions& options) {
     ctx.pass = &pass;
     ctx.nv12Mods = queryModifiers(vk.phys, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
     {
-        // Per-plane fallback modifiers: importable as R8 + R8G8.
         auto r8 = queryModifiers(vk.phys, VK_FORMAT_R8_UNORM);
         auto rg8 = queryModifiers(vk.phys, VK_FORMAT_R8G8_UNORM);
         for (uint64_t m : r8)
@@ -812,44 +814,13 @@ int runWaylandCompositor(const WaylandOptions& options) {
     VKR_LOG("compositor: listening on WAYLAND_DISPLAY=%s (up to %zu streams)",
             options.socketName.c_str(), kMaxStreams);
 
-    VkCommandPool cmdPool = VK_NULL_HANDLE;
-    VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cpci.queueFamilyIndex = vk.queueFamily;
-    vkCreateCommandPool(vk.device, &cpci, nullptr, &cmdPool);
-
-    struct FrameSync {
-        VkSemaphore acquireSem = VK_NULL_HANDLE;
-        VkSemaphore renderDoneSem = VK_NULL_HANDLE;
-        VkFence inFlight = VK_NULL_HANDLE;
-        VkCommandBuffer cmd = VK_NULL_HANDLE;
-    } frames[kFramesInFlight];
-    for (auto& f : frames) {
-        VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSem);
-        vkCreateSemaphore(vk.device, &sci, nullptr, &f.renderDoneSem);
-        VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-        fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        vkCreateFence(vk.device, &fci, nullptr, &f.inFlight);
-        VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        cbai.commandPool = cmdPool;
-        cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cbai.commandBufferCount = 1;
-        vkAllocateCommandBuffers(vk.device, &cbai, &f.cmd);
-    }
-
-    uint64_t frameIndex = 0;
-    uint64_t renders = 0;
-    int64_t rateWindowStart = nowNs();
     const int64_t appStartNs = nowNs();
     const int64_t headlessDeadline = nowNs() + 60ll * 1000000000ll;
+    int64_t rateWindowStart = nowNs();
     int exitCode = 0;
+    bool quit = false;
 
-    while (true) {
-        if (vk.window) {
-            glfwPollEvents();
-            if (glfwWindowShouldClose(vk.window)) break;
-        }
+    while (!quit) {
         if (headless) {
             if (ctx.videoFramesSeen >= options.headlessFrames) break;
             if (nowNs() > headlessDeadline) {
@@ -858,7 +829,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
                 exitCode = 2;
                 break;
             }
-            usleep(16000); // ~60 Hz pacing without a swapchain
+            usleep(16000);
         }
 
         wl_event_loop_dispatch(ctx.loop, 0);
@@ -867,10 +838,8 @@ int runWaylandCompositor(const WaylandOptions& options) {
         // Deferred slot teardown (buffer/stream destruction).
         if (!ctx.slotsToRemove.empty()) {
             vkDeviceWaitIdle(vk.device);
-            for (auto& list : ctx.retiring) {
-                for (wl_resource* b : list) releaseBuffer(b);
-                list.clear();
-            }
+            for (auto& e : ctx.retiring) releaseBuffer(e.second);
+            ctx.retiring.clear();
             for (uint32_t key : ctx.slotsToRemove) {
                 pass.removeSlot(vk, key);
                 pool.removeSlot(vk, key);
@@ -878,111 +847,30 @@ int runWaylandCompositor(const WaylandOptions& options) {
             ctx.slotsToRemove.clear();
         }
 
-        adoptStreams(ctx, frameIndex);
+        adoptStreams(ctx);
 
-        // Face assignment: leaf content streams cycle across the two cubes.
-        int64_t faceSlots[12];
-        for (int i = 0; i < 12; ++i) faceSlots[i] = -1;
-        {
-            std::vector<int64_t> active;
-            for (Stream* s : ctx.streams)
-                if (s->currentSlot >= 0 && !hasContentChild(ctx, s))
-                    active.push_back(s->currentSlot);
-            if (!active.empty())
-                for (int i = 0; i < 12; ++i) faceSlots[i] = active[i % active.size()];
+        // Leaf content streams -> SceneHost (it applies layout + enable set).
+        std::vector<SceneHost::StreamRef> streams;
+        for (Stream* s : ctx.streams)
+            if (s->currentSlot >= 0 && !hasContentChild(ctx, s))
+                streams.push_back({(uint64_t)(uintptr_t)s, s->currentSlot});
+
+        SceneHost::Extras extras; // wayland sync is CPU-side (sync-file polls)
+        if (!host.frame(vk, pool, pass, ctx.passBound, streams, extras, &quit)) {
+            exitCode = 1;
+            break;
         }
+        ++ctx.frameCounter;
 
-        FrameSync& f = frames[frameIndex % kFramesInFlight];
-        ++frameIndex;
-        vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
-        // Fence retired: buffers parked on this frame go back to clients.
-        for (wl_resource* b : ctx.retiring[(frameIndex - 1) % kFramesInFlight]) releaseBuffer(b);
-        ctx.retiring[(frameIndex - 1) % kFramesInFlight].clear();
-
-        uint32_t imageIndex = 0;
-        if (!headless) {
-            VkResult ar = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX,
-                                                f.acquireSem, VK_NULL_HANDLE, &imageIndex);
-            if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
-                if (!vk.recreateSwapchain()) {
-                    glfwWaitEventsTimeout(0.1);
-                    continue;
-                }
-                if (ar == VK_ERROR_OUT_OF_DATE_KHR) continue;
-            } else if (ar != VK_SUCCESS) {
-                VKR_ERR("vkAcquireNextImageKHR failed: %d", ar);
-                break;
+        // Buffers retired >= 2 frames ago: the host has waited that frame
+        // fence before recording this one, so their GPU reads are done.
+        for (auto it = ctx.retiring.begin(); it != ctx.retiring.end();) {
+            if (it->first + 2 <= ctx.frameCounter) {
+                releaseBuffer(it->second);
+                it = ctx.retiring.erase(it);
+            } else {
+                ++it;
             }
-        }
-        vkResetFences(vk.device, 1, &f.inFlight);
-
-        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(f.cmd, &bi);
-
-        VkImageMemoryBarrier2 toColor{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        toColor.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        toColor.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        toColor.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        toColor.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        toColor.image = vk.swapImages[imageIndex];
-        toColor.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &toColor;
-        vkCmdPipelineBarrier2(f.cmd, &dep);
-
-        float tSec = (float)((nowNs() - appStartNs) * 1e-9);
-        float mvps[32];
-        // Landscape window: cubes side by side; portrait: stacked.
-        bool wide = vk.swapExtent.width >= vk.swapExtent.height;
-        Mat4 a = cubeMvp(tSec, vk.swapExtent, wide ? -1.55f : 0.0f, wide ? 0.0f : 1.55f, 1.0f,
-                         0.0f);
-        Mat4 b = cubeMvp(tSec, vk.swapExtent, wide ? 1.55f : 0.0f, wide ? 0.0f : -1.55f, -1.0f,
-                         2.1f);
-        memcpy(mvps, a.m, sizeof(a.m));
-        memcpy(mvps + 16, b.m, sizeof(b.m));
-        if (!ctx.passBound)
-            for (int i = 0; i < 12; ++i) faceSlots[i] = -1;
-        pass.recordScene(f.cmd, pool, faceSlots, 2, mvps, vk.swapViews[imageIndex],
-                         vk.swapExtent, vk.queueFamily,
-                         background.valid() ? &background : nullptr, tSec);
-
-        VkImageMemoryBarrier2 fin{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        fin.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        fin.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        fin.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-        fin.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        fin.newLayout = headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        fin.image = vk.swapImages[imageIndex];
-        fin.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        dep.pImageMemoryBarriers = &fin;
-        vkCmdPipelineBarrier2(f.cmd, &dep);
-
-        vkEndCommandBuffer(f.cmd);
-
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        si.waitSemaphoreCount = headless ? 0 : 1;
-        si.pWaitSemaphores = &f.acquireSem;
-        si.pWaitDstStageMask = &waitStage;
-        si.commandBufferCount = 1;
-        si.pCommandBuffers = &f.cmd;
-        si.signalSemaphoreCount = headless ? 0 : 1;
-        si.pSignalSemaphores = &f.renderDoneSem;
-        if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) break;
-
-        if (!headless) {
-            VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-            pi.waitSemaphoreCount = 1;
-            pi.pWaitSemaphores = &f.renderDoneSem;
-            pi.swapchainCount = 1;
-            pi.pSwapchains = &vk.swapchain;
-            pi.pImageIndices = &imageIndex;
-            VkResult pr = vkQueuePresentKHR(vk.queue, &pi);
-            if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR)
-                vk.recreateSwapchain();
         }
 
         // Frame callbacks: composited - let clients produce the next frame.
@@ -996,35 +884,24 @@ int runWaylandCompositor(const WaylandOptions& options) {
         }
         wl_display_flush_clients(ctx.display);
 
-        ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("compositor: %llu adoptions / %llu frames in 5s (pool %zu slots, "
-                    "%zu streams)",
-                    (unsigned long long)ctx.adoptions, (unsigned long long)renders,
-                    pool.slots.size(), ctx.streams.size());
-            ctx.adoptions = renders = 0;
+            VKR_LOG("compositor: %llu adoptions in 5s (pool %zu slots, %zu streams)",
+                    (unsigned long long)ctx.adoptions, pool.slots.size(), ctx.streams.size());
+            ctx.adoptions = 0;
             rateWindowStart = nowNs();
         }
     }
 
     vkDeviceWaitIdle(vk.device);
     if (headless && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
-        vkrDumpTarget(vk, cmdPool, options.dumpPath.c_str());
+        vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
-    for (auto& list : ctx.retiring) {
-        for (wl_resource* b : list) releaseBuffer(b);
-        list.clear();
-    }
+    for (auto& e : ctx.retiring) releaseBuffer(e.second);
+    ctx.retiring.clear();
     wl_display_destroy_clients(ctx.display);
     wl_display_destroy(ctx.display);
 
-    for (auto& f : frames) {
-        vkDestroySemaphore(vk.device, f.acquireSem, nullptr);
-        vkDestroySemaphore(vk.device, f.renderDoneSem, nullptr);
-        vkDestroyFence(vk.device, f.inFlight, nullptr);
-    }
-    vkDestroyCommandPool(vk.device, cmdPool, nullptr);
-    background.destroy(vk);
+    host.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);
     vk.destroy();

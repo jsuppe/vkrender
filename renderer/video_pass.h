@@ -47,11 +47,15 @@ public:
     // Cube scene with per-face streams (M11/M12): cubeCount cubes, each with
     // its own column-major mat4 in mvps (16 floats per cube) and six entries
     // in faceSlots (-1 = face not drawn). Barriers cover each unique slot.
-    // background, if non-null, is drawn first inside the render pass.
+    // background, if non-null, is drawn first inside the render pass; the bg*
+    // parameters map this target into the shared virtual canvas (M15
+    // multi-window spanning - defaults render the full backdrop).
     void recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
                      const int64_t* faceSlots, uint32_t cubeCount, const float* mvps,
                      VkImageView target, VkExtent2D extent, uint32_t queueFamily,
-                     class BackgroundPass* background = nullptr, float timeSec = 0.0f);
+                     class BackgroundPass* background = nullptr, float timeSec = 0.0f,
+                     float bgAspect = 0.0f, float bgOffX = 0.0f, float bgOffY = 0.0f,
+                     float bgSclX = 1.0f, float bgSclY = 1.0f);
 
 private:
     VkShaderModule loadShader(VkDevice device, const std::string& path);

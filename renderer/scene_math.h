@@ -46,20 +46,52 @@ inline Mat4 matPerspective(float fovyRad, float aspect, float zNear, float zFar)
     return r;
 }
 
-// One cube of the two-cube scene: spins around two axes (spin sign and phase
-// keep the cubes visibly different), scaled and offset so both fit fully
-// inside a 45°-FOV view at z = -7.5 (half-height there is 3.11 and
-// half-width 3.11*aspect; |offset| + scaledHalfDiagonal = 1.55 + 1.47 fits
-// the offset axis). Callers offset along Y in portrait, X in landscape.
-inline Mat4 cubeMvp(float tSec, VkExtent2D extent, float xOffset, float yOffset, float spin,
-                    float phase) {
-    Mat4 model = matMul(matRotY(spin * tSec * 0.9f + phase), matRotX(tSec * 0.37f + phase));
-    constexpr float kScale = 0.85f;
-    for (int c = 0; c < 3; ++c)
-        for (int r = 0; r < 3; ++r) model.m[c * 4 + r] *= kScale;
+// A cube instance's model matrix: translate(x, y, -7.5) * rotY * rotX *
+// scale(sx, sy, sz). Rotation speeds/phase keep multiple cubes visibly
+// different; the M15 wall layout uses near-zero sz for flat tiles.
+inline Mat4 cubeModel(float tSec, float xOffset, float yOffset, float spinY, float spinX,
+                      float phase, float sx, float sy, float sz) {
+    Mat4 model = matMul(matRotY(spinY * tSec + phase), matRotX(spinX * tSec + phase));
+    for (int r = 0; r < 3; ++r) {
+        model.m[0 * 4 + r] *= sx;
+        model.m[1 * 4 + r] *= sy;
+        model.m[2 * 4 + r] *= sz;
+    }
     model.m[12] += xOffset;
     model.m[13] += yOffset;
     model.m[14] -= 7.5f;
+    return model;
+}
+
+// Asymmetric sub-frustum (M15 multi-window spanning): the full 45°-vertical
+// frustum covers the virtual canvas; a window showing canvas region
+// [u0,u1]x[v0,v1] (normalized, v = 0 at the TOP) gets the matching off-center
+// projection so the scene lines up seamlessly across windows. Vulkan depth
+// 0..1, clip Y down. u0=0,v0=0,u1=1,v1=1 reproduces matPerspective.
+inline Mat4 matFrustumSub(float canvasAspect, float u0, float v0, float u1, float v1,
+                          float zNear = 0.1f, float zFar = 100.0f) {
+    float hh = zNear * tanf(0.7854f * 0.5f); // half-height at near
+    float hw = hh * canvasAspect;
+    float l = -hw + u0 * 2.0f * hw;
+    float r = -hw + u1 * 2.0f * hw;
+    float t = hh - v0 * 2.0f * hh;
+    float b = hh - v1 * 2.0f * hh;
+    Mat4 m{};
+    m.m[0] = 2.0f * zNear / (r - l);
+    m.m[8] = (r + l) / (r - l);
+    m.m[5] = -2.0f * zNear / (t - b);
+    m.m[9] = -(t + b) / (t - b);
+    m.m[10] = zFar / (zNear - zFar);
+    m.m[14] = (zNear * zFar) / (zNear - zFar);
+    m.m[11] = -1.0f;
+    return m;
+}
+
+// One cube of the two-cube scene (M12 behavior; Android still uses this).
+inline Mat4 cubeMvp(float tSec, VkExtent2D extent, float xOffset, float yOffset, float spin,
+                    float phase) {
+    Mat4 model = cubeModel(tSec, xOffset, yOffset, spin * 0.9f, 0.37f, phase, 0.85f, 0.85f,
+                           0.85f);
     float aspect = extent.height ? (float)extent.width / (float)extent.height : 1.0f;
     return matMul(matPerspective(0.7854f, aspect, 0.1f, 100.0f), model);
 }

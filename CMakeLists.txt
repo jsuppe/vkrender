@@ -128,7 +128,8 @@ add_executable(vkrenderer
     renderer/external_video_image.cpp
     renderer/video_pass.cpp
     renderer/background_pass.cpp
-    renderer/dump_util.cpp)
+    renderer/dump_util.cpp
+    renderer/scene_host.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
 if(WIN32)

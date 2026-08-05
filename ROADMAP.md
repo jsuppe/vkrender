@@ -285,6 +285,33 @@ platforms:
   D3D11 device and animated pattern) at ~569 adoptions/5 s aggregate,
   16 imported slots, clean per-client teardown.
 
+## M15 — Multi-window spanning, layouts, runtime controls (done, 2026-08-05)
+
+The renderer grows a proper front-of-house
+([renderer/scene_host.cpp](renderer/scene_host.cpp), shared by `--serve`
+and `--wayland`):
+
+- **Multi-window spanning**: repeatable `--window WxH+X+Y` places windows
+  on the desktop AND defines their region of a shared virtual canvas; each
+  window renders the scene through an off-center sub-frustum
+  (`matFrustumSub`) and a canvas-mapped backdrop, so windows arranged
+  across displays show one seamless scene (verified: sun/grid continuous
+  through the seam of two 960x540 windows). One submit + one present cover
+  all swapchains; scene windows use FIFO (vsync-paced).
+- **Layouts** (L key cycles): two-cubes, single-cube, and a flat **wall**
+  of 16:9 tiles - one stream each, grid auto-fit to the canvas aspect
+  (reuses the cube pipeline drawing only front faces).
+- **Controls**: SPACE pause, -/= speed, B backdrop toggle, **1-9 remove/
+  restore stream N from the scene** (0 = all back; producers keep flowing,
+  they just leave the composition), P snapshot, ESC quit.
+- **Snapshots**: P (or `VKR_SNAPSHOT_SECONDS=N`) dumps each window's last
+  presented frame to `scene-w<N>.ppm` - swapchains now carry TRANSFER_SRC
+  for this, which is also how multi-window output is verified (GDI/
+  PrintWindow cannot capture Vulkan flip-model surfaces).
+- Verified on the RTX 5090: two spanning windows, six producer clients,
+  layout switching and per-stream removal live via keyboard, dynamic
+  client connect/disconnect reflected in the scene.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.

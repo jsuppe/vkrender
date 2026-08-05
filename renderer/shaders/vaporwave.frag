@@ -3,15 +3,21 @@
 // Procedural vaporwave backdrop (M12): sunset-gradient sky, striped synthwave
 // sun on the horizon, neon perspective grid scrolling toward the viewer.
 // Drawn with fullscreen.vert (uv.y = 0 at the top of the screen).
+// uvOff/uvScale map this window's uv into the shared virtual-canvas uv so the
+// backdrop spans seamlessly across multiple windows (M15); single-window
+// callers pass off=(0,0), scale=(1,1).
 layout(push_constant) uniform PC {
     float time;
-    float aspect;
+    float aspect; // full canvas aspect
+    vec2 uvOff;
+    vec2 uvScale;
 } pc;
 
-layout(location = 0) in vec2 uv;
+layout(location = 0) in vec2 winUv;
 layout(location = 0) out vec4 color;
 
 void main() {
+    vec2 uv = pc.uvOff + winUv * pc.uvScale;
     const float horizon = 0.62;
 
     if (uv.y < horizon) {

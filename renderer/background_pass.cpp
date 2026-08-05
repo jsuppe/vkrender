@@ -31,7 +31,7 @@ VkShaderModule loadModule(VkDevice device, const std::string& path) {
 } // namespace
 
 bool BackgroundPass::init(VkContext& vk, const std::string& shaderDir) {
-    VkPushConstantRange pcRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 2 * sizeof(float)};
+    VkPushConstantRange pcRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 6 * sizeof(float)};
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     plci.pushConstantRangeCount = 1;
     plci.pPushConstantRanges = &pcRange;
@@ -108,15 +108,18 @@ bool BackgroundPass::init(VkContext& vk, const std::string& shaderDir) {
     return true;
 }
 
-void BackgroundPass::draw(VkCommandBuffer cmd, VkExtent2D extent, float timeSec) {
+void BackgroundPass::draw(VkCommandBuffer cmd, VkExtent2D extent, float timeSec,
+                          float canvasAspect, float uvOffX, float uvOffY, float uvScaleX,
+                          float uvScaleY) {
     if (!pipeline_) return;
     VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
     VkRect2D scissor{{0, 0}, extent};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-    float pc[2] = {timeSec,
-                   extent.height ? (float)extent.width / (float)extent.height : 1.0f};
+    if (canvasAspect <= 0.0f)
+        canvasAspect = extent.height ? (float)extent.width / (float)extent.height : 1.0f;
+    float pc[6] = {timeSec, canvasAspect, uvOffX, uvOffY, uvScaleX, uvScaleY};
     vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), pc);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 }

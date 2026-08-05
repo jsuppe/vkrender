@@ -344,7 +344,8 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
 void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
                             const int64_t* faceSlots, uint32_t cubeCount, const float* mvps,
                             VkImageView target, VkExtent2D extent, uint32_t queueFamily,
-                            BackgroundPass* background, float timeSec) {
+                            BackgroundPass* background, float timeSec, float bgAspect,
+                            float bgOffX, float bgOffY, float bgSclX, float bgSclY) {
     static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
     const uint32_t faceCount = cubeCount * 6;
 
@@ -372,7 +373,8 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
 
     beginClearedRendering(cmd, target, extent);
 
-    if (background) background->draw(cmd, extent, timeSec);
+    if (background)
+        background->draw(cmd, extent, timeSec, bgAspect, bgOffX, bgOffY, bgSclX, bgSclY);
 
     if (anyVideo) {
         VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};

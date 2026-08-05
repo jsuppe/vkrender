@@ -27,6 +27,9 @@ public:
 #endif
 
     bool headless = false;
+    // Prefer vsync-throttled FIFO over MAILBOX (M15 scene windows: an
+    // unthrottled scene loop just burns GPU). Set before init/recreate.
+    bool preferFifo = false;
 
     // Android: the ANativeWindow* from the NativeActivity, set before init()
     // (GLFW is not used there). Desktop: unused.

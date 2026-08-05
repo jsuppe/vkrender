@@ -17,7 +17,12 @@ public:
     void destroy(VkContext& vk);
 
     // Records the fullscreen draw. Call between vkCmdBeginRendering/End.
-    void draw(VkCommandBuffer cmd, VkExtent2D extent, float timeSec);
+    // canvasAspect/uvOff/uvScale map this window into the shared virtual
+    // canvas (M15 multi-window spanning); the defaults render the whole
+    // backdrop into one target.
+    void draw(VkCommandBuffer cmd, VkExtent2D extent, float timeSec, float canvasAspect = 0.0f,
+              float uvOffX = 0.0f, float uvOffY = 0.0f, float uvScaleX = 1.0f,
+              float uvScaleY = 1.0f);
 
     bool valid() const { return pipeline_ != VK_NULL_HANDLE; }
 

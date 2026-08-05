@@ -322,12 +322,14 @@ bool VkContext::createSwapchain() {
     // MAILBOX when available: newest-image-wins presentation without tearing,
     // so a late frame never queues behind stale ones (lowest display latency).
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    uint32_t pmCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, nullptr);
-    std::vector<VkPresentModeKHR> modes(pmCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, modes.data());
-    for (VkPresentModeKHR m : modes)
-        if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
+    if (!preferFifo) {
+        uint32_t pmCount = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, nullptr);
+        std::vector<VkPresentModeKHR> modes(pmCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, modes.data());
+        for (VkPresentModeKHR m : modes)
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
+    }
 
 #ifdef __ANDROID__
     // One extra image over desktop: BufferQueue-backed swapchains stall in
@@ -345,7 +347,8 @@ bool VkContext::createSwapchain() {
     sci.imageColorSpace = chosen.colorSpace;
     sci.imageExtent = swapExtent;
     sci.imageArrayLayers = 1;
-    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    // TRANSFER_SRC enables the M15 snapshot dump of presented frames.
+    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     // IDENTITY lets the compositor apply display rotation (we don't rotate in
     // the shader); currentTransform without shader-side handling shows the

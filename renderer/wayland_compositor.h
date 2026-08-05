@@ -17,6 +17,9 @@
 #ifndef _WIN32
 
 #include <string>
+#include <vector>
+
+#include "scene_host.h"
 
 namespace vkr {
 
@@ -25,6 +28,7 @@ struct WaylandOptions {
     int headlessFrames = 0; // 0 = windowed
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;
+    std::vector<WindowSpec> windows; // M15: canvas-spanning windows
 };
 
 // Runs the compositor until the window closes (or headlessFrames adopted in
