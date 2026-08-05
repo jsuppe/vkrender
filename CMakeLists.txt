@@ -148,7 +148,8 @@ if(WIN32)
     # cppwinrt projection headers and WindowsApp.lib).
     add_executable(vkr_miracast client/miracast_receiver.cpp)
     target_link_libraries(vkr_miracast PRIVATE vkrender_client d3d11 dxgi windowsapp)
-    target_compile_options(vkr_miracast PRIVATE /EHsc /await)
+    # C++/WinRT on standard C++20 coroutines; /await is rejected by MSVC 14.5x.
+    target_compile_options(vkr_miracast PRIVATE /EHsc)
 endif()
 
 # --- Wayland compositor mode (M13, Linux only) -------------------------------
