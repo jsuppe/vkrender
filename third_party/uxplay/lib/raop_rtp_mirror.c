@@ -532,8 +532,12 @@ raop_rtp_mirror_thread(void *arg)
                     h264_data.nal_count += 2;
 		    prepend_sps_pps =  false;
                 }
-                raop_rtp_mirror->callbacks.video_resume(raop_rtp_mirror->callbacks.cls);
-                raop_rtp_mirror->callbacks.video_process(raop_rtp_mirror->callbacks.cls, raop_rtp_mirror->ntp, &h264_data);
+                /* vkrender: NULL-guard optional callbacks (crash observed on the
+                 * first live cast when a port left video_resume unset). */
+                if (raop_rtp_mirror->callbacks.video_resume)
+                    raop_rtp_mirror->callbacks.video_resume(raop_rtp_mirror->callbacks.cls);
+                if (raop_rtp_mirror->callbacks.video_process)
+                    raop_rtp_mirror->callbacks.video_process(raop_rtp_mirror->callbacks.cls, raop_rtp_mirror->ntp, &h264_data);
                 free(payload_out);
                 break;
             case 0x01:
@@ -623,7 +627,9 @@ raop_rtp_mirror_thread(void *arg)
                 // h264.pps_size = pps_size;
                 // h264.picture_parameter_set = malloc(h264.pps_size);
                 // memcpy(h264.picture_parameter_set, picture_parameter_set, pps_size);
-                raop_rtp_mirror->callbacks.video_pause(raop_rtp_mirror->callbacks.cls);
+                /* vkrender: NULL-guard, see video_resume above. */
+                if (raop_rtp_mirror->callbacks.video_pause)
+                    raop_rtp_mirror->callbacks.video_pause(raop_rtp_mirror->callbacks.cls);
                 break;
             case 0x02:
                 logger_log(raop_rtp_mirror->logger, LOGGER_DEBUG, "\nReceived old-protocol once-per-second packet from client:"

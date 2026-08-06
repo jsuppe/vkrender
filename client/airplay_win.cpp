@@ -134,6 +134,12 @@ void cbVideoProcess(void*, raop_ntp_t*, h264_decode_struct* data) {
 void cbAudioProcess(void*, raop_ntp_t*, audio_decode_struct*) {}
 void cbVideoFlush(void*) {}
 void cbAudioFlush(void*) {}
+// Called around the first frame / stream pauses. MUST be set: raop_rtp_mirror
+// invokes video_resume/video_pause unguarded (found via live-cast crash - a
+// call through NULL at the first encrypted IDR after SPS/PPS; the Android
+// port had these, the Windows port was missing them).
+void cbVideoPause(void*) {}
+void cbVideoResume(void*) {}
 void cbConnInit(void*) { printf("airplay: client connected\n"); }
 void cbConnDestroy(void*) { printf("airplay: client disconnected\n"); }
 void cbConnReset(void*, int, bool) {}
@@ -147,8 +153,28 @@ void cbLog(void*, int level, const char* msg) {
 
 } // namespace
 
+// Crash triage: print the faulting module+offset before dying, so a live
+// cast failure leaves evidence in the log even when WER stays silent.
+LONG WINAPI crashFilter(EXCEPTION_POINTERS* ep) {
+    void* addr = ep->ExceptionRecord->ExceptionAddress;
+    HMODULE mod = nullptr;
+    char modName[MAX_PATH] = "?";
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)addr, &mod) &&
+        mod) {
+        GetModuleFileNameA(mod, modName, sizeof(modName));
+    }
+    fprintf(stderr, "airplay: FATAL exception 0x%08lX at %p (%s + 0x%llx), thread %lu\n",
+            ep->ExceptionRecord->ExceptionCode, addr, modName,
+            (unsigned long long)((uintptr_t)addr - (uintptr_t)mod), GetCurrentThreadId());
+    fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER; // die, but with the line above logged
+}
+
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
+    SetUnhandledExceptionFilter(crashFilter);
     const char* pipe = argc > 1 ? argv[1] : "vkrender";
     const char* name = argc > 2 ? argv[2] : "vkrender";
 
@@ -192,6 +218,8 @@ int main(int argc, char** argv) {
     cbs.conn_destroy = cbConnDestroy;
     cbs.conn_reset = cbConnReset;
     cbs.report_client_request = cbReportClient;
+    cbs.video_pause = cbVideoPause;
+    cbs.video_resume = cbVideoResume;
 
     g_raop = raop_init(&cbs);
     if (!g_raop) {
@@ -209,7 +237,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     raop_set_log_callback(g_raop, cbLog, nullptr);
-    raop_set_log_level(g_raop, LOGGER_INFO);
+    raop_set_log_level(g_raop, getenv("VKR_AIRPLAY_DEBUG") ? LOGGER_DEBUG : LOGGER_INFO);
     raop_set_plist(g_raop, "width", 1920);
     raop_set_plist(g_raop, "height", 1080);
     raop_set_plist(g_raop, "refreshRate", 60);
