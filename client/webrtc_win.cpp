@@ -1,18 +1,21 @@
-// M20: WebRTC (WHIP) receiver -> vkrender producer (Windows).
+// M20/M22: WebRTC (WHIP) receiver -> vkrender producer (Windows).
 //
-// GStreamer's whipserversrc runs a WHIP HTTP endpoint plus the entire WebRTC
-// stack (ICE / DTLS-SRTP / RTP) internally; a browser (or OBS, or a GStreamer
-// whipclientsink) POSTs an SDP offer to http://<host>:<port> and streams. We
-// decode each received video track and upload the frames into a dequeued
-// vkrender_client ring texture - the cast becomes one more scene stream.
+// M22 turned this into a multi-presenter room: client/whip_room.cpp runs the
+// WHIP ingest (own HTTP listener, one webrtcbin per presenter - replacing the
+// single-producer whipserversrc), and this file supplies the Windows sink:
+// each presenter's video track is decoded and uploaded into its OWN
+// vkrender_client connection. The M14 service keys one scene stream per pipe
+// connection, so every presenter lands on their own cube face / wall tile
+// with zero renderer changes.
 //
-//   vkr_webrtc [pipe] [port] [name]
+//   vkr_webrtc [pipe] [port] [name] [maxPresenters]
 //
 // It advertises itself over mDNS as `_vkrender-whip._tcp` (TXT path=/whip/
 // endpoint) so the Flutter sender discovers it with no manual address entry.
+// Any WHIP sender works: the Flutter app, a browser, OBS, whipclientsink.
 //
-// The SAME whipserversrc core drives the Linux and Android receivers (there
-// the sink differs: waylandsink into the compositor / MediaCodec into the
+// The SAME whip_room core drives the Linux and Android receivers (there the
+// sink differs: waylandsink into the compositor / MediaCodec into the
 // renderer Surface); this is the shared WebRTC design.
 
 #define WIN32_LEAN_AND_MEAN
@@ -29,21 +32,31 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-#include <string>
 
 #include "vkrender_client.h"
 #include "whip_mdns_win.h"
+#include "whip_room.h"
 
 using Microsoft::WRL::ComPtr;
 
 namespace {
 
-vkrClient* g_client = nullptr;
-GstElement* g_pipeline = nullptr;
-std::atomic<uint64_t> g_frames{0};
+const char* g_pipe = "vkrender";
 
-// A decoded BGRA frame arrived from a video track's appsink.
-GstFlowReturn onNewSample(GstAppSink* sink, gpointer) {
+// One presenter's frame path: their producer connection + frame counter. The
+// connection is made on the FIRST decoded frame so the ring matches the
+// presenter's actual resolution (a fixed-size ring would letterbox them into
+// a corner of their cube face).
+struct Track {
+    vkrClient* client = nullptr;
+    unsigned sessionId = 0;
+    bool connectFailed = false;
+    std::atomic<uint64_t> frames{0};
+};
+
+// A decoded BGRA frame arrived from one presenter's appsink.
+GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
+    Track* trk = static_cast<Track*>(user);
     GstSample* sample = gst_app_sink_pull_sample(sink);
     if (!sample) return GST_FLOW_OK;
     GstCaps* caps = gst_sample_get_caps(sample);
@@ -56,9 +69,21 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer) {
     GstBuffer* buffer = gst_sample_get_buffer(sample);
     GstMapInfo map;
     if (w > 0 && h > 0 && buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        if (!trk->client && !trk->connectFailed) {
+            trk->client = vkrConnect(g_pipe, nullptr, w, h);
+            if (!trk->client) {
+                trk->connectFailed = true; // service gone; drop frames quietly
+                fprintf(stderr,
+                        "webrtc: [session %u] cannot reach vkrenderer service on pipe "
+                        "'%s' - discarding track\n",
+                        trk->sessionId, g_pipe);
+            } else {
+                printf("webrtc: [session %u] producing %dx%d\n", trk->sessionId, w, h);
+            }
+        }
         vkrBuffer buf;
-        if (vkrDequeueBuffer(g_client, &buf, 5) == 0) {
-            ComPtr<ID3D11Device> dev = vkrGetDevice(g_client);
+        if (trk->client && vkrDequeueBuffer(trk->client, &buf, 5) == 0) {
+            ComPtr<ID3D11Device> dev = vkrGetDevice(trk->client);
             ComPtr<ID3D11DeviceContext> ctx;
             dev->GetImmediateContext(&ctx);
             D3D11_TEXTURE2D_DESC td{};
@@ -68,10 +93,11 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer) {
             D3D11_BOX box{0, 0, 0, cw, chh, 1};
             ctx->UpdateSubresource(buf.texture, 0, &box, map.data, (UINT)w * 4,
                                    (UINT)w * 4 * chh);
-            vkrQueueBuffer(g_client, &buf, -1);
-            uint64_t n = ++g_frames;
-            if (n % 150 == 1) printf("webrtc: %llu frames into the scene\n",
-                                     (unsigned long long)n);
+            vkrQueueBuffer(trk->client, &buf, -1);
+            uint64_t n = ++trk->frames;
+            if (n % 300 == 1)
+                printf("webrtc: [session %u] %llu frames into the scene\n", trk->sessionId,
+                       (unsigned long long)n);
         }
         gst_buffer_unmap(buffer, &map);
     }
@@ -79,21 +105,14 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer) {
     return GST_FLOW_OK;
 }
 
-// whipserversrc adds a video_%u / audio_%u pad (application/x-rtp) when the
-// remote track arrives. Build the depay+decode branch for video, ending in a
-// BGRA appsink; ignore audio.
-void onPadAdded(GstElement*, GstPad* pad, gpointer) {
-    // whipserversrc names pads video_%u / audio_%u; the caps' media field can
-    // still be unset at pad-added, so key off the pad name.
-    gchar* padName = gst_pad_get_name(pad);
-    bool isVideo = padName && strncmp(padName, "video", 5) == 0;
-    printf("webrtc: track '%s'%s\n", padName ? padName : "?", isVideo ? " (video)" : "");
-    g_free(padName);
-    if (!isVideo) return;
+// whip_room callback: a presenter's video track appeared. Build the decode
+// branch (decodebin handles whatever codec they negotiated) into a BGRA
+// appsink feeding a fresh producer connection.
+void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement** elements,
+              int maxElements, void*) {
+    Track* trk = new Track();
+    trk->sessionId = sessionId; // producer connection made on first frame
 
-    // decodebin depayloads + decodes whatever the browser negotiated (H.264,
-    // VP8, VP9, ...) so we stay codec-agnostic. Its src pad -> videoconvert ->
-    // BGRA appsink.
     GstElement* decode = gst_element_factory_make("decodebin", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
     GstElement* sink = gst_element_factory_make("appsink", nullptr);
@@ -103,68 +122,80 @@ void onPadAdded(GstElement*, GstPad* pad, gpointer) {
     gst_caps_unref(bgra);
     GstAppSinkCallbacks cbs{};
     cbs.new_sample = onNewSample;
-    gst_app_sink_set_callbacks(GST_APP_SINK(sink), &cbs, nullptr, nullptr);
+    gst_app_sink_set_callbacks(GST_APP_SINK(sink), &cbs, trk, nullptr);
 
-    gst_bin_add_many(GST_BIN(g_pipeline), decode, convert, sink, nullptr);
+    gst_bin_add_many(GST_BIN(pipeline), decode, convert, sink, nullptr);
     gst_element_sync_state_with_parent(decode);
     gst_element_sync_state_with_parent(convert);
     gst_element_sync_state_with_parent(sink);
     gst_element_link(convert, sink);
     // decodebin's src pad appears dynamically -> link to convert then.
     g_signal_connect(decode, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* p, gpointer c) {
-                         gst_pad_link(p, gst_element_get_static_pad(GST_ELEMENT(c), "sink"));
+                         GstPad* q = gst_element_get_static_pad(GST_ELEMENT(c), "sink");
+                         gst_pad_link(p, q);
+                         gst_object_unref(q);
                      }),
                      convert);
     GstPad* sinkpad = gst_element_get_static_pad(decode, "sink");
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
+
+    if (maxElements > 2) {
+        elements[0] = decode;
+        elements[1] = convert;
+        elements[2] = sink;
+    }
+    return trk;
+}
+
+// whip_room callback: presenter left, branch already reaped - close their
+// producer connection (the renderer frees that stream's slots).
+void onTrackClosed(void* handle, unsigned sessionId, void*) {
+    Track* trk = static_cast<Track*>(handle);
+    if (!trk) return;
+    printf("webrtc: [session %u] closed after %llu frames\n", sessionId,
+           (unsigned long long)trk->frames.load());
+    if (trk->client) vkrDisconnect(trk->client);
+    delete trk;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    const char* pipe = argc > 1 ? argv[1] : "vkrender";
+    g_pipe = argc > 1 ? argv[1] : "vkrender";
     int port = argc > 2 ? atoi(argv[2]) : 8889;
     const char* name = argc > 3 ? argv[3] : "vkrender";
+    int maxPresenters = argc > 4 ? atoi(argv[4]) : 12;
 
     gst_init(&argc, &argv);
 
-    g_client = vkrConnect(pipe, nullptr, 1280, 720);
-    if (!g_client) {
-        fprintf(stderr, "webrtc: cannot reach vkrenderer service on pipe '%s'\n", pipe);
+    // Fail fast if the renderer service isn't up (presenter connections are
+    // made lazily per session, but a dead service should be loud at launch).
+    vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64);
+    if (!probe) {
+        fprintf(stderr, "webrtc: cannot reach vkrenderer service on pipe '%s'\n", g_pipe);
         return 1;
     }
+    vkrDisconnect(probe);
 
-    g_pipeline = gst_pipeline_new("webrtc");
-    GstElement* src = gst_element_factory_make("whipserversrc", "whip");
-    if (!src) {
-        fprintf(stderr, "webrtc: whipserversrc unavailable (gst-plugins-rs missing?)\n");
-        return 1;
-    }
-    // Point the WHIP signaller's HTTP endpoint at all interfaces on `port`.
-    GObject* signaller = nullptr;
-    g_object_get(src, "signaller", &signaller, nullptr);
-    if (signaller) {
-        char addr[64];
-        snprintf(addr, sizeof(addr), "http://0.0.0.0:%d", port);
-        g_object_set(signaller, "host-addr", addr, nullptr);
-        g_object_unref(signaller);
-    }
-    g_signal_connect(src, "pad-added", G_CALLBACK(onPadAdded), nullptr);
-    gst_bin_add(GST_BIN(g_pipeline), src);
+    GstElement* pipeline = gst_pipeline_new("webrtc-room");
+    gst_element_set_state(pipeline, GST_STATE_PLAYING);
 
-    if (gst_element_set_state(g_pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
-        fprintf(stderr, "webrtc: pipeline failed to start\n");
-        return 1;
-    }
-    printf("webrtc: WHIP endpoint on http://0.0.0.0:%d  (POST an SDP offer to stream)\n", port);
+    WhipRoomCallbacks cbs{};
+    cbs.onTrack = onTrack;
+    cbs.onTrackClosed = onTrackClosed;
+    WhipRoom* room = whip_room_new(pipeline, port, maxPresenters, &cbs, nullptr);
+    if (!room) return 1;
+    printf("webrtc: WHIP room on http://0.0.0.0:%d - space for %d presenters\n", port,
+           maxPresenters);
 
     // Advertise on the LAN so the Flutter sender auto-discovers us.
     whip_mdns_register(name, "/whip/endpoint", (unsigned short)port);
 
-    // Pump the bus for errors; frames flow via the appsink callback.
-    GstBus* bus = gst_element_get_bus(g_pipeline);
+    // Pump the bus (per-presenter decode errors are logged, not fatal) and
+    // reap departed presenters.
+    GstBus* bus = gst_element_get_bus(pipeline);
     for (;;) {
         GstMessage* msg =
             gst_bus_timed_pop_filtered(bus, 200 * GST_MSECOND,
@@ -172,9 +203,11 @@ int main(int argc, char** argv) {
         if (msg) {
             GError* err = nullptr;
             gst_message_parse_error(msg, &err, nullptr);
-            fprintf(stderr, "webrtc: pipeline error: %s\n", err ? err->message : "?");
+            fprintf(stderr, "webrtc: pipeline error from %s: %s\n",
+                    GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)), err ? err->message : "?");
             if (err) g_error_free(err);
             gst_message_unref(msg);
         }
+        whip_room_poll(room);
     }
 }

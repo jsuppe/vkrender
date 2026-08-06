@@ -490,6 +490,57 @@ changes** beyond the discovery advertisement below.
 - **Pending** — iOS ReplayKit extension; live end-to-end phone-screen cast
   (same real-device bucket as the M16–M20 receivers).
 
+## M22 — 12-presenter point-to-point room (Windows verified)
+
+Up to **12 presenters** share their screens into one scene, point-to-point
+(no SFU), over whichever path their device speaks: the Flutter sender or a
+browser (WebRTC/WHIP), Miracast (Windows phones/laptops), or AirPlay (Apple).
+The scene already composites 12 streams (M12) and mixed-protocol receivers
+already coexist as separate producer processes; the gap was **WHIP fan-in**.
+
+**Key discovery**: the gst-plugins-rs `whipserversrc` shipped with GStreamer
+1.26 is **single-producer** — while one WHIP session is live, POSTs from
+presenters 2..N are never answered (verified: HTTP timeouts, then `HTTP 000`
+probes). No receiver-side branch code fixes that, so M22 owns the ingest
+instead:
+
+- **[client/whip_room.cpp](client/whip_room.cpp)** — a multi-session WHIP
+  server built directly on `webrtcbin`: a tiny GLib-socket HTTP listener
+  (portable to all three platforms) where each POSTed offer creates its OWN
+  `webrtcbin` in the shared pipeline and is answered non-trickle (201 +
+  SDP + `Location: /session/<id>`; DELETE tears down; OPTIONS handles CORS
+  for browser senders; 503 when the room is full). Presenters who vanish
+  without DELETE are reaped when ICE hits failed/closed. Same "own the
+  front door" move as the M13 compositor and M14 pipe service.
+- **Windows (verified)**: `vkr_webrtc` supplies the sink — each presenter's
+  track is decoded and uploaded into its OWN `vkrender_client` connection
+  (made lazily on the first frame so the ring matches the presenter's real
+  resolution). The M14 service keys one stream per connection, so every
+  presenter lands on their own cube face with zero renderer changes.
+  **Measured: 12 concurrent `whipclientsink` presenters live at once, all
+  streaming (600+ frames each), 13th cleanly rejected 503, distinct
+  patterns on the cube faces in the snapshot, departed presenters reaped
+  and their slots rejoinable.**
+- Linux: same `whip_room` core, branches ending in `waylandsink` — each
+  Wayland surface is already its own stream in the M13 compositor.
+- Android: same `whip_room` core; renderer AIDL currently keys streams by
+  Binder UID (M11), so one webrtc APK = one stream; needs a multi-surface
+  extension (named/indexed `acquireInputSurface`) to fan sessions into
+  separate cube faces.
+
+## Backlog — cloud calling via self-hosted LiveKit (M23 proposal)
+
+Marry the system to a self-hosted SFU for internet reach, rooms, and auth.
+Decisions sketched (2026-08-05): **LiveKit** (Apache-2.0, built-in TURN,
+first-class Flutter SDK); receiver subscribes via `livekitwebrtcsrc` from
+gst-plugins-rs — the same source-element-swap pattern as M20 (verified: our
+melchior plugin build has `whepclientsrc`/`whepserversink` but needs a
+rebuild with `--features livekit` for the LiveKit elements). Sender adopts
+the `livekit_client` Flutter SDK (rooms/presence) in place of raw WHIP.
+Plan: dev server on melchior → receiver subscribe → sender SDK → token
+service + TURN/TLS hardening. Parked until the point-to-point room (M22) is
+done.
+
 ## Later / ideas
 
 - Audio: decode + share via existing IPC, or local playback in the decoder.
