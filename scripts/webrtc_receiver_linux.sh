@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# M20/M21 Linux WHIP receiver + mDNS advertisement.
+# M22 Linux WHIP room + mDNS advertisement.
 #
-# The Linux WebRTC receiver is one gst-launch line: whipserversrc decoded into
-# waylandsink, landing on the M13 compositor exactly like AirPlay via uxplay.
-# This wrapper adds the `_vkrender-whip._tcp` advertisement (via avahi) so the
-# Flutter sender auto-discovers it, matching the Windows (DnsServiceRegister)
-# and Android (NsdManager) receivers.
+# Runs the multi-presenter WHIP receiver (vkr_webrtc: whip_room ingest on
+# webrtcbin, one waylandsink per presenter into the M13 compositor) alongside
+# an avahi `_vkrender-whip._tcp` advertisement so the Flutter sender
+# auto-discovers it - matching the Windows (DnsServiceRegister) and Android
+# (NsdManager) receivers.
 #
 # Prereqs:
 #   - the compositor is already running:  vkrenderer --wayland vkrender-0 ...
-#   - gst-plugin-webrtc providing whipserversrc is on the GStreamer plugin path
-#     (Ubuntu packages lack it; build with `cargo build --release -p
-#     gst-plugin-webrtc` and drop libgstrswebrtc.so in the plugin dir).
-#   - avahi-daemon running and avahi-utils installed (avahi-publish-service).
+#   - gstreamer1.0-plugins-bad (webrtcbin) + gstreamer1.0-nice installed
+#   - avahi-daemon running and avahi-utils installed (avahi-publish-service)
 #
-# Env overrides: PORT (8889), NAME (vkrender), WAYLAND_DISPLAY (vkrender-0).
+# Env overrides: PORT (8889), NAME (vkrender), MAX (12), WAYLAND_DISPLAY
+# (vkrender-0), VKR_WEBRTC (path to the binary, default ./build/vkr_webrtc).
 set -u
 
 PORT="${PORT:-8889}"
 NAME="${NAME:-vkrender}"
+MAX="${MAX:-12}"
+BIN="${VKR_WEBRTC:-./build/vkr_webrtc}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-vkrender-0}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
@@ -28,9 +29,5 @@ AVAHI_PID=$!
 cleanup() { kill "$AVAHI_PID" 2>/dev/null; }
 trap cleanup EXIT INT TERM
 
-echo "webrtc: WHIP endpoint on http://0.0.0.0:$PORT/whip/endpoint (advertised as '$NAME')"
-
-# whipserversrc runs the WHIP HTTP endpoint + full WebRTC stack in-process.
-exec gst-launch-1.0 -e \
-  whipserversrc name=w signaller::host-addr="http://0.0.0.0:$PORT" \
-    ! queue ! decodebin ! videoconvert ! waylandsink
+echo "webrtc: room on http://0.0.0.0:$PORT/whip/endpoint (advertised as '$NAME')"
+exec "$BIN" "$PORT" "$MAX"

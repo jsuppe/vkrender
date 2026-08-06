@@ -264,6 +264,17 @@ if(NOT WIN32)
         target_include_directories(vkr_wl_dmabuf_client PRIVATE ${VKR_WL_GEN_DIR})
         target_link_libraries(vkr_wl_dmabuf_client PRIVATE PkgConfig::WLCLIENT)
     endif()
+
+    # M22: multi-presenter WHIP room -> waylandsink into the compositor.
+    # webrtcbin/SDP come from gst-plugins-bad; gio for the room's HTTP listener.
+    pkg_check_modules(GSTRTC IMPORTED_TARGET
+        gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gio-2.0)
+    if(GSTRTC_FOUND)
+        add_executable(vkr_webrtc client/webrtc_linux.cpp client/whip_room.cpp)
+        target_link_libraries(vkr_webrtc PRIVATE PkgConfig::GST PkgConfig::GSTRTC)
+    else()
+        message(STATUS "gstreamer-webrtc-1.0 not found - skipping vkr_webrtc (M22)")
+    endif()
 endif()
 add_custom_command(TARGET vkrenderer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
