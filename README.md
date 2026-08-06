@@ -136,9 +136,14 @@ verified from a macOS 26.5 sender.
 
 **Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine
 a discoverable cast target ("vkrender") and feeds the cast into the scene
-as a normal producer stream. Disable Windows' "Projecting to this PC"
-first; phones need a Miracast-capable Wi-Fi adapter on the receiver,
-Windows senders work over the LAN.
+as a normal producer stream. Windows negotiates the sink role dynamically
+through the Microsoft Wi-Fi Direct Virtual Adapter layered over the
+WDI/WiFiCx driver, so support depends on the whole stack (driver + virtual
+adapter + graphics driver + the "Wireless display" optional feature), not on
+a hardware role bit — see [docs/MIRACAST.md](docs/MIRACAST.md) for the
+diagnostics and our measured findings. Disable Windows' "Projecting to this
+PC" first (it owns the sink role). `Start()` runs under a watchdog, so a
+stuck sink is reported instead of hanging.
 
 **PIN authorization (M25, Windows)**: set `VKR_PIN=1234` (fixed) or
 `VKR_PIN=auto` (fresh 4-digit code per connection) before starting a

@@ -11,8 +11,9 @@
 // Notes:
 //  - Windows' own "Projecting to this PC" (Wireless Display) must be off or
 //    not installed, or it claims the sink role first.
-//  - Discovery works over Wi-Fi Direct (needs a Miracast-capable Wi-Fi
-//    adapter) and, for Windows senders, over the LAN (MS-MICE).
+//  - Discovery runs over Wi-Fi Direct via the Microsoft Wi-Fi Direct Virtual
+//    Adapter (roles negotiated dynamically over a WDI/WiFiCx driver - see
+//    docs/MIRACAST.md); Windows senders can also use the LAN (MS-MICE).
 //  - Video only; cast audio is discarded.
 //  - MediaPlayer's frame server renders on its own D3D device;
 //    CopyFrameToVideoSurface handles the cross-device copy into our shared
@@ -71,7 +72,8 @@ const wchar_t* sessionStartStatusName(MiracastReceiverSessionStartStatus s) {
     switch (s) {
         case MiracastReceiverSessionStartStatus::Success: return L"success";
         case MiracastReceiverSessionStartStatus::MiracastNotSupported:
-            return L"Miracast not supported on this hardware";
+            return L"the OS reports Miracast receiving unavailable (stack-level, "
+                   L"not necessarily the adapter - see docs/MIRACAST.md)";
         case MiracastReceiverSessionStartStatus::AccessDenied:
             return L"access denied (is 'Projecting to this PC' claiming the sink?)";
         default: return L"unknown failure";
@@ -169,18 +171,26 @@ int main(int argc, char** argv) {
         state.player.Play();
     });
 
-    // MiracastReceiverSession::Start() is documented as synchronous, but on
-    // machines without a usable Wi-Fi Direct sink it can BLOCK FOREVER instead
-    // of returning MiracastNotSupported (reproduced here: the process sat
-    // alive and silent after "listening status"). Run it with a watchdog so
-    // the appliance never shows a receiver that is quietly doing nothing.
+    // MiracastReceiverSession::Start() is documented as synchronous but can
+    // BLOCK FOREVER instead of returning a status (reproduced on a machine
+    // that reports "Wireless Display Supported: Yes" - so the hang is NOT a
+    // hardware-capability verdict; see docs/MIRACAST.md). Run it under a
+    // watchdog so the appliance never shows a receiver silently doing nothing.
     std::future<MiracastReceiverSessionStartResult> startFuture =
         std::async(std::launch::async, [&session] { return session.Start(); });
     if (startFuture.wait_for(std::chrono::seconds(15)) != std::future_status::ready) {
-        wprintf(L"miracast: giving up - the Wi-Fi Direct sink did not come up within 15 s.\n"
-                L"miracast: this machine most likely has no Miracast-capable Wi-Fi adapter "
-                L"(wired-only PCs cannot receive Miracast; it is a driver/hardware role, not "
-                L"a software option).\n"
+        // Do NOT claim the hardware is incapable: Windows negotiates the sink
+        // role dynamically through the Microsoft Wi-Fi Direct Virtual Adapter
+        // layered over the WDI/WiFiCx driver, so capability is a property of
+        // the whole stack. Print what to check instead. See docs/MIRACAST.md.
+        wprintf(L"miracast: Start() did not return within 15 s - giving up so the appliance "
+                L"isn't left with a receiver that is silently doing nothing.\n"
+                L"miracast: check, in this order:\n"
+                L"miracast:   netsh wlan show driver | findstr \"Wireless Display\"\n"
+                L"miracast:   (elevated) Get-WindowsCapability -Online -Name "
+                L"App.WirelessDisplay.Connect*\n"
+                L"miracast:   Wi-Fi radio on? 'Projecting to this PC' off (it owns the sink)?\n"
+                L"miracast: details + our findings: docs/MIRACAST.md\n"
                 L"miracast: AirPlay and WebRTC receiving are unaffected - set miracast=0 in "
                 L"vkrender.ini to skip this.\n");
         fflush(stdout);
@@ -192,15 +202,16 @@ int main(int argc, char** argv) {
     auto result = startFuture.get();
     if (result.Status() != MiracastReceiverSessionStartStatus::Success) {
         if (result.Status() == MiracastReceiverSessionStartStatus::MiracastNotSupported) {
-            // Expected on wired-only machines and on Wi-Fi cards whose driver
-            // lacks the Wi-Fi Direct SINK role - it is a hardware/driver
-            // capability, not something software can substitute. The rest of
-            // the appliance is unaffected, so say so plainly and exit 0.
-            wprintf(L"miracast: not available on this machine - Miracast receiving needs a "
-                    L"Wi-Fi adapter whose driver supports the Wi-Fi Direct sink role "
-                    L"(wired-only PCs cannot receive Miracast).\n"
-                    L"miracast: the AirPlay and WebRTC receivers are unaffected; senders can "
-                    L"use those instead. Set miracast=0 in vkrender.ini to skip this check.\n");
+            // The OS reports the sink path unavailable. That is a stack-level
+            // verdict (virtual adapter + WDI/WiFiCx driver + graphics driver +
+            // feature state), so point at the checks rather than blaming the
+            // adapter. Not an error for the appliance: exit 0.
+            wprintf(L"miracast: the OS reports Miracast receiving unavailable right now.\n"
+                    L"miracast: check 'netsh wlan show driver | findstr \"Wireless Display\"', "
+                    L"that a Wi-Fi adapter is present and enabled, and that the 'Wireless "
+                    L"display' optional feature is installed. See docs/MIRACAST.md.\n"
+                    L"miracast: AirPlay and WebRTC receiving are unaffected; set miracast=0 in "
+                    L"vkrender.ini to skip this check.\n");
             vkrDisconnect(state.client);
             return 0;
         }
