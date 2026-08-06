@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "recv_stats.h"
 #include "vkrender_client.h"
 #include "whip_mdns_win.h"
 #include "whip_room.h"
@@ -52,6 +53,7 @@ struct Track {
     unsigned sessionId = 0;
     bool connectFailed = false;
     std::atomic<uint64_t> frames{0};
+    vkr::RecvStats stats; // M23: behind-live latency + drop-by-cause counters
 };
 
 // A decoded BGRA frame arrived from one presenter's appsink.
@@ -81,8 +83,14 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
                 printf("webrtc: [session %u] producing %dx%d\n", trk->sessionId, w, h);
             }
         }
+        trk->stats.onPulled();
         vkrBuffer buf;
-        if (trk->client && vkrDequeueBuffer(trk->client, &buf, 5) == 0) {
+        if (!trk->client) {
+            // fallthrough: no service; frame discarded (counted as ringdrop)
+            trk->stats.onRingDrop();
+        } else if (vkrDequeueBuffer(trk->client, &buf, 5) != 0) {
+            trk->stats.onRingDrop(); // ring starved: renderer not consuming
+        } else {
             ComPtr<ID3D11Device> dev = vkrGetDevice(trk->client);
             ComPtr<ID3D11DeviceContext> ctx;
             dev->GetImmediateContext(&ctx);
@@ -112,6 +120,8 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
               int maxElements, void*) {
     Track* trk = new Track();
     trk->sessionId = sessionId; // producer connection made on first frame
+    trk->stats.init(pipeline, sessionId);
+    trk->stats.attachProbe(pad, vkr::kStageIngress); // post-jitterbuffer
 
     GstElement* decode = gst_element_factory_make("decodebin", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
@@ -139,6 +149,11 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     GstPad* sinkpad = gst_element_get_static_pad(decode, "sink");
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
+
+    // Decoded+converted frames, just before the appsink queue.
+    GstPad* statPad = gst_element_get_static_pad(sink, "sink");
+    trk->stats.attachProbe(statPad, vkr::kStageSink);
+    gst_object_unref(statPad);
 
     if (maxElements > 2) {
         elements[0] = decode;

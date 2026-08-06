@@ -279,6 +279,10 @@ void handlePost(WhipRoom* room, const HttpRequest& req, GOutputStream* out) {
         return;
     }
     g_object_set(webrtc, "bundle-policy", 3 /* max-bundle */, nullptr);
+    // M23: webrtcbin's rtpjitterbuffer latency (default 200 ms) dominates the
+    // receive latency budget; make it tunable for profiling/low-latency runs.
+    const gchar* lat = g_getenv("VKR_WEBRTC_LATENCY_MS");
+    if (lat && *lat) g_object_set(webrtc, "latency", (guint)atoi(lat), nullptr);
     ses->webrtc = webrtc;
 
     PadCtx* ctx = g_new0(PadCtx, 1);

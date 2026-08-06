@@ -21,6 +21,7 @@
 #include <gst/gst.h>
 
 #include "airplay_video.h" // reused: H.264 AUs -> MediaCodec into Surface
+#include "recv_stats.h"
 #include "whip_room.h"
 
 #define VKR_LOG(...) __android_log_print(ANDROID_LOG_INFO, "vkrender", __VA_ARGS__)
@@ -84,7 +85,12 @@ struct Track {
     GstElement* appsink = nullptr;
     std::atomic<bool> running{false};
     std::thread pull;
+    vkr::RecvStats stats; // M23: behind-live latency + drop-by-cause counters
 };
+
+void statsToLogcat(const char* line) {
+    __android_log_print(ANDROID_LOG_INFO, "vkrender", "%s", line);
+}
 
 // JNI upcall: ask WebrtcService for a renderer slot Surface for this session.
 ANativeWindow* acquireSlotWindow(unsigned sessionId) {
@@ -133,6 +139,8 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     trk->sessionId = sessionId;
     trk->window = window;
     trk->sink.start(window);
+    trk->stats.init(pipeline, sessionId, statsToLogcat);
+    trk->stats.attachProbe(pad, vkr::kStageIngress); // post-jitterbuffer
 
     GstElement* depay = gst_element_factory_make("rtph264depay", nullptr);
     GstElement* parse = gst_element_factory_make("h264parse", nullptr);
@@ -154,6 +162,11 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     gst_object_unref(dsink);
     trk->appsink = sink;
 
+    // Parsed H.264 AUs at the appsink door (pre-MediaCodec).
+    GstPad* statPad = gst_element_get_static_pad(sink, "sink");
+    trk->stats.attachProbe(statPad, vkr::kStageSink);
+    gst_object_unref(statPad);
+
     // Pull thread: appsink AUs -> this presenter's MediaCodec.
     trk->running = true;
     trk->pull = std::thread([trk]() {
@@ -161,6 +174,7 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
             GstSample* sample =
                 gst_app_sink_try_pull_sample(GST_APP_SINK(trk->appsink), 100 * GST_MSECOND);
             if (!sample) continue;
+            trk->stats.onPulled();
             GstBuffer* buffer = gst_sample_get_buffer(sample);
             GstMapInfo map;
             if (buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {

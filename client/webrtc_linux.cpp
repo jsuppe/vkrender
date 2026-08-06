@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "recv_stats.h"
 #include "whip_room.h"
 
 namespace {
@@ -56,16 +57,26 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
 
+    // M23: behind-live latency probes - RTP ingress (post-jitterbuffer) and
+    // the decoded frame handoff into waylandsink.
+    auto* stats = new vkr::RecvStats();
+    stats->init(pipeline, sessionId);
+    stats->attachProbe(pad, vkr::kStageIngress);
+    GstPad* statPad = gst_element_get_static_pad(sink, "sink");
+    stats->attachProbe(statPad, vkr::kStageSink);
+    gst_object_unref(statPad);
+
     printf("webrtc: [session %u] video track -> compositor surface\n", sessionId);
     if (maxElements > 2) {
         elements[0] = decode;
         elements[1] = convert;
         elements[2] = sink;
     }
-    return nullptr; // nothing beyond the branch to reap
+    return stats;
 }
 
-void onTrackClosed(void*, unsigned sessionId, void*) {
+void onTrackClosed(void* handle, unsigned sessionId, void*) {
+    delete static_cast<vkr::RecvStats*>(handle);
     printf("webrtc: [session %u] closed\n", sessionId);
 }
 
