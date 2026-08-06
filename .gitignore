@@ -18,3 +18,4 @@ android/airplay/.cxx/
 android/webrtc/build/
 android/webrtc/.cxx/
 android/gstreamer-android/
+installer/Output/

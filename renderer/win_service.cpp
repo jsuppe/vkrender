@@ -548,13 +548,22 @@ int runWinService(const WinServeOptions& options) {
         // M24: deliver consumer views. Pick a reusable ring slot (the consumer
         // has finished reading it: consumedFence >= the value we signaled for
         // it), record the blit + this frame's readyFence signal.
-        // M25: only while a presentation is active - with no producers the
-        // virtual camera idles on its diagnostic pattern instead of showing
-        // an empty scene.
+        // M25: only while a presentation is ACTIVE. A connected client is not
+        // enough: receivers (Miracast/AirPlay) dial in and hold an idle ring
+        // long before anyone casts, so gate on a client actually having
+        // delivered a frame (currentSlot >= 0) - otherwise the virtual camera
+        // would broadcast an empty scene, which is what the first appliance
+        // smoke test showed.
+        bool presenting = false;
+        for (auto& cp : clients)
+            if (cp->currentSlot >= 0) {
+                presenting = true;
+                break;
+            }
         for (auto& cp : consumers) {
             Consumer& c = *cp;
             c.pendingSlot = -1;
-            if (clients.empty()) continue;
+            if (!presenting) continue;
             if (c.fps > 0 && c.lastDeliverNs &&
                 nowNs() - c.lastDeliverNs < (int64_t)(1000000000ull / c.fps))
                 continue;

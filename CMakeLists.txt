@@ -141,6 +141,12 @@ if(WIN32)
     target_include_directories(vkrender_client PUBLIC client)
     target_link_libraries(vkrender_client PRIVATE vkr_common d3d11 dxgi)
 
+    # M25: the appliance launcher - starts the renderer + every receiver +
+    # the virtual camera as one kill-on-close group, configured by
+    # vkrender.ini (what the installer's Start Menu shortcut runs).
+    add_executable(vkr_appliance client/appliance_win.cpp)
+    target_compile_options(vkr_appliance PRIVATE /EHsc)
+
     # M24: scene-view consumer smoke test (negotiate + acquire + PPM dump).
     add_executable(vkr_consumer_demo test/win_consumer_demo.cpp)
     target_link_libraries(vkr_consumer_demo PRIVATE vkrender_client d3d11 dxgi)

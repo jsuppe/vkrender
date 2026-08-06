@@ -1,0 +1,173 @@
+; M25: vkrender presentation appliance installer (Inno Setup 6).
+;
+; Installs the renderer, every receiver (Miracast / WebRTC / AirPlay), the
+; virtual camera (DirectShow + optional Media Foundation source, both
+; registered here), the producer client DLL and shaders, then writes
+; vkrender.ini from the wizard answers.
+;
+; Build:  iscc installer\vkrender.iss     (after a Release build of the repo)
+; Output: installer\Output\vkrender-setup-<version>.exe
+
+#define MyAppName "vkrender"
+#define MyAppVersion "0.25.0"
+#define MyAppPublisher "vkrender"
+#define BuildDir "..\build\Release"
+#define AirplayDir "..\..\vkrender-airplay\build\Release"
+
+[Setup]
+AppId={{7E4B1C92-3F5A-4E8D-9A21-6C0B7D2E1F44}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+DefaultDirName={autopf}\vkrender
+DefaultGroupName=vkrender
+OutputDir=Output
+OutputBaseFilename=vkrender-setup-{#MyAppVersion}
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+; The virtual camera DLLs register machine-wide (HKCR), so we need admin.
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64compatible
+UninstallDisplayName={#MyAppName} presentation appliance
+
+[Types]
+Name: "full"; Description: "Everything (receivers + virtual camera)"
+Name: "receivers"; Description: "Receivers only (no virtual camera)"
+Name: "custom"; Description: "Custom"; Flags: iscustom
+
+[Components]
+Name: "core"; Description: "Renderer + appliance launcher"; Types: full receivers custom; Flags: fixed
+Name: "webrtc"; Description: "WebRTC / WHIP receiver (Flutter sender, browsers, OBS)"; Types: full receivers custom
+Name: "miracast"; Description: "Miracast receiver (Windows / Android senders)"; Types: full receivers custom
+Name: "airplay"; Description: "AirPlay receiver (Apple senders, GPLv3)"; Types: full receivers custom; Check: AirplayAvailable
+Name: "vcam"; Description: "Virtual camera (scene as a webcam)"; Types: full custom
+Name: "vcam\dshow"; Description: "DirectShow camera (Chrome, OBS, Zoom, classic Teams)"; Types: full custom
+Name: "vcam\mf"; Description: "Media Foundation camera (also Windows Camera, new Teams)"; Types: full custom
+
+[Files]
+; --- core ---
+Source: "{#BuildDir}\vkrenderer.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#BuildDir}\vkr_appliance.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#BuildDir}\vkrender_client.dll"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#BuildDir}\shaders\*"; DestDir: "{app}\shaders"; Components: core; Flags: ignoreversion recursesubdirs
+; --- receivers ---
+Source: "{#BuildDir}\vkr_webrtc.exe"; DestDir: "{app}"; Components: webrtc; Flags: ignoreversion
+Source: "{#BuildDir}\vkr_miracast.exe"; DestDir: "{app}"; Components: miracast; Flags: ignoreversion
+Source: "{#AirplayDir}\vkr_airplay.exe"; DestDir: "{app}"; Components: airplay; Flags: ignoreversion skipifsourcedoesntexist
+; --- virtual camera ---
+Source: "{#BuildDir}\vkr_vcam.exe"; DestDir: "{app}"; Components: vcam; Flags: ignoreversion
+Source: "{#BuildDir}\softcam.dll"; DestDir: "{app}"; Components: vcam\dshow; Flags: ignoreversion regserver
+Source: "{#BuildDir}\vkrender_vcam_source.dll"; DestDir: "{app}"; Components: vcam\mf; Flags: ignoreversion regserver
+; --- docs ---
+Source: "..\README.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\Start vkrender appliance"; Filename: "{app}\vkr_appliance.exe"; WorkingDir: "{app}"
+Name: "{group}\Edit settings (vkrender.ini)"; Filename: "notepad.exe"; Parameters: """{app}\vkrender.ini"""
+Name: "{group}\Uninstall vkrender"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\vkrender appliance"; Filename: "{app}\vkr_appliance.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts"
+
+[Run]
+Filename: "{app}\vkr_appliance.exe"; Description: "Start the vkrender appliance now"; Flags: postinstall nowait skipifsilent
+
+[Code]
+var
+  ConfigPage: TInputOptionWizardPage;
+  PinPage: TInputQueryWizardPage;
+
+// '1'/'0' for vkrender.ini (Pascal Script needs helpers declared first).
+function BoolToStr2(B: Boolean): String;
+begin
+  if B then Result := '1' else Result := '0';
+end;
+
+// The AirPlay receiver ships from the separate GPLv3 repo; its [Files] entry
+// is skipifsourcedoesntexist, so offering the component is always safe - it
+// simply installs nothing when that build isn't present.
+function AirplayAvailable(): Boolean;
+begin
+  Result := True;
+end;
+
+// GStreamer runtime is required by the WebRTC and AirPlay receivers.
+function GStreamerInstalled(): Boolean;
+begin
+  Result := DirExists('C:\gstreamer\1.0\msvc_x86_64\bin')
+         or DirExists('C:\Program Files\gstreamer\1.0\msvc_x86_64\bin');
+end;
+
+procedure InitializeWizard();
+begin
+  ConfigPage := CreateInputOptionPage(wpSelectTasks,
+    'Appliance settings', 'How should the presentation appliance behave?',
+    'These are written to vkrender.ini and can be changed later.',
+    False, False);
+  ConfigPage.Add('Require a PIN before a sender may present');
+  ConfigPage.Add('Use a fixed PIN instead of a new code per connection');
+  ConfigPage.Values[0] := True;
+  ConfigPage.Values[1] := False;
+
+  PinPage := CreateInputQueryPage(ConfigPage.ID,
+    'Fixed PIN', 'Choose the PIN senders must enter',
+    'Digits only. Leave blank to generate a new code for each connection.');
+  PinPage.Add('PIN:', False);
+  PinPage.Values[0] := '';
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = PinPage.ID then
+    Result := (not ConfigPage.Values[0]) or (not ConfigPage.Values[1]);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = wpSelectComponents then
+  begin
+    if (WizardIsComponentSelected('webrtc') or WizardIsComponentSelected('airplay'))
+       and (not GStreamerInstalled()) then
+    begin
+      if MsgBox('The GStreamer MSVC x86_64 runtime was not found.' #13#10 #13#10
+                'The WebRTC and AirPlay receivers need it. Install it from'  #13#10
+                'https://gstreamer.freedesktop.org/download/ (runtime MSI),' #13#10
+                'then start the appliance.' #13#10 #13#10
+                'Continue installing anyway?', mbConfirmation, MB_YESNO) = IDNO then
+        Result := False;
+    end;
+  end;
+end;
+
+// Write vkrender.ini from the wizard answers.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Ini, Pin, VcamMode: String;
+begin
+  if CurStep <> ssPostInstall then Exit;
+  Ini := ExpandConstant('{app}\vkrender.ini');
+
+  if not ConfigPage.Values[0] then
+    Pin := 'off'
+  else if ConfigPage.Values[1] and (Trim(PinPage.Values[0]) <> '') then
+    Pin := Trim(PinPage.Values[0])
+  else
+    Pin := 'auto';
+
+  if WizardIsComponentSelected('vcam\mf') then VcamMode := 'mf' else VcamMode := 'dshow';
+
+  SetIniString('appliance', 'name', 'vkrender', Ini);
+  SetIniString('appliance', 'pin', Pin, Ini);
+  SetIniString('appliance', 'layout', 'presentation', Ini);
+  SetIniString('appliance', 'window', '', Ini);
+  SetIniString('appliance', 'webrtc_port', '8889', Ini);
+  SetIniString('appliance', 'virtual_camera', BoolToStr2(WizardIsComponentSelected('vcam')), Ini);
+  SetIniString('appliance', 'vcam_mode', VcamMode, Ini);
+  SetIniString('appliance', 'airplay', BoolToStr2(WizardIsComponentSelected('airplay')), Ini);
+  SetIniString('appliance', 'miracast', BoolToStr2(WizardIsComponentSelected('miracast')), Ini);
+end;
