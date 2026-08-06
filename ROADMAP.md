@@ -543,7 +543,23 @@ instead:
   build (same debug keystore), else binding throws SecurityException (now
   caught + logged instead of crash-looping).
 
-## Backlog — cloud calling via self-hosted LiveKit (M23 proposal)
+## M23 — receive-pipeline profiling: latency + drop causes (done, 2026-08-05)
+
+Comprehensive instrumentation and measured analysis of every WHIP receive
+pipeline — see **[docs/PROFILING.md](docs/PROFILING.md)** for the full
+methodology, per-platform budget tables, drop taxonomy, and tuning knobs.
+Highlights: one shared measurement model (`client/recv_stats.h`,
+behind-live = pipeline clock − buffer PTS at ingress/sink probes, drops
+counted by cause); **measured on all three platforms at target load with
+zero unhealthy drops** (Windows: 12 presenters, 12×30 fps adopted exactly;
+Linux: 4×30 exactly; Android device: 3×30 exactly at 60 Hz presents); key
+finding — webrtcbin's 200 ms jitterbuffer `latency` is a reordering
+*deadline*, not a constant delay (~3.4 ms ingress behind-live on a clean
+link), tunable via `VKR_WEBRTC_LATENCY_MS`. AirPlay/RTSP paths can reuse
+the same probes (documented, not yet wired); Miracast needs WinRT-side
+stamps (documented).
+
+## Backlog — cloud calling via self-hosted LiveKit (M24 proposal)
 
 Marry the system to a self-hosted SFU for internet reach, rooms, and auth.
 Decisions sketched (2026-08-05): **LiveKit** (Apache-2.0, built-in TURN,
