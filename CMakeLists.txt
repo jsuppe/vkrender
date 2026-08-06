@@ -151,55 +151,12 @@ if(WIN32)
     # C++/WinRT on standard C++20 coroutines; /await is rejected by MSVC 14.5x.
     target_compile_options(vkr_miracast PRIVATE /EHsc)
 
-    # M19: AirPlay receiver (native Windows producer). Ports the same vendored
-    # UxPlay core as the Android APK, under MSVC via a small Win32 pthread shim
-    # (third_party/win_compat), with a DnsServiceRegister-based dnssd shim
-    # (no Bonjour). OpenSSL comes from the GStreamer MSVC install (GST_ROOT).
-    set(UX ${CMAKE_SOURCE_DIR}/third_party/uxplay/lib)
-    set(PLIST ${CMAKE_SOURCE_DIR}/third_party/libplist)
-    set(WINCOMPAT ${CMAKE_SOURCE_DIR}/third_party/win_compat)
+    # M19: the Windows AirPlay receiver now lives in its own public repository
+    # (github.com/jsuppe/vkrender-airplay - GPLv3, vendored UxPlay core). It
+    # consumes the client-sdk release asset of this repo. The vendored
+    # third_party/uxplay + libplist trees stay HERE for the Android AirPlay
+    # APK (android/airplay), which shares the same core.
 
-    add_library(vkr_plist_win STATIC
-        ${PLIST}/src/base64.c ${PLIST}/src/bytearray.c ${PLIST}/src/bplist.c
-        ${PLIST}/src/hashtable.c ${PLIST}/src/jplist.c ${PLIST}/src/jsmn.c
-        ${PLIST}/src/oplist.c ${PLIST}/src/plist.c ${PLIST}/src/ptrarray.c
-        ${PLIST}/src/time64.c ${PLIST}/src/xplist.c
-        ${PLIST}/src/out-default.c ${PLIST}/src/out-limd.c ${PLIST}/src/out-plutil.c
-        ${PLIST}/libcnary/cnary.c ${PLIST}/libcnary/node.c ${PLIST}/libcnary/node_list.c)
-    target_include_directories(vkr_plist_win PUBLIC
-        ${PLIST}/include ${PLIST}/src ${PLIST}/libcnary/include)
-    # LIBPLIST_STATIC: the API macro is neither dllimport nor dllexport when
-    # linked statically (PUBLIC so the raop lib that includes plist.h agrees).
-    target_compile_definitions(vkr_plist_win PUBLIC LIBPLIST_STATIC=1)
-    # No HAVE_STRNDUP on MSVC (bionic has it, the UCRT does not) - let the
-    # bundled fallback compile.
-    target_compile_definitions(vkr_plist_win PRIVATE
-        PACKAGE_VERSION="2.6.0" WIN32=1 _CRT_SECURE_NO_WARNINGS)
-
-    add_library(vkr_raop_win STATIC
-        ${UX}/byteutils.c ${UX}/crypto.c ${UX}/fairplay_playfair.c
-        ${UX}/http_request.c ${UX}/http_response.c ${UX}/httpd.c ${UX}/logger.c
-        ${UX}/mirror_buffer.c ${UX}/netutils.c ${UX}/pairing.c ${UX}/raop.c
-        ${UX}/raop_buffer.c ${UX}/raop_ntp.c ${UX}/raop_rtp.c
-        ${UX}/raop_rtp_mirror.c ${UX}/srp.c ${UX}/utils.c
-        ${UX}/llhttp/api.c ${UX}/llhttp/http.c ${UX}/llhttp/llhttp.c
-        ${UX}/playfair/hand_garble.c ${UX}/playfair/modified_md5.c
-        ${UX}/playfair/omg_hax.c ${UX}/playfair/playfair.c ${UX}/playfair/sap_hash.c
-        ${CMAKE_SOURCE_DIR}/client/dnssd_win.c
-        ${WINCOMPAT}/pthread.c)
-    # win_compat is first so <pthread.h>/<unistd.h> resolve to the shim.
-    target_include_directories(vkr_raop_win PUBLIC
-        ${WINCOMPAT} ${UX} ${UX}/llhttp ${UX}/playfair
-        "${GST_ROOT}/include")  # openssl headers
-    target_link_directories(vkr_raop_win PUBLIC "${GST_ROOT}/lib")
-    target_link_libraries(vkr_raop_win PUBLIC vkr_plist_win
-        crypto.lib ssl.lib dnsapi ws2_32 iphlpapi)
-    target_compile_definitions(vkr_raop_win PRIVATE WIN32=1 _CRT_SECURE_NO_WARNINGS)
-    # Third-party C: silence its warnings, don't fail the build on them.
-    target_compile_options(vkr_raop_win PRIVATE /w)
-
-    # OpenSSL's file BIOs (the FairPlay keyfile) pass CRT FILE* across the DLL
-    # boundary, which requires applink.c compiled into the main exe.
     # M20: WebRTC (WHIP) receiver -> producer. whipserversrc does all the
     # WebRTC work; this is just a decode->ring bridge (shared design with the
     # Linux/Android receivers).
@@ -209,12 +166,6 @@ if(WIN32)
         gio-2.0.lib gstsdp-1.0.lib gstwebrtc-1.0.lib d3d11 dxgi dnsapi)
     target_compile_options(vkr_webrtc PRIVATE /EHsc)
 
-    add_executable(vkr_airplay client/airplay_win.cpp
-        "${GST_ROOT}/include/openssl/applink.c")
-    target_include_directories(vkr_airplay PRIVATE ${UX} "${GST_ROOT}/include")
-    target_link_libraries(vkr_airplay PRIVATE
-        vkr_raop_win vkrender_client GStreamer::win d3d11 dxgi)
-    target_compile_options(vkr_airplay PRIVATE /EHsc)
 endif()
 
 # --- Wayland compositor mode (M13, Linux only) -------------------------------

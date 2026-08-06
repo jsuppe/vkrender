@@ -3,7 +3,9 @@
 // on Android, iOS, desktop and web because flutter_webrtc wraps libwebrtc
 // (native) or the browser's WebRTC (web) behind one API.
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'screen_capture_service.dart';
@@ -30,14 +32,34 @@ class WebrtcSender {
 
   bool _fgsRunning = false;
 
+  static bool get _isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
   Future<MediaStream> _capture(CaptureSource src) async {
     if (src == CaptureSource.screen) {
       // Android 14+ requires the mediaProjection foreground service to be
       // running *before* getDisplayMedia; no-op elsewhere.
       await ScreenCaptureService.start();
       _fgsRunning = true;
-      // On mobile this raises the OS screen-capture consent dialog; on desktop
-      // flutter_webrtc surfaces its own source picker; on web the browser's.
+      // Desktop flutter_webrtc does not honor a bare {'video': true} - the
+      // capturer needs an explicit source id from desktopCapturer (found
+      // live: hourglass -> stopped with zero frames sent). Grab the primary
+      // screen; a real source picker is a UI refinement.
+      if (_isDesktop) {
+        final sources =
+            await desktopCapturer.getSources(types: [SourceType.Screen]);
+        if (sources.isEmpty) {
+          throw StateError('no screen capture sources found');
+        }
+        return navigator.mediaDevices.getDisplayMedia({
+          'video': {
+            'deviceId': {'exact': sources.first.id},
+            'mandatory': {'frameRate': 30.0},
+          },
+          'audio': false,
+        });
+      }
+      // Mobile raises the OS consent dialog; web raises the browser's picker.
       return navigator.mediaDevices.getDisplayMedia({'video': true, 'audio': false});
     }
     return navigator.mediaDevices.getUserMedia({
@@ -151,8 +173,10 @@ class WebrtcSender {
       _emit(SenderState.connecting);
       await pc.setRemoteDescription(RTCSessionDescription(answerSdp, 'answer'));
     } catch (e) {
-      _emit(SenderState.failed, e.toString());
+      // Tear down first, then report - stop() emits `stopped`, and the
+      // failure detail must be the LAST state the UI sees.
       await stop();
+      _emit(SenderState.failed, e.toString());
       rethrow;
     }
   }
