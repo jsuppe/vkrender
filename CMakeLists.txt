@@ -145,6 +145,31 @@ if(WIN32)
     add_executable(vkr_consumer_demo test/win_consumer_demo.cpp)
     target_link_libraries(vkr_consumer_demo PRIVATE vkrender_client d3d11 dxgi)
 
+    # M24: DirectShow virtual camera (vendored MIT softcam: filter + sender
+    # API in one DLL; register once with elevated `regsvr32 softcam.dll`).
+    # vkr_vcam.exe pumps negotiated scene views into it.
+    set(SC ${CMAKE_SOURCE_DIR}/third_party/softcam/src)
+    file(GLOB SC_BASECLASSES ${SC}/baseclasses/*.cpp)
+    add_library(softcam SHARED
+        ${SC_BASECLASSES}
+        ${SC}/softcamcore/DShowSoftcam.cpp ${SC}/softcamcore/FrameBuffer.cpp
+        ${SC}/softcamcore/Misc.cpp ${SC}/softcamcore/SenderAPI.cpp
+        ${SC}/softcamcore/Watchdog.cpp
+        ${SC}/softcam/softcam.cpp ${SC}/softcam/softcam.def)
+    target_include_directories(softcam PRIVATE ${SC}/baseclasses ${SC})
+    target_compile_definitions(softcam PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+    # 2004-era DirectShow baseclasses predate C++ conformance mode: they
+    # assign string literals to non-const pointers (/Zc:strictStrings-) and
+    # rely on other permissive-mode behaviors.
+    target_compile_options(softcam PRIVATE /EHsc /w /permissive /Zc:strictStrings-)
+    target_link_libraries(softcam PRIVATE
+        strmiids winmm ole32 oleaut32 uuid advapi32 user32 gdi32)
+
+    add_executable(vkr_vcam client/vcam_win.cpp)
+    target_include_directories(vkr_vcam PRIVATE ${SC}/softcam)
+    target_link_libraries(vkr_vcam PRIVATE vkrender_client softcam d3d11 dxgi)
+    target_compile_options(vkr_vcam PRIVATE /EHsc)
+
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
 
