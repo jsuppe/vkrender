@@ -30,6 +30,7 @@ const char* layoutName(SceneLayout l) {
         case SceneLayout::TwoCubes: return "two-cubes";
         case SceneLayout::SingleCube: return "single-cube";
         case SceneLayout::Wall: return "wall";
+        case SceneLayout::Presentation: return "presentation";
         default: return "?";
     }
 }
@@ -224,6 +225,17 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
     lastSnapshotNs_ = nowNs();
     lastImageIndex_.assign(windowCount, 0);
     if (const char* env = getenv("VKR_SNAPSHOT_SECONDS")) snapshotEvery_ = atof(env);
+    // M25: starting layout (L still cycles at runtime), e.g. the installed
+    // appliance launches with VKR_LAYOUT=presentation.
+    if (const char* env = getenv("VKR_LAYOUT")) {
+        for (int l = 0; l < (int)SceneLayout::Count; ++l) {
+            if (strcmp(env, layoutName((SceneLayout)l)) == 0) {
+                layout_ = (SceneLayout)l;
+                break;
+            }
+        }
+        VKR_LOG("scene: starting layout %s", layoutName(layout_));
+    }
     VKR_LOG("scene: %zu window(s), canvas %.0fx%.0f (aspect %.2f). Controls: L layout, "
             "SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit",
             windowCount, cw, ch, canvasAspect_);
@@ -347,6 +359,50 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                 Mat4 m = cubeModel(t, cx, cy, 0.0f, 0.0f, 0.0f, sx, sy, 0.04f);
                 m.m[14] += 0.12f * sinf(t * 0.8f + (float)i * 1.3f);
                 models.push_back(m);
+                faceSlots.push_back(enabled[i]);
+                for (int f = 1; f < 6; ++f) faceSlots.push_back(-1);
+            }
+            break;
+        }
+        case SceneLayout::Presentation: {
+            // M25: up to 4 presenters in fixed regions, scaled to fit
+            // (16:9 aspect-preserving letterbox inside each region):
+            //   1 -> full screen, 2 -> flat top/bottom, 3 -> triangle
+            //   (one up top, two below), 4 -> quad (2x2). Extra streams
+            //   beyond 4 wait off-scene until a slot frees.
+            size_t n = std::min(enabled.size(), (size_t)4);
+            if (n == 0) break;
+            struct Region {
+                float cx, cy, hw, hh;
+            };
+            const float H = 3.11f, W = H * canvasAspect_;
+            Region regs[4];
+            switch (n) {
+                case 1: regs[0] = {0, 0, W, H}; break;
+                case 2:
+                    regs[0] = {0, H / 2, W, H / 2};
+                    regs[1] = {0, -H / 2, W, H / 2};
+                    break;
+                case 3:
+                    regs[0] = {0, H / 2, W, H / 2};
+                    regs[1] = {-W / 2, -H / 2, W / 2, H / 2};
+                    regs[2] = {W / 2, -H / 2, W / 2, H / 2};
+                    break;
+                default:
+                    regs[0] = {-W / 2, H / 2, W / 2, H / 2};
+                    regs[1] = {W / 2, H / 2, W / 2, H / 2};
+                    regs[2] = {-W / 2, -H / 2, W / 2, H / 2};
+                    regs[3] = {W / 2, -H / 2, W / 2, H / 2};
+                    break;
+            }
+            const float margin = 0.98f;
+            for (size_t i = 0; i < n; ++i) {
+                const Region& r = regs[i];
+                float sx = std::min(r.hw, r.hh * 16.0f / 9.0f) * margin;
+                float sy = sx * 9.0f / 16.0f;
+                // Static, face-on: zero rotation params, wafer-thin depth.
+                models.push_back(
+                    cubeModel(0.0f, r.cx, r.cy, 0.0f, 0.0f, 0.0f, sx, sy, 0.01f));
                 faceSlots.push_back(enabled[i]);
                 for (int f = 1; f < 6; ++f) faceSlots.push_back(-1);
             }

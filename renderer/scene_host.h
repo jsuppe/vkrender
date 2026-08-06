@@ -37,7 +37,9 @@ struct WindowSpec {
     int x = 0, y = 0; // canvas + desktop position
 };
 
-enum class SceneLayout { TwoCubes = 0, SingleCube, Wall, Count };
+// M25: Presentation = flat tiles in fixed regions, count-adaptive (1 full
+// screen, 2 top/bottom, 3 triangle, 4 quad), 16:9 aspect-fit per region.
+enum class SceneLayout { TwoCubes = 0, SingleCube, Wall, Presentation, Count };
 
 class SceneHost {
 public:

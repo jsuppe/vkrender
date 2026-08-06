@@ -595,7 +595,28 @@ GPU-side end to end. The on-screen windows become just one view among many.
     built-in test pattern (a useful diagnostic). Later echoes:
     v4l2loopback (Linux).
 
-## Backlog — cloud calling via self-hosted LiveKit (M25 proposal)
+## M25 — Windows presentation appliance (in progress)
+
+Productize the Windows receiver stack:
+
+- **Presentation layouts**: a `presentation` scene layout — flat tiles,
+  count-adaptive: 1 session full screen, 2 top/bottom, 3 triangle, 4 quad
+  (2×2). Fixed regions, aspect-fit letterboxing, auto-rearranged as
+  sessions join/leave.
+- **PIN authorization** (optional, per receiver) displayed as a Windows
+  overlay when a sender initiates: Miracast natively
+  (`MiracastReceiverAuthorizationMethod::PinDisplayRequired`); WHIP via
+  `401` + `Authorization: Bearer <pin>` (sender apps prompt on 401);
+  AirPlay via RAOP pin (implemented in the vkrender-airplay repo). Shared
+  overlay helper: topmost layered window with large digits.
+- **Virtual camera gating**: the service delivers consumer frames only
+  while ≥1 producer is live — the camera idles until a presentation
+  starts, then pumps automatically.
+- **Installer** (Inno Setup): renderer + Miracast/WebRTC receivers +
+  virtual camera DLLs (registered at install) + launcher; GStreamer
+  runtime check; AirPlay receiver bundled from vkrender-airplay.
+
+## Backlog — cloud calling via self-hosted LiveKit (M26 proposal)
 
 Marry the system to a self-hosted SFU for internet reach, rooms, and auth.
 Decisions sketched (2026-08-05): **LiveKit** (Apache-2.0, built-in TURN,

@@ -548,9 +548,13 @@ int runWinService(const WinServeOptions& options) {
         // M24: deliver consumer views. Pick a reusable ring slot (the consumer
         // has finished reading it: consumedFence >= the value we signaled for
         // it), record the blit + this frame's readyFence signal.
+        // M25: only while a presentation is active - with no producers the
+        // virtual camera idles on its diagnostic pattern instead of showing
+        // an empty scene.
         for (auto& cp : consumers) {
             Consumer& c = *cp;
             c.pendingSlot = -1;
+            if (clients.empty()) continue;
             if (c.fps > 0 && c.lastDeliverNs &&
                 nowNs() - c.lastDeliverNs < (int64_t)(1000000000ull / c.fps))
                 continue;
