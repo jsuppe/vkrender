@@ -603,12 +603,17 @@ Productize the Windows receiver stack:
   count-adaptive: 1 session full screen, 2 top/bottom, 3 triangle, 4 quad
   (2×2). Fixed regions, aspect-fit letterboxing, auto-rearranged as
   sessions join/leave.
-- **PIN authorization** (optional, per receiver) displayed as a Windows
-  overlay when a sender initiates: Miracast natively
-  (`MiracastReceiverAuthorizationMethod::PinDisplayRequired`); WHIP via
-  `401` + `Authorization: Bearer <pin>` (sender apps prompt on 401);
-  AirPlay via RAOP pin (implemented in the vkrender-airplay repo). Shared
-  overlay helper: topmost layered window with large digits.
+- **PIN authorization** (done): optional per receiver via `VKR_PIN=<code>`
+  or `VKR_PIN=auto`, displayed on a shared topmost overlay
+  ([client/pin_overlay.cpp](client/pin_overlay.cpp)) when a sender
+  initiates. **WHIP**: `401` + Bearer challenge, sender re-POSTs with the
+  code (verified: no-cred → 401 + overlay, wrong → 401, right → 201; the
+  Flutter sender prompts and retries). **Miracast**: the protocol's own
+  `PinDisplayRequired` flow. **AirPlay** (in vkrender-airplay): `pw=true`
+  advertised → Apple's `pair-pin` exchange → `display_pin` → same overlay
+  (verified live in the TXT records from another mDNS stack on the LAN).
+  Overlay rule learned the hard way: only its own UI thread touches the
+  window; callers post messages.
 - **Virtual camera gating**: the service delivers consumer frames only
   while ≥1 producer is live — the camera idles until a presentation
   starts, then pumps automatically.
