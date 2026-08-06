@@ -51,8 +51,15 @@ GstElement* g_appsrc = nullptr;
 GstElement* g_appsink = nullptr;
 raop_t* g_raop = nullptr;
 dnssd_t* g_dnssd = nullptr;
+const char* g_pipe = "vkrender";
 std::atomic<uint64_t> g_frames{0};
 std::atomic<bool> g_pipelineReady{false};
+// Set by cbConnDestroy (raop thread); handled on the main pump thread: the
+// producer connection is closed so the renderer frees this stream's slots
+// (otherwise the LAST FRAME stays composited on the cubes forever after the
+// sender stops mirroring - observed live). Reconnected lazily on the next
+// session's first decoded frame, at the mirror's true resolution.
+std::atomic<bool> g_sessionEnded{false};
 
 // ---- GStreamer decode: H.264 AUs -> BGRA frames -> vkrClient ring ----------
 
@@ -84,6 +91,18 @@ bool buildPipeline() {
 }
 
 void pumpDecodedFrames() {
+    // Sender stopped mirroring: close the producer connection so the renderer
+    // frees this stream (the face falls back instead of freezing on the last
+    // frame), and drop any stale queued frames.
+    if (g_sessionEnded.exchange(false)) {
+        if (g_client) {
+            vkrDisconnect(g_client);
+            g_client = nullptr;
+            printf("airplay: session ended - stream released\n");
+        }
+        gst_element_set_state(g_pipeline, GST_STATE_READY); // flush decode queue
+        gst_element_set_state(g_pipeline, GST_STATE_PLAYING);
+    }
     // Pull every ready BGRA frame and push it to the renderer.
     for (;;) {
         GstSample* sample =
@@ -99,8 +118,14 @@ void pumpDecodedFrames() {
         GstBuffer* buffer = gst_sample_get_buffer(sample);
         GstMapInfo map;
         if (w > 0 && h > 0 && buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+            // Lazy connect at the mirror's true resolution (a fixed-size ring
+            // cropped larger mirrors to its top-left corner).
+            if (!g_client) {
+                g_client = vkrConnect(g_pipe, nullptr, w, h);
+                if (g_client) printf("airplay: producing %dx%d\n", w, h);
+            }
             vkrBuffer buf;
-            if (vkrDequeueBuffer(g_client, &buf, 5) == 0) {
+            if (g_client && vkrDequeueBuffer(g_client, &buf, 5) == 0) {
                 ComPtr<ID3D11Device> dev = vkrGetDevice(g_client);
                 ComPtr<ID3D11DeviceContext> ctx;
                 dev->GetImmediateContext(&ctx);
@@ -141,7 +166,10 @@ void cbAudioFlush(void*) {}
 void cbVideoPause(void*) {}
 void cbVideoResume(void*) {}
 void cbConnInit(void*) { printf("airplay: client connected\n"); }
-void cbConnDestroy(void*) { printf("airplay: client disconnected\n"); }
+void cbConnDestroy(void*) {
+    printf("airplay: client disconnected\n");
+    g_sessionEnded = true; // main pump thread releases the stream
+}
 void cbConnReset(void*, int, bool) {}
 void cbReportClient(void*, char* deviceid, char*, char* name, bool* admit) {
     printf("airplay: sender '%s' (%s)\n", name ? name : "?", deviceid ? deviceid : "?");
@@ -175,16 +203,19 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* ep) {
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     SetUnhandledExceptionFilter(crashFilter);
-    const char* pipe = argc > 1 ? argv[1] : "vkrender";
+    g_pipe = argc > 1 ? argv[1] : "vkrender";
     const char* name = argc > 2 ? argv[2] : "vkrender";
 
     gst_init(&argc, &argv);
 
-    g_client = vkrConnect(pipe, nullptr, 1280, 720);
-    if (!g_client) {
-        fprintf(stderr, "airplay: cannot reach vkrenderer service on pipe '%s'\n", pipe);
+    // Fail fast if the service is down; the real connection is made lazily at
+    // the mirror's true resolution, and released when the sender stops.
+    vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64);
+    if (!probe) {
+        fprintf(stderr, "airplay: cannot reach vkrenderer service on pipe '%s'\n", g_pipe);
         return 1;
     }
+    vkrDisconnect(probe);
     if (!buildPipeline()) return 1;
 
     int error = 0;
