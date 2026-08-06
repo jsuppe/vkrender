@@ -172,7 +172,16 @@ public class WebrtcService extends Service {
         };
         Intent intent = new Intent();
         intent.setComponent(new ComponentName(RENDERER_PACKAGE, RENDERER_SERVICE));
-        if (!bindService(intent, rendererConn, Context.BIND_AUTO_CREATE)) return false;
+        try {
+            if (!bindService(intent, rendererConn, Context.BIND_AUTO_CREATE)) return false;
+        } catch (SecurityException e) {
+            // Signature-permission mismatch (renderer + room APKs must be
+            // signed with the same key, e.g. both from one CI run). Retry
+            // loop stays alive instead of crash-looping the service.
+            Log.e(TAG, "webrtc: bind rejected - are both APKs signed alike? " + e);
+            rendererConn = null;
+            return false;
+        }
         try {
             Boolean ok = ready.poll(5, TimeUnit.SECONDS);
             if (ok == null) {

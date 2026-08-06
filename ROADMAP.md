@@ -526,16 +526,22 @@ instead:
   so each is its own scene stream. **Measured on melchior: 4 concurrent
   presenters, 600 adoptions/5s (4×30fps exactly), distinct patterns on the
   cube faces in the headless snapshot.**
-- **Android (built)**: same `whip_room` core (the single-producer
-  whipserversrc AND the whole Rust plugin closure are gone — only the C
-  webrtc/nice/dtls/srtp plugins remain, which also removes the prime
-  suspect in the M20 emulator SIGSEGV). The renderer's producer API grew
-  **slots**: streams are keyed `(Binder UID, slot)` and the new
-  `acquireInputSurfaceSlot(int)` AIDL methods (appended, binary-compatible)
-  let the room APK hold up to 12 surfaces — the native room calls up to
-  `WebrtcService` per presenter track for a slot Surface, and each
-  presenter's H.264 AUs feed their own `AMediaCodec` (per-session M18
-  `AirplayVideoSink`). Device verification pending, as with M16–M20.
+- **Android (verified on the TCL tablet)**: same `whip_room` core (the
+  single-producer whipserversrc AND the whole Rust plugin closure are gone —
+  only the C webrtc/nice/dtls/srtp plugins remain, **which fixed the M20
+  startup SIGSEGV**: the room now boots cleanly on device). The renderer's
+  producer API grew **slots**: streams are keyed `(Binder UID, slot)` and
+  the new `acquireInputSurfaceSlot(int)` AIDL methods (appended,
+  binary-compatible) let the room APK hold up to 12 surfaces — the native
+  room calls up to `WebrtcService` per presenter track for a slot Surface,
+  and each presenter's H.264 AUs feed their own `AMediaCodec` (per-session
+  M18 `AirplayVideoSink`). **Measured on device: 3 concurrent WHIP
+  presenters (over `adb forward`, `whipclientsink video-caps=video/x-h264`)
+  → slots 0/1/2 under one UID, ~434 adoptions/5s = 3×29 fps, all three
+  patterns visible on the cubes.** Gotcha: BIND_RENDERER is
+  signature-level — the renderer and room APKs must come from the same
+  build (same debug keystore), else binding throws SecurityException (now
+  caught + logged instead of crash-looping).
 
 ## Backlog — cloud calling via self-hosted LiveKit (M23 proposal)
 
