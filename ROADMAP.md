@@ -578,9 +578,22 @@ GPU-side end to end. The on-screen windows become just one view among many.
 - **Consumer API** (client DLL + SDK release): `vkrConnectConsumer` /
   `vkrAcquireFrame` / `vkrReleaseFrame`; PPM test consumer for headless
   verification.
-- **vkr_vcam.exe**: Media Foundation virtual camera (`MFCreateVirtualCamera`,
-  Win11) pumping ring textures into MF samples — the scene as a webcam in
-  Teams/Zoom/browsers. Later echoes: v4l2loopback (Linux).
+- **vkr_vcam.exe** — the scene as a webcam, two tiers sharing one consumer
+  loop:
+  - **DirectShow** (default; vendored MIT `softcam`): loads in the viewer
+    app; Chrome/OBS/Zoom/classic Teams. Register once:
+    `regsvr32 softcam.dll` (elevated).
+  - **`--mf`** (Windows 11 `MFCreateVirtualCamera`; vendored MIT
+    `VCamSample` re-identified as the vkrender camera): the media source
+    runs in the OS Camera Frame Server, so the camera is visible to
+    **everything** — MF/UWP (Windows Camera, new Teams) *and* DirectShow
+    apps. Register once: `regsvr32 vkrender_vcam_source.dll` (elevated).
+    Frame transport solves the user↔LocalService boundary by direction:
+    the frame-server side (which holds `SeCreateGlobalPrivilege`) creates
+    the `Global\` shared ring + mutex with a permissive DACL; the host
+    opens by name and writes BGRA under the mutex. No feed → the source's
+    built-in test pattern (a useful diagnostic). Later echoes:
+    v4l2loopback (Linux).
 
 ## Backlog — cloud calling via self-hosted LiveKit (M25 proposal)
 

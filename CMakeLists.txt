@@ -166,9 +166,38 @@ if(WIN32)
         strmiids winmm ole32 oleaut32 uuid advapi32 user32 gdi32)
 
     add_executable(vkr_vcam client/vcam_win.cpp)
-    target_include_directories(vkr_vcam PRIVATE ${SC}/softcam)
-    target_link_libraries(vkr_vcam PRIVATE vkrender_client softcam d3d11 dxgi)
+    target_include_directories(vkr_vcam PRIVATE ${SC}/softcam ${CMAKE_SOURCE_DIR}/common)
+    target_link_libraries(vkr_vcam PRIVATE vkrender_client softcam d3d11 dxgi
+        mfplat mfuuid mfsensorgroup)
     target_compile_options(vkr_vcam PRIVATE /EHsc)
+
+    # M24 v2: Windows 11 MFCreateVirtualCamera media source (vendored MIT
+    # VCamSample, re-identified as the vkrender camera CLSID). Registered
+    # once (elevated regsvr32); loaded by the OS Camera Frame Server, so the
+    # camera is visible to BOTH MF/UWP and DirectShow apps. WIL is a
+    # header-only dependency.
+    include(FetchContent)
+    FetchContent_Declare(wil
+        GIT_REPOSITORY https://github.com/microsoft/wil
+        GIT_TAG v1.0.240803.1
+        GIT_SHALLOW TRUE)
+    set(WIL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WIL_BUILD_PACKAGING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(wil)
+    set(VCS ${CMAKE_SOURCE_DIR}/third_party/VCamSample/VCamSampleSource)
+    add_library(vkrender_vcam_source SHARED
+        ${VCS}/Activator.cpp ${VCS}/EnumNames.cpp ${VCS}/FrameGenerator.cpp
+        ${VCS}/MFTools.cpp ${VCS}/MediaSource.cpp ${VCS}/MediaStream.cpp
+        ${VCS}/Tools.cpp ${VCS}/WinTrace.cpp ${VCS}/dllmain.cpp ${VCS}/pch.cpp
+        ${VCS}/VCamSampleSource.def)
+    target_include_directories(vkrender_vcam_source PRIVATE
+        ${VCS} ${wil_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/common)
+    target_compile_features(vkrender_vcam_source PRIVATE cxx_std_20)
+    target_compile_definitions(vkrender_vcam_source PRIVATE UNICODE _UNICODE)
+    target_compile_options(vkrender_vcam_source PRIVATE /EHsc /w /await:strict)
+    target_link_libraries(vkrender_vcam_source PRIVATE
+        mfplat mfuuid mfsensorgroup d2d1 dwrite windowscodecs
+        runtimeobject ole32 oleaut32 advapi32 user32 shlwapi propsys)
 
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
