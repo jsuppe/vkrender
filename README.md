@@ -140,6 +140,14 @@ as a normal producer stream. Disable Windows' "Projecting to this PC"
 first; phones need a Miracast-capable Wi-Fi adapter on the receiver,
 Windows senders work over the LAN.
 
+**PIN authorization (M25, Windows)**: set `VKR_PIN=1234` (fixed) or
+`VKR_PIN=auto` (fresh 4-digit code per connection) before starting a
+receiver. When a sender connects, the PIN appears as a topmost overlay on
+the display and the sender must supply it: WebRTC/WHIP answers `401` with a
+Bearer challenge (the Flutter sender prompts; OBS et al. accept a bearer
+token), Miracast uses the protocol's own PIN flow, AirPlay uses RAOP's.
+Unset (or `off`) leaves receivers open.
+
 **WebRTC / WHIP receiver (M20, all three platforms)**: one shared GStreamer
 stack — `whipserversrc` (WebRTC-HTTP Ingestion) — lets any browser, OBS, or
 WHIP sender push into the scene as a producer. No signaling server: POST the

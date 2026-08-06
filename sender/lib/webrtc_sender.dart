@@ -13,8 +13,18 @@ import 'whip_client.dart';
 
 enum CaptureSource { screen, camera }
 
-/// Lifecycle states surfaced to the UI.
-enum SenderState { idle, capturing, signalling, connecting, live, failed, stopped }
+/// Lifecycle states surfaced to the UI. `pinRequired` means the receiver is
+/// showing a PIN on its screen and the user must type it here (M25).
+enum SenderState {
+  idle,
+  capturing,
+  signalling,
+  connecting,
+  live,
+  failed,
+  stopped,
+  pinRequired
+}
 
 class WebrtcSender {
   RTCPeerConnection? _pc;
@@ -125,7 +135,7 @@ class WebrtcSender {
     await done.future;
   }
 
-  Future<void> start(Uri whipEndpoint, CaptureSource source) async {
+  Future<void> start(Uri whipEndpoint, CaptureSource source, {String? pin}) async {
     try {
       _emit(SenderState.capturing);
       final stream = await _capture(source);
@@ -166,12 +176,18 @@ class WebrtcSender {
       await _waitIceGathering(pc);
       final local = await pc.getLocalDescription();
 
-      final whip = WhipSession(whipEndpoint);
+      final whip = WhipSession(whipEndpoint, pin: pin);
       _whip = whip;
       final answerSdp = await whip.exchangeOffer(local!.sdp!);
 
       _emit(SenderState.connecting);
       await pc.setRemoteDescription(RTCSessionDescription(answerSdp, 'answer'));
+    } on WhipPinRequired catch (e) {
+      // Keep the failure quiet: the UI collects the PIN and calls start()
+      // again with it. Capture is torn down so the user isn't left recording.
+      await stop();
+      _emit(SenderState.pinRequired, e.toString());
+      rethrow;
     } catch (e) {
       // Tear down first, then report - stop() emits `stopped`, and the
       // failure detail must be the LAST state the UI sees.

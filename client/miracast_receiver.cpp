@@ -39,6 +39,7 @@
 #include <string>
 #include <thread>
 
+#include "pin_overlay.h"
 #include "vkrender_client.h"
 
 using namespace winrt;
@@ -105,7 +106,13 @@ int main(int argc, char** argv) {
 
     auto settings = receiver.GetDefaultSettings();
     settings.FriendlyName(name);
-    settings.AuthorizationMethod(MiracastReceiverAuthorizationMethod::None);
+    // M25: optional PIN. Miracast has it in-protocol - the sender's own UI
+    // asks for the digits; we display them (PinDisplayRequired means the
+    // RECEIVER shows a PIN the user types on the sending device).
+    const bool usePin = vkr::pinEnabled();
+    std::string pin = usePin ? vkr::pinForConnection() : "";
+    settings.AuthorizationMethod(usePin ? MiracastReceiverAuthorizationMethod::PinDisplayRequired
+                                        : MiracastReceiverAuthorizationMethod::None);
     settings.ModelName(L"vkrender");
     settings.ModelNumber(L"M16");
     settings.RequireAuthorizationFromKnownTransmitters(false);
@@ -115,19 +122,27 @@ int main(int argc, char** argv) {
     session.AllowConnectionTakeover(true);
 
     session.ConnectionCreated(
-        [](MiracastReceiverSession const&, MiracastReceiverConnectionCreatedEventArgs const& args) {
+        [&pin](MiracastReceiverSession const&,
+               MiracastReceiverConnectionCreatedEventArgs const& args) {
             wprintf(L"miracast: connection from '%s'\n",
                     args.Connection().Transmitter().Name().c_str());
+            if (!pin.empty()) {
+                // Show the digits the user must type on the sending device.
+                vkr::pinOverlayShow(pin, "Miracast");
+                wprintf(L"miracast: PIN required - showing %hs on screen\n", pin.c_str());
+            }
         });
-    session.Disconnected([](MiracastReceiverSession const&,
-                            MiracastReceiverDisconnectedEventArgs const& args) {
+    session.Disconnected([&pin](MiracastReceiverSession const&,
+                                MiracastReceiverDisconnectedEventArgs const& args) {
         wprintf(L"miracast: '%s' disconnected\n",
                 args.Connection().Transmitter().Name().c_str());
+        if (!pin.empty()) vkr::pinOverlayHide();
     });
 
     session.MediaSourceCreated([&state](MiracastReceiverSession const&,
                                         MiracastReceiverMediaSourceCreatedEventArgs const& args) {
         wprintf(L"miracast: media stream up, feeding the scene\n");
+        vkr::pinOverlayHide(); // authorized: media is flowing
         std::lock_guard<std::mutex> lock(state.mutex);
         if (state.player) state.player.Close();
         state.player = MediaPlayer();

@@ -15,24 +15,43 @@ class WhipException implements Exception {
   String toString() => 'WhipException: $message';
 }
 
+/// The receiver answered 401: it wants the PIN shown on its screen.
+/// The UI prompts, then retries with [WhipSession.pin] set.
+class WhipPinRequired implements Exception {
+  final bool retry; // true when a wrong PIN was just rejected
+  WhipPinRequired({this.retry = false});
+  @override
+  String toString() => retry ? 'Incorrect PIN' : 'PIN required';
+}
+
 class WhipSession {
   /// The ingestion endpoint, e.g. http://192.168.1.20:8889/whip/endpoint
   final Uri endpoint;
+
+  /// PIN displayed on the receiver's screen (M25). Sent as a bearer token.
+  final String? pin;
   Uri? _resource;
 
-  WhipSession(this.endpoint);
+  WhipSession(this.endpoint, {this.pin});
 
   /// POST the local offer, return the remote answer SDP. Records the resource
   /// URL from the Location header so [stop] can DELETE it.
   Future<String> exchangeOffer(String offerSdp) async {
+    final headers = <String, String>{'Content-Type': 'application/sdp'};
+    if (pin != null && pin!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${pin!}';
+    }
     final http.Response resp;
     try {
       resp = await http
-          .post(endpoint,
-              headers: {'Content-Type': 'application/sdp'}, body: offerSdp)
+          .post(endpoint, headers: headers, body: offerSdp)
           .timeout(const Duration(seconds: 10));
     } catch (e) {
       throw WhipException('POST $endpoint failed: $e');
+    }
+    if (resp.statusCode == 401) {
+      // M25: the receiver is showing a PIN on its screen.
+      throw WhipPinRequired(retry: pin != null && pin!.isNotEmpty);
     }
     if (resp.statusCode != 201) {
       throw WhipException(

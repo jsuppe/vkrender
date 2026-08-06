@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'discovery.dart';
 import 'webrtc_sender.dart';
+import 'whip_client.dart';
 
 void main() => runApp(const VkrenderSenderApp());
 
@@ -185,14 +186,59 @@ class _CastPageState extends State<CastPage> {
     _boot();
   }
 
-  Future<void> _boot() async {
+  Future<void> _boot({String? pin}) async {
     await _renderer.initialize();
     try {
-      await _sender.start(widget.endpoint, widget.source);
+      await _sender.start(widget.endpoint, widget.source, pin: pin);
       if (mounted) _renderer.srcObject = _sender.stream;
+    } on WhipPinRequired catch (e) {
+      if (mounted) await _promptForPin(retry: e.retry);
     } catch (_) {
       // State already reflects the failure via onState.
     }
+  }
+
+  /// M25: the receiver is showing a PIN on its screen - collect it and retry.
+  Future<void> _promptForPin({required bool retry}) async {
+    final controller = TextEditingController();
+    final entered = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter PIN'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(retry
+                ? 'That PIN was not accepted. Check the code shown on the display.'
+                : 'Enter the PIN shown on the display you are casting to.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 32, letterSpacing: 8),
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              onSubmitted: (v) => Navigator.of(ctx).pop(v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Connect')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (entered == null || entered.isEmpty) {
+      Navigator.of(context).pop(); // user cancelled: leave the cast page
+      return;
+    }
+    await _boot(pin: entered); // retry (recurses on a wrong PIN)
   }
 
   @override
@@ -216,6 +262,8 @@ class _CastPageState extends State<CastPage> {
         return 'Failed: ${_detail ?? 'unknown error'}';
       case SenderState.stopped:
         return 'Stopped';
+      case SenderState.pinRequired:
+        return 'PIN required - check the display';
       default:
         return 'Starting…';
     }

@@ -12,8 +12,22 @@
 
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+#include "pin_overlay.h" // M25: PIN gate + on-screen overlay
+#else
+// The PIN overlay is Windows-only (the appliance target); on Linux/Android
+// the room runs unauthenticated.
+namespace vkr {
+inline bool pinEnabled() { return false; }
+inline std::string pinForConnection() { return ""; }
+inline void pinOverlayShow(const std::string&, const std::string&) {}
+inline void pinOverlayHide() {}
+} // namespace vkr
+#endif
 
 #include "whip_room.h"
 
@@ -191,6 +205,7 @@ struct HttpRequest {
     std::string method;
     std::string path;
     std::string body;
+    std::string authorization; // M25: "Bearer <pin>" when the sender supplies one
 };
 
 // Minimal blocking HTTP/1.1 request reader (headers capped at 16 KB, body by
@@ -223,6 +238,19 @@ bool readRequest(GInputStream* in, HttpRequest* out) {
         contentLength = strtoul(lower.c_str() + clPos + 15, nullptr, 10);
     if (contentLength > 262144) return false;
 
+    // M25: Authorization header (value taken from the original-case buffer).
+    size_t auPos = lower.find("authorization:");
+    if (auPos != std::string::npos) {
+        size_t valStart = auPos + 14;
+        size_t valEnd = lower.find("\r\n", valStart);
+        if (valEnd != std::string::npos) {
+            std::string v = buf.substr(valStart, valEnd - valStart);
+            size_t b = v.find_first_not_of(" \t");
+            size_t e = v.find_last_not_of(" \t\r");
+            if (b != std::string::npos) out->authorization = v.substr(b, e - b + 1);
+        }
+    }
+
     out->body.resize(contentLength);
     size_t got = 0;
     while (got < contentLength) {
@@ -249,9 +277,42 @@ void writeResponse(GOutputStream* out, int status, const char* statusText,
     g_output_stream_write_all(out, full.data(), full.size(), nullptr, nullptr, nullptr);
 }
 
+// M25: PIN gate. When enabled, the first POST from a sender is answered 401
+// with a Bearer challenge WHILE the PIN is shown on the device's screen; the
+// sender re-POSTs with `Authorization: Bearer <pin>`. In auto mode a fresh
+// PIN is minted for each pending connection and retired once used.
+bool pinAuthorize(const HttpRequest& req, GOutputStream* out) {
+    if (!vkr::pinEnabled()) return true;
+
+    static std::mutex pinLock;
+    static std::string pending; // the PIN currently displayed
+    std::lock_guard<std::mutex> hold(pinLock);
+
+    std::string supplied;
+    const std::string& a = req.authorization;
+    if (a.size() > 7 && (a.compare(0, 7, "Bearer ") == 0 || a.compare(0, 7, "bearer ") == 0))
+        supplied = a.substr(7);
+
+    if (!supplied.empty() && !pending.empty() && supplied == pending) {
+        printf("whip-room: PIN accepted\n");
+        vkr::pinOverlayHide();
+        pending.clear();
+        return true;
+    }
+
+    if (pending.empty()) pending = vkr::pinForConnection();
+    vkr::pinOverlayShow(pending, "WebRTC");
+    printf("whip-room: PIN required - showing %s on screen%s\n", pending.c_str(),
+           supplied.empty() ? "" : " (wrong PIN supplied)");
+    writeResponse(out, 401, "Unauthorized",
+                  "WWW-Authenticate: Bearer realm=\"vkrender\"\r\n", "PIN required\n");
+    return false;
+}
+
 // POST: admit a presenter. Creates the session webrtcbin, negotiates, and
 // answers 201 with the SDP + Location.
 void handlePost(WhipRoom* room, const HttpRequest& req, GOutputStream* out) {
+    if (!pinAuthorize(req, out)) return;
     RoomSession* ses = nullptr;
     {
         g_mutex_lock(&room->lock);

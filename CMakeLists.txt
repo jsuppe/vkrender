@@ -204,7 +204,7 @@ if(WIN32)
 
     # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
     # cppwinrt projection headers and WindowsApp.lib).
-    add_executable(vkr_miracast client/miracast_receiver.cpp)
+    add_executable(vkr_miracast client/miracast_receiver.cpp client/pin_overlay.cpp)
     target_link_libraries(vkr_miracast PRIVATE vkrender_client d3d11 dxgi windowsapp)
     # C++/WinRT on standard C++20 coroutines; /await is rejected by MSVC 14.5x.
     target_compile_options(vkr_miracast PRIVATE /EHsc)
@@ -219,7 +219,7 @@ if(WIN32)
     # WebRTC work; this is just a decode->ring bridge (shared design with the
     # Linux/Android receivers).
     add_executable(vkr_webrtc client/webrtc_win.cpp client/whip_room.cpp
-        client/whip_mdns_win.c)
+        client/whip_mdns_win.c client/pin_overlay.cpp)
     target_link_libraries(vkr_webrtc PRIVATE vkrender_client GStreamer::win
         gio-2.0.lib gstsdp-1.0.lib gstwebrtc-1.0.lib d3d11 dxgi dnsapi)
     target_compile_options(vkr_webrtc PRIVATE /EHsc)
