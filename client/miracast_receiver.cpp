@@ -34,6 +34,8 @@
 #include <dxgi.h>
 
 #include <atomic>
+#include <chrono>
+#include <future>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -167,10 +169,46 @@ int main(int argc, char** argv) {
         state.player.Play();
     });
 
-    auto result = session.Start();
+    // MiracastReceiverSession::Start() is documented as synchronous, but on
+    // machines without a usable Wi-Fi Direct sink it can BLOCK FOREVER instead
+    // of returning MiracastNotSupported (reproduced here: the process sat
+    // alive and silent after "listening status"). Run it with a watchdog so
+    // the appliance never shows a receiver that is quietly doing nothing.
+    std::future<MiracastReceiverSessionStartResult> startFuture =
+        std::async(std::launch::async, [&session] { return session.Start(); });
+    if (startFuture.wait_for(std::chrono::seconds(15)) != std::future_status::ready) {
+        wprintf(L"miracast: giving up - the Wi-Fi Direct sink did not come up within 15 s.\n"
+                L"miracast: this machine most likely has no Miracast-capable Wi-Fi adapter "
+                L"(wired-only PCs cannot receive Miracast; it is a driver/hardware role, not "
+                L"a software option).\n"
+                L"miracast: AirPlay and WebRTC receiving are unaffected - set miracast=0 in "
+                L"vkrender.ini to skip this.\n");
+        fflush(stdout);
+        vkrDisconnect(state.client);
+        // The WinRT call is still stuck on its own thread; leave abruptly
+        // rather than block the appliance shutting down.
+        ExitProcess(0);
+    }
+    auto result = startFuture.get();
     if (result.Status() != MiracastReceiverSessionStartStatus::Success) {
+        if (result.Status() == MiracastReceiverSessionStartStatus::MiracastNotSupported) {
+            // Expected on wired-only machines and on Wi-Fi cards whose driver
+            // lacks the Wi-Fi Direct SINK role - it is a hardware/driver
+            // capability, not something software can substitute. The rest of
+            // the appliance is unaffected, so say so plainly and exit 0.
+            wprintf(L"miracast: not available on this machine - Miracast receiving needs a "
+                    L"Wi-Fi adapter whose driver supports the Wi-Fi Direct sink role "
+                    L"(wired-only PCs cannot receive Miracast).\n"
+                    L"miracast: the AirPlay and WebRTC receivers are unaffected; senders can "
+                    L"use those instead. Set miracast=0 in vkrender.ini to skip this check.\n");
+            vkrDisconnect(state.client);
+            return 0;
+        }
         fwprintf(stderr, L"miracast: session start failed: %s\n",
                  sessionStartStatusName(result.Status()));
+        if (result.Status() == MiracastReceiverSessionStartStatus::AccessDenied)
+            fwprintf(stderr, L"miracast: another app owns the sink role - turn off Windows' "
+                             L"'Projecting to this PC' and retry.\n");
         vkrDisconnect(state.client);
         return 1;
     }

@@ -36,7 +36,9 @@
 
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #pragma comment(lib, "shlwapi.lib")
@@ -46,6 +48,48 @@ namespace {
 std::string g_dir; // directory of this executable (all binaries live here)
 HANDLE g_job = nullptr;
 std::vector<HANDLE> g_children;
+
+// Every child writes to its own pipe; the launcher prints WHOLE LINES under
+// one lock, tagged with the source. Without this the children share our
+// console and their unbuffered writes interleave mid-word (observed:
+// "applian[INF] renderer: imported...ce: started vkr_airplay.exe").
+std::mutex g_logMutex;
+FILE* g_logFile = nullptr;
+std::vector<std::thread> g_pumps;
+
+void logLine(const char* tag, const std::string& line) {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    std::lock_guard<std::mutex> hold(g_logMutex);
+    printf("%02d:%02d:%02d [%-9s] %s\n", st.wHour, st.wMinute, st.wSecond, tag, line.c_str());
+    if (g_logFile) {
+        fprintf(g_logFile, "%02d:%02d:%02d [%-9s] %s\n", st.wHour, st.wMinute, st.wSecond, tag,
+                line.c_str());
+        fflush(g_logFile);
+    }
+}
+
+// Reads a child's output pipe, emitting one log line per '\n'.
+void pumpChildOutput(HANDLE readEnd, std::string tag) {
+    std::string pending;
+    char buf[4096];
+    DWORD got = 0;
+    while (ReadFile(readEnd, buf, sizeof(buf), &got, nullptr) && got > 0) {
+        for (DWORD i = 0; i < got; ++i) {
+            char c = buf[i];
+            if (c == '\n') {
+                while (!pending.empty() && (pending.back() == '\r' || pending.back() == ' '))
+                    pending.pop_back();
+                if (!pending.empty()) logLine(tag.c_str(), pending);
+                pending.clear();
+            } else if (pending.size() < 4096) {
+                pending.push_back(c);
+            }
+        }
+    }
+    if (!pending.empty()) logLine(tag.c_str(), pending);
+    CloseHandle(readEnd);
+}
 
 std::string exeDir() {
     char buf[MAX_PATH];
@@ -66,31 +110,49 @@ bool fileExists(const std::string& p) {
     return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-// Launch <exe> <args> from our directory, in our job (so it dies with us).
-bool launch(const std::string& exe, const std::string& args, bool required) {
+// Launch <exe> <args> from our directory, in our job (so it dies with us),
+// with its output redirected into our line-serializing log pump.
+bool launch(const std::string& exe, const std::string& args, const std::string& tag,
+            bool required) {
     std::string path = g_dir + "\\" + exe;
     if (!fileExists(path)) {
-        if (required) fprintf(stderr, "appliance: MISSING %s\n", exe.c_str());
-        else printf("appliance: %s not installed, skipping\n", exe.c_str());
+        if (required) logLine("appliance", "MISSING " + exe);
+        else logLine("appliance", exe + " not installed, skipping");
         return false;
     }
+
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE}; // inheritable pipe ends
+    HANDLE readEnd = nullptr, writeEnd = nullptr;
+    if (!CreatePipe(&readEnd, &writeEnd, &sa, 0)) return false;
+    SetHandleInformation(readEnd, HANDLE_FLAG_INHERIT, 0); // keep our end private
+
     std::string cmd = "\"" + path + "\" " + args;
     STARTUPINFOA si{sizeof(si)};
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = writeEnd;
+    si.hStdError = writeEnd;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE,
+    if (!CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, TRUE,
                         CREATE_NEW_PROCESS_GROUP, nullptr, g_dir.c_str(), &si, &pi)) {
-        fprintf(stderr, "appliance: failed to start %s (%lu)\n", exe.c_str(), GetLastError());
+        logLine("appliance", "failed to start " + exe + " (" +
+                                 std::to_string(GetLastError()) + ")");
+        CloseHandle(readEnd);
+        CloseHandle(writeEnd);
         return false;
     }
+    // Drop OUR copy of the write end, else the read never sees EOF.
+    CloseHandle(writeEnd);
     if (g_job) AssignProcessToJobObject(g_job, pi.hProcess);
     CloseHandle(pi.hThread);
     g_children.push_back(pi.hProcess);
-    printf("appliance: started %s %s\n", exe.c_str(), args.c_str());
+    g_pumps.emplace_back(pumpChildOutput, readEnd, tag);
+    logLine("appliance", "started " + exe + " " + args);
     return true;
 }
 
 BOOL WINAPI ctrlHandler(DWORD) {
-    printf("appliance: shutting down\n");
+    logLine("appliance", "shutting down");
     if (g_job) CloseHandle(g_job); // kills the whole group
     ExitProcess(0);
     return TRUE;
@@ -102,6 +164,18 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     g_dir = exeDir();
     SetConsoleCtrlHandler(ctrlHandler, TRUE);
+
+    // Program Files is not writable, so the combined log lives in LOCALAPPDATA.
+    {
+        char local[MAX_PATH];
+        if (GetEnvironmentVariableA("LOCALAPPDATA", local, MAX_PATH)) {
+            std::string dir = std::string(local) + "\\vkrender";
+            CreateDirectoryA(dir.c_str(), nullptr);
+            std::string logPath = dir + "\\vkrender.log";
+            g_logFile = fopen(logPath.c_str(), "w");
+            printf("vkrender appliance: logging to %s\n", logPath.c_str());
+        }
+    }
 
     // Kill-on-close job: no orphaned receivers if this process goes away.
     g_job = CreateJobObjectA(nullptr, nullptr);
@@ -155,14 +229,15 @@ int main(int argc, char** argv) {
     } else {
         rendererArgs += " --window 1280x720+80+80";
     }
-    if (!launch("vkrenderer.exe", rendererArgs, true)) return 1;
+    if (!launch("vkrenderer.exe", rendererArgs, "renderer", true)) return 1;
     Sleep(2500); // let the service open its pipe before producers dial in
 
-    if (wantMiracast) launch("vkr_miracast.exe", name + " " + name, false);
-    launch("vkr_webrtc.exe", name + " " + webrtcPort + " " + name, false);
-    if (wantAirplay) launch("vkr_airplay.exe", name + " " + name, false);
+    if (wantMiracast) launch("vkr_miracast.exe", name + " " + name, "miracast", false);
+    launch("vkr_webrtc.exe", name + " " + webrtcPort + " " + name, "webrtc", false);
+    if (wantAirplay) launch("vkr_airplay.exe", name + " " + name, "airplay", false);
     if (wantVcam)
-        launch("vkr_vcam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30", false);
+        launch("vkr_vcam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
+               "vcam", false);
 
     printf("appliance: %zu processes up - close this window to stop everything\n",
            g_children.size());
