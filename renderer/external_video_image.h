@@ -110,6 +110,12 @@ public:
 // Imports a shared D3D11/D3D12 fence handle as a Vulkan timeline semaphore
 // (M14 service mode has one ready/consumed pair per client, outside the pool).
 bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemaphore* out);
+
+// M24: import a shared D3D11 texture as a TRANSFER_DST blit target (the
+// consumer-ring direction: the renderer WRITES these; a consumer process
+// reads them). No view/sampler - blit-only.
+bool importWin32BlitTarget(VkContext& vk, uint64_t handleValue, uint32_t width,
+                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory);
 #endif
 
 } // namespace vkr

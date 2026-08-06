@@ -63,6 +63,39 @@ VKR_API int vkrQueueBuffer(vkrClient* client, const vkrBuffer* buffer, long long
 
 VKR_API void vkrDisconnect(vkrClient* client);
 
+// ---- M24: scene-view consumers ---------------------------------------------
+// The mirror of the producer API: negotiate a VIEW of the scene and receive
+// it as a shared-texture ring the renderer writes.
+//
+//   unsigned w = 1280, h = 720;
+//   vkrClient* c = vkrConnectConsumer("vkrender", NULL, &w, &h, 30);
+//   for (;;) {
+//       vkrFrame frame;
+//       if (vkrAcquireFrame(c, &frame, 1000) != 0) continue;
+//       /* read frame.texture with vkrGetDevice(c)'s immediate context */
+//       vkrReleaseFrame(c, &frame);
+//   }
+//   vkrDisconnect(c);
+
+typedef struct vkrFrame {
+    unsigned slot;
+    ID3D11Texture2D* texture; // owned by the library; valid until vkrDisconnect
+    long long ptsNs;
+    unsigned long long readyValue; // internal (release bookkeeping)
+} vkrFrame;
+
+// Negotiates a view: *width/*height/fps are requests (renderer may clamp;
+// actual values are written back). fps 0 = every rendered frame.
+VKR_API vkrClient* vkrConnectConsumer(const char* pipeName, ID3D11Device* device,
+                                      unsigned* width, unsigned* height, unsigned fps);
+
+// Waits for the next delivered frame (latest-wins if several queued).
+// 0 = success, 1 = timeout, -1 = disconnected.
+VKR_API int vkrAcquireFrame(vkrClient* client, vkrFrame* out, unsigned timeoutMs);
+
+// Done reading: releases this frame's slot (and any older skipped ones).
+VKR_API int vkrReleaseFrame(vkrClient* client, const vkrFrame* frame);
+
 #ifdef __cplusplus
 }
 #endif

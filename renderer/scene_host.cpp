@@ -431,6 +431,72 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                          backgroundOn_ && background_.valid() ? &background_ : nullptr, t,
                          canvasAspect_, r.u0, r.v0, r.u1 - r.u0, r.v1 - r.v0);
 
+        // M24: consumer-view deliveries - blit window 0's rendered scene
+        // (scaled) into each consumer's shared ring texture before the final
+        // present transition.
+        if (w == 0 && !extras.blits.empty()) {
+            VkImageMemoryBarrier2 toSrc{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            toSrc.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            toSrc.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            toSrc.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+            toSrc.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            toSrc.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            toSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            toSrc.image = image;
+            toSrc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            dep.pImageMemoryBarriers = &toSrc;
+            vkCmdPipelineBarrier2(f.cmd, &dep);
+
+            for (const auto& blit : extras.blits) {
+                VkImageMemoryBarrier2 toDst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                toDst.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+                toDst.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+                toDst.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // full overwrite
+                toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                toDst.image = blit.image;
+                toDst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                dep.pImageMemoryBarriers = &toDst;
+                vkCmdPipelineBarrier2(f.cmd, &dep);
+
+                VkImageBlit region{};
+                region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                region.srcOffsets[1] = {(int32_t)extent.width, (int32_t)extent.height, 1};
+                region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                region.dstOffsets[1] = {(int32_t)blit.width, (int32_t)blit.height, 1};
+                vkCmdBlitImage(f.cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, blit.image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
+                               VK_FILTER_LINEAR);
+
+                // Release to the external (D3D11) reader.
+                VkImageMemoryBarrier2 release{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                release.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+                release.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                release.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+                release.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                release.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+                release.srcQueueFamilyIndex = vk.queueFamily;
+                release.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+                release.image = blit.image;
+                release.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                dep.pImageMemoryBarriers = &release;
+                vkCmdPipelineBarrier2(f.cmd, &dep);
+            }
+
+            VkImageMemoryBarrier2 back{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            back.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+            back.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            back.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            back.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            back.newLayout =
+                vk.headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            back.image = image;
+            back.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            dep.pImageMemoryBarriers = &back;
+            vkCmdPipelineBarrier2(f.cmd, &dep);
+            continue; // final transition handled above
+        }
+
         VkImageMemoryBarrier2 fin{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         fin.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         fin.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;

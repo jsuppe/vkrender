@@ -29,6 +29,12 @@ enum class MsgType : uint32_t {
     ClientHello = 9,   // M14 (Windows service mode): producer client -> renderer;
                        // the renderer replies Hello (adapter LUID) + PoolDesc
                        // whose handles are already duplicated into the client.
+    ConsumerHello = 10,  // M24: consumer client -> renderer: negotiate a scene
+                         // view (resolution/fps/layout/stream subset)
+    ConsumerConfig = 11, // renderer -> consumer: the accepted view, followed by
+                         // a PoolDesc ring where the RENDERER is the producer
+                         // (renderer signals readyFence + sends FrameReady;
+                         // the consumer signals consumedFence)
 };
 
 #pragma pack(push, 4)
@@ -113,6 +119,30 @@ struct ClientHelloMsg {
     uint32_t height;
     SharedFormat format; // BGRA8 supported
     uint32_t poolSize;   // requested ring depth, clamped to kMaxPoolSize
+};
+
+// M24: a consumer asks the renderer for a negotiated VIEW of the scene,
+// delivered as a shared-texture ring (the mirror image of ClientHello). The
+// renderer may clamp resolution/fps; layout/stream selection reuse the M15
+// scene vocabulary. After ConsumerConfig comes a PoolDesc whose fences follow
+// the M14 contract with the roles reversed: the renderer signals readyFence
+// and sends FrameReady; the consumer signals consumedFence when done reading
+// (promising never to read frames with readyValue <= the signaled value).
+struct ConsumerHelloMsg {
+    uint32_t clientPid; // for handle duplication into the consumer process
+    uint32_t width;     // requested view size (0 = renderer default)
+    uint32_t height;
+    uint32_t fps;        // requested delivery cap (0 = every rendered frame)
+    uint32_t layout;     // 0 = current on-screen layout; 1 = two-cubes,
+                         // 2 = single-cube, 3 = stream wall
+    uint32_t streamMask; // bitmask of stream indices to include; 0 = all
+    uint32_t poolSize;   // requested ring depth, clamped to kMaxPoolSize
+};
+
+struct ConsumerConfigMsg {
+    uint32_t width;  // accepted view size
+    uint32_t height;
+    uint32_t fps;    // accepted delivery cap (0 = every rendered frame)
 };
 
 // Linux: announces one decoder surface. The dma-buf fd(s) ride along as

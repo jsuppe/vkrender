@@ -141,6 +141,10 @@ if(WIN32)
     target_include_directories(vkrender_client PUBLIC client)
     target_link_libraries(vkrender_client PRIVATE vkr_common d3d11 dxgi)
 
+    # M24: scene-view consumer smoke test (negotiate + acquire + PPM dump).
+    add_executable(vkr_consumer_demo test/win_consumer_demo.cpp)
+    target_link_libraries(vkr_consumer_demo PRIVATE vkrender_client d3d11 dxgi)
+
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
 

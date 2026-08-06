@@ -57,6 +57,15 @@ public:
         std::vector<uint64_t> waitValues;
         std::vector<VkSemaphore> signalSems;
         std::vector<uint64_t> signalValues;
+        // M24: consumer-view deliveries. After window 0 renders, its image is
+        // blitted (scaled) into each target - an imported shared D3D11
+        // texture a consumer process reads. The corresponding readyFence
+        // signal rides signalSems/signalValues above.
+        struct Blit {
+            VkImage image;
+            uint32_t width, height;
+        };
+        std::vector<Blit> blits;
     };
     struct StreamRef {
         uint64_t id;

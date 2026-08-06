@@ -722,6 +722,72 @@ bool ExternalVideoPool::addSurfaceWin32(VkContext& vk, uint32_t key, uint64_t ha
 bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemaphore* out) {
     return importTimelineSemaphore(vk.device, handleValue, out);
 }
+
+bool importWin32BlitTarget(VkContext& vk, uint64_t handleValue, uint32_t width,
+                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory) {
+    VkExternalMemoryImageCreateInfo extImg{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    extImg.handleTypes = kWin32HandleType;
+
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.pNext = &extImg;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = VK_FORMAT_B8G8R8A8_UNORM;
+    ici.extent = {width, height, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(vk.device, &ici, nullptr, outImage) != VK_SUCCESS) {
+        VKR_ERR("vkCreateImage(blit target) failed");
+        return false;
+    }
+
+    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+    req.pNext = &dedicated;
+    VkImageMemoryRequirementsInfo2 reqInfo{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+    reqInfo.image = *outImage;
+    vkGetImageMemoryRequirements2(vk.device, &reqInfo, &req);
+
+    HANDLE handle = (HANDLE)(uintptr_t)handleValue;
+    VkMemoryWin32HandlePropertiesKHR handleProps{
+        VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR};
+    if (vkGetMemoryWin32HandlePropertiesKHR(vk.device, kWin32HandleType, handle,
+                                            &handleProps) != VK_SUCCESS) {
+        VKR_ERR("vkGetMemoryWin32HandlePropertiesKHR (blit target) failed");
+        return false;
+    }
+    int memType = pickMemoryType(
+        vk.phys, req.memoryRequirements.memoryTypeBits & handleProps.memoryTypeBits);
+    if (memType < 0) {
+        VKR_ERR("no compatible memory type for blit target");
+        return false;
+    }
+
+    VkImportMemoryWin32HandleInfoKHR importInfo{
+        VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR};
+    importInfo.handleType = kWin32HandleType;
+    importInfo.handle = handle;
+    VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    dedicatedInfo.pNext = &importInfo;
+    dedicatedInfo.image = *outImage;
+
+    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    alloc.pNext = &dedicatedInfo;
+    alloc.allocationSize = req.memoryRequirements.size;
+    alloc.memoryTypeIndex = (uint32_t)memType;
+    if (vkAllocateMemory(vk.device, &alloc, nullptr, outMemory) != VK_SUCCESS) {
+        VKR_ERR("vkAllocateMemory(blit target) failed");
+        return false;
+    }
+    if (vkBindImageMemory(vk.device, *outImage, *outMemory, 0) != VK_SUCCESS) {
+        VKR_ERR("vkBindImageMemory(blit target) failed");
+        return false;
+    }
+    return true;
+}
 #endif
 
 bool ExternalVideoPool::addOwnedSurface(VkContext& vk, uint32_t key, uint32_t width,

@@ -19,6 +19,7 @@
 #include <dxgi1_3.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -65,13 +66,39 @@ struct Client {
     uint64_t pendingConsumed = 0; // 0 = none this frame
 };
 
+// M24: a scene-view consumer (the mirror of Client): the renderer renders a
+// negotiated view into this ring and signals readyFence; the consumer reads
+// and signals consumedFence.
+struct Consumer {
+    IpcChannel channel;
+    uint32_t id = 0;
+    uint32_t width = 0, height = 0, fps = 0, poolSize = 0;
+    ComPtr<ID3D11Texture2D> textures[proto::kMaxPoolSize];
+    HANDLE localTexHandle[proto::kMaxPoolSize] = {};
+    VkImage images[proto::kMaxPoolSize] = {};
+    VkDeviceMemory memories[proto::kMaxPoolSize] = {};
+    ComPtr<ID3D11Fence> readyFence, consumedFence;
+    HANDLE localFenceHandle[2] = {};
+    VkSemaphore readySem = VK_NULL_HANDLE; // we signal (via the frame submit)
+    uint64_t readyValue = 0;
+    uint64_t slotReady[proto::kMaxPoolSize] = {}; // readyValue signaled per slot
+    int64_t lastDeliverNs = 0;
+    int pendingSlot = -1; // blit recorded this frame; FrameReady after submit
+};
+
 struct PendingConnection {
     IpcChannel channel;
     proto::ClientHelloMsg hello;
 };
 
+struct PendingConsumer {
+    IpcChannel channel;
+    proto::ConsumerHelloMsg hello;
+};
+
 std::mutex g_acceptMutex;
 std::vector<std::unique_ptr<PendingConnection>> g_pending;
+std::vector<std::unique_ptr<PendingConsumer>> g_pendingConsumers;
 
 void acceptLoop(std::string pipeName) {
     for (;;) {
@@ -81,14 +108,24 @@ void acceptLoop(std::string pipeName) {
             continue;
         }
         auto msg = ch.recv();
-        if (!msg || msg->type != proto::MsgType::ClientHello) continue;
-        const auto* hello = msg->as<proto::ClientHelloMsg>();
-        if (!hello) continue;
-        auto pending = std::make_unique<PendingConnection>();
-        pending->channel = std::move(ch);
-        pending->hello = *hello;
-        std::lock_guard<std::mutex> lock(g_acceptMutex);
-        g_pending.push_back(std::move(pending));
+        if (!msg) continue;
+        if (msg->type == proto::MsgType::ClientHello) {
+            const auto* hello = msg->as<proto::ClientHelloMsg>();
+            if (!hello) continue;
+            auto pending = std::make_unique<PendingConnection>();
+            pending->channel = std::move(ch);
+            pending->hello = *hello;
+            std::lock_guard<std::mutex> lock(g_acceptMutex);
+            g_pending.push_back(std::move(pending));
+        } else if (msg->type == proto::MsgType::ConsumerHello) {
+            const auto* hello = msg->as<proto::ConsumerHelloMsg>();
+            if (!hello) continue;
+            auto pending = std::make_unique<PendingConsumer>();
+            pending->channel = std::move(ch);
+            pending->hello = *hello;
+            std::lock_guard<std::mutex> lock(g_acceptMutex);
+            g_pendingConsumers.push_back(std::move(pending));
+        }
     }
 }
 
@@ -298,6 +335,121 @@ int runWinService(const WinServeOptions& options) {
         return c;
     };
 
+    std::vector<std::unique_ptr<Consumer>> consumers;
+    uint32_t nextConsumerId = 1;
+
+    auto teardownConsumer = [&](Consumer& c) {
+        vkDeviceWaitIdle(vk.device);
+        for (uint32_t i = 0; i < c.poolSize; ++i) {
+            if (c.images[i]) vkDestroyImage(vk.device, c.images[i], nullptr);
+            if (c.memories[i]) vkFreeMemory(vk.device, c.memories[i], nullptr);
+        }
+        if (c.readySem) vkDestroySemaphore(vk.device, c.readySem, nullptr);
+        for (HANDLE h : c.localTexHandle)
+            if (h) CloseHandle(h);
+        for (HANDLE h : c.localFenceHandle)
+            if (h) CloseHandle(h);
+        VKR_LOG("service: consumer %u gone", c.id);
+    };
+
+    auto integrateConsumer = [&](PendingConsumer& pc) -> std::unique_ptr<Consumer> {
+        auto c = std::make_unique<Consumer>();
+        c->channel = std::move(pc.channel);
+        c->id = nextConsumerId++;
+        // Negotiate: clamp to sane bounds, force even dimensions (video
+        // consumers feed encoders/cameras that require them).
+        c->width = pc.hello.width ? pc.hello.width : 1920;
+        c->height = pc.hello.height ? pc.hello.height : 1080;
+        c->width = (std::min(std::max(c->width, 16u), 4096u)) & ~1u;
+        c->height = (std::min(std::max(c->height, 16u), 4096u)) & ~1u;
+        c->fps = std::min(pc.hello.fps, 240u); // 0 = every rendered frame
+        c->poolSize = pc.hello.poolSize ? pc.hello.poolSize : 4;
+        if (c->poolSize > proto::kMaxPoolSize) c->poolSize = proto::kMaxPoolSize;
+
+        HANDLE clientProcess = OpenProcess(PROCESS_DUP_HANDLE, FALSE, pc.hello.clientPid);
+        if (!clientProcess) {
+            VKR_ERR("service: consumer OpenProcess(%u) failed", pc.hello.clientPid);
+            return nullptr;
+        }
+
+        proto::PoolDescMsg desc{};
+        desc.width = c->width;
+        desc.height = c->height;
+        desc.format = proto::SharedFormat::BGRA8;
+        desc.matrix = proto::Matrix::BT709;
+        desc.range = proto::Range::Full;
+        desc.poolSize = c->poolSize;
+        desc.planeCount = 1;
+
+        bool ok = true;
+        for (uint32_t i = 0; i < c->poolSize && ok; ++i) {
+            D3D11_TEXTURE2D_DESC td{};
+            td.Width = c->width;
+            td.Height = c->height;
+            td.MipLevels = 1;
+            td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            td.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+            ok = SUCCEEDED(d3d->CreateTexture2D(&td, nullptr, &c->textures[i]));
+            ComPtr<IDXGIResource1> res;
+            if (ok) ok = SUCCEEDED(c->textures[i].As(&res));
+            if (ok)
+                ok = SUCCEEDED(res->CreateSharedHandle(
+                    nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr,
+                    &c->localTexHandle[i]));
+            if (ok)
+                ok = importWin32BlitTarget(vk, (uint64_t)(uintptr_t)c->localTexHandle[i],
+                                           c->width, c->height, &c->images[i], &c->memories[i]);
+            if (ok) ok = duplicateForClient(c->localTexHandle[i], clientProcess,
+                                            &desc.textureHandle[i]);
+        }
+        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
+                                                IID_PPV_ARGS(&c->readyFence)));
+        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
+                                                IID_PPV_ARGS(&c->consumedFence)));
+        if (ok)
+            ok = SUCCEEDED(c->readyFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
+                                                             &c->localFenceHandle[0])) &&
+                 SUCCEEDED(c->consumedFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
+                                                                &c->localFenceHandle[1]));
+        // Only the ready semaphore is imported into Vulkan (we signal it from
+        // the frame submit); consumed is polled via GetCompletedValue.
+        if (ok)
+            ok = importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)c->localFenceHandle[0],
+                                              &c->readySem);
+        if (ok)
+            ok = duplicateForClient(c->localFenceHandle[0], clientProcess,
+                                    &desc.readyFenceHandle) &&
+                 duplicateForClient(c->localFenceHandle[1], clientProcess,
+                                    &desc.consumedFenceHandle);
+
+        if (ok) {
+            proto::HelloMsg hello{};
+            hello.rendererPid = GetCurrentProcessId();
+            hello.luidValid = vk.luidValid ? 1 : 0;
+            memcpy(hello.deviceLUID, vk.deviceLUID, sizeof(hello.deviceLUID));
+            proto::ConsumerConfigMsg cfg{};
+            cfg.width = c->width;
+            cfg.height = c->height;
+            cfg.fps = c->fps;
+            ok = c->channel.send(proto::MsgType::Hello, hello) &&
+                 c->channel.send(proto::MsgType::ConsumerConfig, cfg) &&
+                 c->channel.send(proto::MsgType::PoolDesc, desc);
+        }
+        CloseHandle(clientProcess);
+        if (!ok) {
+            VKR_ERR("service: consumer %u setup failed", c->id);
+            teardownConsumer(*c);
+            return nullptr;
+        }
+        VKR_LOG("service: consumer %u connected (view %ux%u @%u fps cap, ring of %u)", c->id,
+                c->width, c->height, c->fps, c->poolSize);
+        return c;
+    };
+
     bool quit = false;
     while (!quit) {
         if (headless) {
@@ -323,6 +475,32 @@ int runWinService(const WinServeOptions& options) {
                     continue;
                 }
                 if (auto c = integrateClient(*pc)) clients.push_back(std::move(c));
+            }
+        }
+        {
+            std::vector<std::unique_ptr<PendingConsumer>> pending;
+            {
+                std::lock_guard<std::mutex> lock(g_acceptMutex);
+                pending.swap(g_pendingConsumers);
+            }
+            for (auto& pc : pending) {
+                if (consumers.size() >= 8) {
+                    VKR_WARN("service: rejecting consumer (8 views active)");
+                    continue;
+                }
+                if (auto c = integrateConsumer(*pc)) consumers.push_back(std::move(c));
+            }
+        }
+        for (auto it = consumers.begin(); it != consumers.end();) {
+            Consumer& c = **it;
+            while (auto msg = c.channel.tryRecv()) {
+                if (msg->type == proto::MsgType::Bye) c.channel = IpcChannel();
+            }
+            if (!c.channel.connected()) {
+                teardownConsumer(c);
+                it = consumers.erase(it);
+            } else {
+                ++it;
             }
         }
 
@@ -367,9 +545,46 @@ int runWinService(const WinServeOptions& options) {
             }
         }
 
+        // M24: deliver consumer views. Pick a reusable ring slot (the consumer
+        // has finished reading it: consumedFence >= the value we signaled for
+        // it), record the blit + this frame's readyFence signal.
+        for (auto& cp : consumers) {
+            Consumer& c = *cp;
+            c.pendingSlot = -1;
+            if (c.fps > 0 && c.lastDeliverNs &&
+                nowNs() - c.lastDeliverNs < (int64_t)(1000000000ull / c.fps))
+                continue;
+            uint64_t completed = c.consumedFence->GetCompletedValue();
+            for (uint32_t s = 0; s < c.poolSize; ++s) {
+                if (c.slotReady[s] == 0 || completed >= c.slotReady[s]) {
+                    c.pendingSlot = (int)s;
+                    break;
+                }
+            }
+            if (c.pendingSlot < 0) continue; // consumer is behind; skip frame
+            uint32_t s = (uint32_t)c.pendingSlot;
+            c.readyValue++;
+            c.slotReady[s] = c.readyValue;
+            c.lastDeliverNs = nowNs();
+            extras.blits.push_back({c.images[s], c.width, c.height});
+            extras.signalSems.push_back(c.readySem);
+            extras.signalValues.push_back(c.readyValue);
+        }
+
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
             exitCode = 1;
             break;
+        }
+
+        // The submit carrying the blits is queued; tell each consumer.
+        for (auto& cp : consumers) {
+            Consumer& c = *cp;
+            if (c.pendingSlot < 0) continue;
+            proto::FrameReadyMsg fr{};
+            fr.slot = (uint32_t)c.pendingSlot;
+            fr.readyValue = c.readyValue;
+            fr.ptsNs = nowNs();
+            c.channel.send(proto::MsgType::FrameReady, fr);
         }
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
@@ -386,6 +601,8 @@ int runWinService(const WinServeOptions& options) {
 
     for (auto& c : clients) teardownClient(*c);
     clients.clear();
+    for (auto& c : consumers) teardownConsumer(*c);
+    consumers.clear();
     host.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);

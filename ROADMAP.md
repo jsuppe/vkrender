@@ -559,7 +559,30 @@ link), tunable via `VKR_WEBRTC_LATENCY_MS`. AirPlay/RTSP paths can reuse
 the same probes (documented, not yet wired); Miracast needs WinRT-side
 stamps (documented).
 
-## Backlog — cloud calling via self-hosted LiveKit (M24 proposal)
+## M24 — scene-out consumers + virtual camera (in progress)
+
+The mirror image of the M14 producer path: a consumer process **negotiates
+its own view of the scene** and receives it as a shared-texture ring —
+GPU-side end to end. The on-screen windows become just one view among many.
+
+- **Negotiation** (new pipe messages): `ConsumerHello{pid, w, h, fps,
+  layout, streamMask}` → renderer answers `ConsumerConfig{accepted w/h/fps}`
+  + a standard `PoolDesc` ring whose fence roles are the M14 contract with
+  the renderer as producer (renderer signals ready, consumer signals
+  consumed, `FrameReady` flows renderer→consumer). Layout ids and stream
+  selection reuse the M15 vocabulary (two-cubes / single-cube / wall,
+  per-stream curation).
+- **Renderer**: per consumer, an off-screen render of that consumer's view
+  at the negotiated resolution (own layout + stream subset), paced at the
+  negotiated fps, blitted into the imported ring slot.
+- **Consumer API** (client DLL + SDK release): `vkrConnectConsumer` /
+  `vkrAcquireFrame` / `vkrReleaseFrame`; PPM test consumer for headless
+  verification.
+- **vkr_vcam.exe**: Media Foundation virtual camera (`MFCreateVirtualCamera`,
+  Win11) pumping ring textures into MF samples — the scene as a webcam in
+  Teams/Zoom/browsers. Later echoes: v4l2loopback (Linux).
+
+## Backlog — cloud calling via self-hosted LiveKit (M25 proposal)
 
 Marry the system to a self-hosted SFU for internet reach, rooms, and auth.
 Decisions sketched (2026-08-05): **LiveKit** (Apache-2.0, built-in TURN,
