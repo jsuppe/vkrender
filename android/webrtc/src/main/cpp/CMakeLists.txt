@@ -32,20 +32,25 @@ endif()
 set(ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS} 1)
 set(ENV{PKG_CONFIG_ALLOW_SYSTEM_CFLAGS} 1)
 
-# The WHIP receive pipeline: whipserversrc (rswebrtc) -> webrtcbin (webrtc) +
-# nice/dtls/srtp/rtpmanager(bad)/rsrtp/webrtchttp, then rtp depay + h264parse.
+# M22: the WHIP room (client/whip_room.cpp, shared with Windows/Linux) runs
+# the ingest on webrtcbin directly - the single-producer whipserversrc and the
+# whole Rust plugin closure (rswebrtc/rsrtp/webrtchttp) are gone. Per
+# presenter: webrtcbin pad -> rtph264depay -> h264parse -> appsink ->
+# MediaCodec into that presenter's own renderer slot Surface.
 pkg_check_modules(GSTA REQUIRED
     gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0
+    gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gio-2.0
     gstcoreelements gstapp gstrtp gstrtpmanager gstudp gsttypefindfunctions
     gstvideoparsersbad
-    gstwebrtc gstnice gstdtls gstsrtp gstrtpmanagerbad gstrswebrtc gstrsrtp
-    gstwebrtchttp)
+    gstwebrtc gstnice gstdtls gstsrtp gstrtpmanagerbad)
 
 add_library(vkrender_webrtc SHARED
     webrtc_jni.cpp
+    ${REPO}/client/whip_room.cpp
     # Reuse the M18 MediaCodec-into-Surface sink (H.264 AUs).
     ${REPO}/android/airplay/src/main/cpp/airplay_video.cpp)
 target_include_directories(vkrender_webrtc PRIVATE
+    ${REPO}/client
     ${REPO}/android/airplay/src/main/cpp
     ${GSTA_STATIC_INCLUDE_DIRS})
 

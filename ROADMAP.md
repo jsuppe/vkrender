@@ -521,12 +521,21 @@ instead:
   streaming (600+ frames each), 13th cleanly rejected 503, distinct
   patterns on the cube faces in the snapshot, departed presenters reaped
   and their slots rejoinable.**
-- Linux: same `whip_room` core, branches ending in `waylandsink` — each
-  Wayland surface is already its own stream in the M13 compositor.
-- Android: same `whip_room` core; renderer AIDL currently keys streams by
-  Binder UID (M11), so one webrtc APK = one stream; needs a multi-surface
-  extension (named/indexed `acquireInputSurface`) to fan sessions into
-  separate cube faces.
+- **Linux (verified)**: same `whip_room` core, branches ending in
+  `waylandsink` — each presenter's sink opens its own compositor connection,
+  so each is its own scene stream. **Measured on melchior: 4 concurrent
+  presenters, 600 adoptions/5s (4×30fps exactly), distinct patterns on the
+  cube faces in the headless snapshot.**
+- **Android (built)**: same `whip_room` core (the single-producer
+  whipserversrc AND the whole Rust plugin closure are gone — only the C
+  webrtc/nice/dtls/srtp plugins remain, which also removes the prime
+  suspect in the M20 emulator SIGSEGV). The renderer's producer API grew
+  **slots**: streams are keyed `(Binder UID, slot)` and the new
+  `acquireInputSurfaceSlot(int)` AIDL methods (appended, binary-compatible)
+  let the room APK hold up to 12 surfaces — the native room calls up to
+  `WebrtcService` per presenter track for a slot Surface, and each
+  presenter's H.264 AUs feed their own `AMediaCodec` (per-session M18
+  `AirplayVideoSink`). Device verification pending, as with M16–M20.
 
 ## Backlog — cloud calling via self-hosted LiveKit (M23 proposal)
 

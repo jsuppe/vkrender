@@ -15,6 +15,8 @@ import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 import android.view.Surface;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -22,10 +24,12 @@ import java.util.concurrent.TimeUnit;
 import dev.vkrender.IVkRendererService;
 
 /**
- * M20: WebRTC (WHIP) receiver client app. Binds the renderer app's Surface
- * (like the decoder/airplay clients) and runs the whipserversrc pipeline
- * decoding the WHIP-ingested H.264 into it. A browser or any WHIP client
- * posts an SDP offer to http://<tablet-ip>:8889/whip/endpoint and streams.
+ * M22: WHIP room client app. Binds the renderer and holds up to 12 slot
+ * Surfaces (acquireInputSurfaceSlot) - one per presenter. The native side
+ * (whip_room on webrtcbin) accepts concurrent WHIP sessions and calls back up
+ * here for a slot Surface per presenter track, so each presenter lands on
+ * their own cube face. Any WHIP sender works: the Flutter app, a browser,
+ * OBS, whipclientsink.
  */
 public class WebrtcService extends Service {
     static {
@@ -36,17 +40,23 @@ public class WebrtcService extends Service {
     private static final String CHANNEL_ID = "vkrender.webrtc";
     private static final String RENDERER_PACKAGE = "dev.vkrender.renderer";
     private static final String RENDERER_SERVICE = "dev.vkrender.renderer.RendererService";
-    private static final int WHIP_PORT = 8889;
-
-    private native boolean nativeStart(Surface surface, int port);
-    private native boolean nativeSurfaceDead();
-    private native void nativeStop();
-
     private static final String WHIP_SERVICE_TYPE = "_vkrender-whip._tcp";
+    private static final int WHIP_PORT = 8889;
+    private static final int MAX_PRESENTERS = 12;
+
+    private native boolean nativeStart(int port);
+    private native void nativePoll();
+    private native void nativeStop();
 
     private Thread worker;
     private volatile boolean stopping = false;
     private volatile boolean rendererAlive = false;
+    private volatile IVkRendererService renderer;
+    private ServiceConnection rendererConn;
+
+    // sessionId -> renderer slot, guarded by `this`.
+    private final Map<Integer, Integer> sessionSlots = new HashMap<>();
+    private final boolean[] slotUsed = new boolean[MAX_PRESENTERS];
 
     private NsdManager nsdManager;
     private NsdManager.RegistrationListener regListener;
@@ -65,63 +75,130 @@ public class WebrtcService extends Service {
 
     private void sessionLoop() {
         while (!stopping) {
-            Surface surface = acquireRendererSurface();
-            if (surface == null) {
+            if (!bindRenderer()) {
                 Log.i(TAG, "webrtc: renderer app not reachable, retrying");
                 sleepMs(1000);
                 continue;
             }
-            if (!nativeStart(surface, WHIP_PORT)) {
+            if (!nativeStart(WHIP_PORT)) {
                 Log.e(TAG, "webrtc: native start failed");
                 nativeStop();
+                unbindRenderer();
                 sleepMs(2000);
                 continue;
             }
-            Log.i(TAG, "webrtc: WHIP receiver up on port " + WHIP_PORT
-                    + " - POST an SDP offer to http://<this-ip>:" + WHIP_PORT + "/whip/endpoint");
+            Log.i(TAG, "webrtc: WHIP room up on port " + WHIP_PORT
+                    + " - presenters POST offers to http://<this-ip>:" + WHIP_PORT
+                    + "/whip/endpoint");
             advertise();
-            while (!stopping && !nativeSurfaceDead() && rendererAlive) sleepMs(1000);
+            // Poll: reaps departed presenters. If the renderer app dies, every
+            // slot Surface is abandoned (codecs stall silently - M10 lesson),
+            // so tear the room down and rebuild once it's back.
+            while (!stopping && rendererAlive) {
+                nativePoll();
+                sleepMs(500);
+            }
             nativeStop();
-            Log.i(TAG, "webrtc: session ended, re-acquiring surface");
+            clearSlots();
+            unbindRenderer();
+            Log.i(TAG, "webrtc: renderer lost, rebuilding room");
             sleepMs(500);
         }
     }
 
-    private Surface acquireRendererSurface() {
-        final BlockingQueue<Surface> result = new ArrayBlockingQueue<>(1);
-        ServiceConnection conn = new ServiceConnection() {
+    // ---- called from native (whip_room callbacks) --------------------------
+
+    /** Acquire a renderer slot Surface for a presenter session. */
+    public synchronized Surface acquireSlotSurface(int sessionId) {
+        IVkRendererService r = renderer;
+        if (r == null) return null;
+        int slot = -1;
+        for (int i = 0; i < MAX_PRESENTERS; i++) {
+            if (!slotUsed[i]) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0) return null;
+        try {
+            Surface s = r.acquireInputSurfaceSlot(slot);
+            if (s == null) return null;
+            slotUsed[slot] = true;
+            sessionSlots.put(sessionId, slot);
+            Log.i(TAG, "webrtc: session " + sessionId + " -> renderer slot " + slot);
+            return s;
+        } catch (Exception e) {
+            Log.w(TAG, "webrtc: acquireInputSurfaceSlot failed: " + e);
+            return null;
+        }
+    }
+
+    /** Presenter left: free their renderer slot. */
+    public synchronized void releaseSlotSurface(int sessionId) {
+        Integer slot = sessionSlots.remove(sessionId);
+        if (slot == null) return;
+        slotUsed[slot] = false;
+        IVkRendererService r = renderer;
+        if (r == null) return;
+        try {
+            r.releaseInputSurfaceSlot(slot);
+        } catch (Exception e) {
+            Log.w(TAG, "webrtc: releaseInputSurfaceSlot failed: " + e);
+        }
+    }
+
+    private synchronized void clearSlots() {
+        sessionSlots.clear();
+        for (int i = 0; i < MAX_PRESENTERS; i++) slotUsed[i] = false;
+    }
+
+    // ---- renderer binding --------------------------------------------------
+
+    private boolean bindRenderer() {
+        final BlockingQueue<Boolean> ready = new ArrayBlockingQueue<>(1);
+        rendererConn = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
-                try {
-                    IVkRendererService renderer = IVkRendererService.Stub.asInterface(service);
-                    renderer.releaseInputSurface();
-                    Surface s = renderer.acquireInputSurface();
-                    if (s != null) {
-                        rendererAlive = true;
-                        result.offer(s);
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "webrtc: acquireInputSurface failed: " + e);
-                }
+                renderer = IVkRendererService.Stub.asInterface(service);
+                rendererAlive = true;
+                ready.offer(Boolean.TRUE);
             }
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
+                renderer = null;
                 rendererAlive = false;
             }
         };
         Intent intent = new Intent();
         intent.setComponent(new ComponentName(RENDERER_PACKAGE, RENDERER_SERVICE));
-        if (!bindService(intent, conn, Context.BIND_AUTO_CREATE)) return null;
+        if (!bindService(intent, rendererConn, Context.BIND_AUTO_CREATE)) return false;
         try {
-            Surface s = result.poll(5, TimeUnit.SECONDS);
-            if (s == null) unbindService(conn);
-            return s;
+            Boolean ok = ready.poll(5, TimeUnit.SECONDS);
+            if (ok == null) {
+                unbindRenderer();
+                return false;
+            }
+            return true;
         } catch (InterruptedException e) {
-            unbindService(conn);
-            return null;
+            unbindRenderer();
+            return false;
         }
     }
+
+    private void unbindRenderer() {
+        renderer = null;
+        rendererAlive = false;
+        if (rendererConn != null) {
+            try {
+                unbindService(rendererConn);
+            } catch (Exception ignored) {
+            }
+            rendererConn = null;
+        }
+    }
+
+    // ---- mDNS --------------------------------------------------------------
 
     /** Advertise _vkrender-whip._tcp so the Flutter sender auto-discovers us. */
     private void advertise() {
@@ -164,6 +241,8 @@ public class WebrtcService extends Service {
         advertised = false;
     }
 
+    // ---- service scaffolding ----------------------------------------------
+
     private static void sleepMs(long ms) {
         try {
             Thread.sleep(ms);
@@ -178,7 +257,7 @@ public class WebrtcService extends Service {
         nm.createNotificationChannel(channel);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("vkrender WebRTC")
-                .setContentText("WHIP endpoint on port " + WHIP_PORT)
+                .setContentText("WHIP room on port " + WHIP_PORT)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setOngoing(true)
                 .build();
@@ -194,6 +273,7 @@ public class WebrtcService extends Service {
         stopping = true;
         unadvertise();
         nativeStop();
+        unbindRenderer();
         super.onDestroy();
     }
 

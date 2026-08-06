@@ -23,10 +23,10 @@ URL="https://gstreamer.freedesktop.org/data/pkg/android/${VER}/gstreamer-1.0-and
 # (renderer/decoder, airplay, webrtc). The pruned tree must be a superset of
 # every module's needs, so keep this in sync with the pkg_check_modules lists.
 MODULES="gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 \
+gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gio-2.0 \
 gstcoreelements gstapp gstrtsp gstrtp gstrtpmanager gstudp gsttcp \
 gstplayback gsttypefindfunctions gstvideoparsersbad \
-gstwebrtc gstnice gstdtls gstsrtp gstrtpmanagerbad gstrswebrtc gstrsrtp \
-gstwebrtchttp"
+gstwebrtc gstnice gstdtls gstsrtp gstrtpmanagerbad"
 
 # Tarball top-level dirs use NDK-ish names, not Android ABI names.
 tardir() { case "$1" in arm64-v8a) echo arm64 ;; armeabi-v7a) echo armv7 ;; *) echo "$1" ;; esac; }
