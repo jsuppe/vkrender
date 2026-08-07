@@ -45,13 +45,17 @@ Get-WindowsCapability -Online -Name "App.WirelessDisplay.Connect*"
 | `Wireless Display Supported` | **Yes** (Graphics Driver: Yes, Wi-Fi Driver: Yes) |
 | `MiracastReceiver.GetStatus()` | listening status 0, max connections 1 |
 | `MiracastReceiverSession::Start()` | **never returns** (documented synchronous; hangs indefinitely) |
-| `App.WirelessDisplay.Connect~~~~0.0.1.0` | **NotPresent** ← prime suspect |
+| `App.WirelessDisplay.Connect~~~~0.0.1.0` | **NotPresent** → installed 2026-08-06 |
+| `Start()` after installing that feature | **still never returns** (no reboot flag set) |
+| Projection policy keys | absent (PolicyManager / Policies / HKCU WirelessDisplay) |
 
-So the driver stack is capable, yet the sink never starts. The **Wireless
-Display optional feature is not installed**, and that is the leading
-explanation: the FOD installs the Miracast *sink infrastructure*, and the
-WinRT `MiracastReceiver` API appears to sit on top of it — with nothing
-installed to start, a silent hang is consistent with what we see.
+So the driver stack is capable, yet the sink never starts.
+
+**Tested and ruled out: the missing optional feature.** It was `NotPresent`;
+installing `App.WirelessDisplay.Connect~~~~0.0.1.0` did **not** change the
+behaviour — `Start()` still never returns, no reboot was flagged, and no
+projection policy keys exist to be blocking it. So the FOD was a genuine
+prerequisite gap but not *the* cause.
 
 > Note: this contradicts an assumption carried in this project since M16
 > ("Windows' own Projecting to this PC must be off **or not installed**").
@@ -66,22 +70,24 @@ Install it (elevated, downloads from Microsoft) and retest:
 Add-WindowsCapability -Online -Name "App.WirelessDisplay.Connect~~~~0.0.1.0"
 ```
 
-Remaining candidates if that does not fix it, none yet confirmed:
+Remaining candidates, in current order of suspicion:
 
-1. **Package identity.** `Windows.Media.Miracast` is a WinRT API intended
+1. **Package identity (now the leading hypothesis).** `Windows.Media.Miracast` is a WinRT API intended
    for a sink *app*; several WinRT surfaces behave differently (or block on
    UI/consent plumbing) when called from a plain unpackaged console EXE like
    `vkr_miracast.exe`. Testing this means packaging the receiver (MSIX) or
    giving it a CoreApplication view.
-2. **Radio state.** The physical Wi-Fi adapter is enabled but not associated
-   with any network. Some drivers will not bring up a P2P group owner while
-   the radio is idle/power-saving.
-3. **Wireless Display optional feature.** If the OS receiver feature is
-   absent, the sink infrastructure it installs may be missing; if it is
-   present *and* "Projecting to this PC" is enabled, it owns the sink role
-   and our session should fail with `AccessDenied` (not hang).
+2. **Radio state.** The physical Wi-Fi adapter is enabled but **not
+   associated with any network** (`Status: Disconnected`) — the cheapest
+   remaining test is to join any Wi-Fi network and retry, since some drivers
+   will not bring up a P2P group owner while the radio is idle.
+3. **"Projecting to this PC" availability.** Now that the feature exists,
+   Settings → System → Projecting to this PC has an availability dropdown
+   that defaults to *Always off* on desktops; with it off there is no sink
+   for anyone to own.
 4. **Policy.** `AllowProjectionToPC` under the WirelessDisplay policy
-   manager key can disable the receiver path machine-wide.
+   manager key can disable the receiver path machine-wide — measured absent
+   here, so not the cause on this machine.
 
 ## What the receiver does about it
 
