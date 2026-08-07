@@ -45,9 +45,28 @@ Get-WindowsCapability -Online -Name "App.WirelessDisplay.Connect*"
 | `Wireless Display Supported` | **Yes** (Graphics Driver: Yes, Wi-Fi Driver: Yes) |
 | `MiracastReceiver.GetStatus()` | listening status 0, max connections 1 |
 | `MiracastReceiverSession::Start()` | **never returns** (documented synchronous; hangs indefinitely) |
+| `App.WirelessDisplay.Connect~~~~0.0.1.0` | **NotPresent** ← prime suspect |
 
-So the capability is present and the hang is elsewhere. Open candidates,
-none yet confirmed:
+So the driver stack is capable, yet the sink never starts. The **Wireless
+Display optional feature is not installed**, and that is the leading
+explanation: the FOD installs the Miracast *sink infrastructure*, and the
+WinRT `MiracastReceiver` API appears to sit on top of it — with nothing
+installed to start, a silent hang is consistent with what we see.
+
+> Note: this contradicts an assumption carried in this project since M16
+> ("Windows' own Projecting to this PC must be off **or not installed**").
+> The feature being installed is likely a *prerequisite*; what must not
+> happen is the OS Connect app holding an **active** projection session
+> while we try to own the sink (that path returns `AccessDenied`, which we
+> handle separately).
+
+Install it (elevated, downloads from Microsoft) and retest:
+
+```powershell
+Add-WindowsCapability -Online -Name "App.WirelessDisplay.Connect~~~~0.0.1.0"
+```
+
+Remaining candidates if that does not fix it, none yet confirmed:
 
 1. **Package identity.** `Windows.Media.Miracast` is a WinRT API intended
    for a sink *app*; several WinRT surfaces behave differently (or block on

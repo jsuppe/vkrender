@@ -9,8 +9,11 @@
 //   vkr_miracast [pipe] [friendlyName]
 //
 // Notes:
-//  - Windows' own "Projecting to this PC" (Wireless Display) must be off or
-//    not installed, or it claims the sink role first.
+//  - The "Wireless display" optional feature (App.WirelessDisplay.Connect)
+//    supplies the Miracast SINK infrastructure this API builds on and looks
+//    to be a prerequisite - measured NotPresent on a machine where Start()
+//    hangs (docs/MIRACAST.md). What must not happen is the OS Connect app
+//    holding an ACTIVE projection session, which surfaces as AccessDenied.
 //  - Discovery runs over Wi-Fi Direct via the Microsoft Wi-Fi Direct Virtual
 //    Adapter (roles negotiated dynamically over a WDI/WiFiCx driver - see
 //    docs/MIRACAST.md); Windows senders can also use the LAN (MS-MICE).
