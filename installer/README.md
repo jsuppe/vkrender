@@ -47,6 +47,18 @@ continues — AirPlay and WebRTC are unaffected. Manual equivalent:
 Add-WindowsCapability -Online -Name App.WirelessDisplay.Connect~~~~0.0.1.0
 ```
 
+## Virtual camera registration
+
+The Media Foundation camera registers **system-wide** so it stays visible when
+the appliance isn't running — required by anything that persists a camera
+choice, such as a Teams Rooms content camera. That needs elevation: run
+unelevated and it falls back to a session-scoped camera that disappears with
+the process (it says which on stdout). The uninstaller runs
+`vkr_vcam --unregister` so no ghost camera is left behind.
+
+Details, measured instance paths, and the Teams Rooms analysis:
+[docs/VIRTUAL_CAMERA.md](../docs/VIRTUAL_CAMERA.md).
+
 ## vkrender.ini
 
 ```ini

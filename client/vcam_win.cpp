@@ -1,12 +1,20 @@
-// M24: virtual camera fed from the scene. Negotiates a view with the
-// renderer (consumer API), reads each delivered frame back and pumps it into
-// the softcam DirectShow virtual camera - the vkrender scene becomes a
-// webcam in Chrome / OBS / Zoom / classic Teams (DirectShow enumeration;
-// MF-only UWP apps need the future MFCreateVirtualCamera source).
+// M24: virtual camera fed from the scene. Negotiates a view with the renderer
+// (consumer API), reads each delivered frame back and pumps it into a virtual
+// camera, so the vkrender scene becomes a webcam.
 //
-//   vkr_vcam [pipe] [width] [height] [fps]
+//   vkr_vcam [pipe] [width] [height] [fps]   DirectShow softcam (default)
+//   vkr_vcam --mf [...]                      Media Foundation camera
+//   vkr_vcam --unregister                    remove the MF camera (elevated)
+//
+// Default tier is the softcam DirectShow filter: Chrome, OBS, Zoom, classic
+// Teams. --mf uses MFCreateVirtualCamera instead, which Windows bridges into
+// DirectShow too - so one registration covers MF/UWP apps *and* DirectShow
+// apps, and it is the tier anything that persists a camera choice needs.
 //
 // One-time setup (elevated):  regsvr32 softcam.dll
+//                             regsvr32 vkrender_vcam_source.dll   (--mf)
+// The installer does both. Registration details, measured instance paths and
+// the Teams Rooms content-camera analysis: docs/VIRTUAL_CAMERA.md
 
 #ifdef _WIN32
 
@@ -34,15 +42,76 @@ using Microsoft::WRL::ComPtr;
 // registered once with elevated regsvr32).
 static const wchar_t* kVcamClsid = L"{9D8BF3A1-5F2C-4C6B-B2A4-7E1D0C3E5A21}";
 
+// M26: create the MF virtual camera, preferring a registration that OUTLIVES
+// this process.
+//
+// Teams Rooms (and anything else that persists a camera choice) stores a
+// device instance path and health-checks it, so a camera that only exists
+// while vkr_vcam runs reads as "missing" whenever the appliance is down. A
+// System-lifetime camera stays registered across process exit and reboot; the
+// Camera Frame Server activates vkrender_vcam_source.dll on demand.
+//
+// System lifetime + AllUsers access need elevation. Fall back to the original
+// session-scoped registration rather than failing, so a non-elevated run keeps
+// working exactly as it did before.  Measured instance path either way:
+//   SWD\VCAMDEVAPI\<stable hash of name+CLSID>   (class SoftwareDevice,
+//   registered under KSCATEGORY_VIDEO_CAMERA - see docs/VIRTUAL_CAMERA.md)
+static HRESULT createRaw(ComPtr<IMFVirtualCamera>& cam, MFVirtualCameraLifetime life,
+                         MFVirtualCameraAccess access) {
+    return MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource, life, access,
+                                 L"vkrender Camera", kVcamClsid, nullptr, 0, &cam);
+}
+
+// Measured: MFCreateVirtualCamera(System, AllUsers) SUCCEEDS unelevated - it is
+// Start() that then fails with E_ACCESSDENIED (0x80070005). So the privilege
+// check has to happen around Start, not around Create, or an unelevated run
+// silently ends up with no camera at all.
+static HRESULT startVirtualCamera(ComPtr<IMFVirtualCamera>& cam, bool* persistent) {
+    HRESULT hr = createRaw(cam, MFVirtualCameraLifetime_System, MFVirtualCameraAccess_AllUsers);
+    if (SUCCEEDED(hr)) {
+        hr = cam->Start(nullptr);
+        if (SUCCEEDED(hr)) {
+            *persistent = true;
+            return S_OK;
+        }
+        cam->Remove(); // never leave a registered-but-dead system camera behind
+        cam->Shutdown();
+        cam.Reset();
+    }
+    *persistent = false;
+    hr = createRaw(cam, MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser);
+    if (FAILED(hr)) return hr;
+    return cam->Start(nullptr);
+}
+
+// A System-lifetime camera survives uninstall unless something removes it, so
+// the uninstaller calls this to avoid leaving a ghost camera behind.
+static int unregisterVirtualCamera() {
+    if (FAILED(MFStartup(MF_VERSION))) return 1;
+    ComPtr<IMFVirtualCamera> cam;
+    HRESULT hr = createRaw(cam, MFVirtualCameraLifetime_System, MFVirtualCameraAccess_AllUsers);
+    if (SUCCEEDED(hr)) hr = cam->Remove();
+    if (FAILED(hr))
+        fprintf(stderr, "vcam: could not remove the virtual camera (0x%08lx) - "
+                        "run this elevated to remove a system-wide registration\n", hr);
+    else
+        printf("vcam: virtual camera registration removed\n");
+    cam.Reset();
+    MFShutdown();
+    return SUCCEEDED(hr) ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     bool mfMode = false;
-    // strip --mf from argv
+    // strip --mf / --unregister from argv
     int argn = 1;
     const char* args[8] = {};
     for (int i = 1; i < argc && argn < 8; ++i) {
         if (strcmp(argv[i], "--mf") == 0) {
             mfMode = true;
+        } else if (strcmp(argv[i], "--unregister") == 0) {
+            return unregisterVirtualCamera();
         } else {
             args[argn++] = argv[i];
         }
@@ -68,6 +137,7 @@ int main(int argc, char** argv) {
 
     scCamera cam = nullptr;
     ComPtr<IMFVirtualCamera> mfCam;
+    bool persistent = false;
     HANDLE shm = nullptr, shmMutex = nullptr;
     void* shmView = nullptr;
 
@@ -77,22 +147,19 @@ int main(int argc, char** argv) {
         // Camera Frame Server; frames travel via the Global\ shared ring the
         // source creates once a camera app opens the stream.
         if (FAILED(MFStartup(MF_VERSION))) return 1;
-        HRESULT hr = MFCreateVirtualCamera(
-            MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_Session,
-            MFVirtualCameraAccess_CurrentUser, L"vkrender Camera", kVcamClsid, nullptr, 0,
-            &mfCam);
+        HRESULT hr = startVirtualCamera(mfCam, &persistent);
         if (FAILED(hr)) {
             fprintf(stderr,
-                    "vcam: MFCreateVirtualCamera failed (0x%08lx) - is "
+                    "vcam: could not start the MF virtual camera (0x%08lx) - is "
                     "vkrender_vcam_source.dll registered (elevated regsvr32)?\n", hr);
             return 1;
         }
-        hr = mfCam->Start(nullptr);
-        if (FAILED(hr)) {
-            fprintf(stderr, "vcam: IMFVirtualCamera::Start failed (0x%08lx)\n", hr);
-            return 1;
-        }
         printf("vcam: MF virtual camera 'vkrender Camera' up - visible to all apps\n");
+        printf("vcam: registration is %s\n",
+               persistent ? "system-wide and persists after this process exits "
+                            "(needed by Teams Rooms content camera)"
+                          : "session-scoped - it disappears when this process exits; "
+                            "run elevated for a persistent camera");
     } else {
         // framerate 0: we push in real time as frames arrive (renderer paces).
         cam = scCreateCamera((int)w, (int)h, 0.0f);
@@ -192,7 +259,11 @@ int main(int argc, char** argv) {
     }
 
     if (mfCam) {
-        mfCam->Stop();
+        // Only stop a session camera. Stopping a system-wide one would defeat
+        // the point: the registration must stay visible while the appliance is
+        // down, so persistent cameras are released, never stopped.
+        // `--unregister` is the way to actually remove one.
+        if (!persistent) mfCam->Stop();
         mfCam->Shutdown();
         MFShutdown();
     }

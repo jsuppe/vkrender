@@ -85,6 +85,13 @@ Name: "wirelessdisplay"; Description: "Install Windows' ""Wireless display"" fea
 [Run]
 Filename: "{app}\vkr_appliance.exe"; Description: "Start the vkrender appliance now"; Flags: postinstall nowait skipifsilent
 
+[UninstallRun]
+; The MF camera registers system-wide (MFVirtualCameraLifetime_System) so Teams
+; Rooms and friends can persist it as a content camera. That registration
+; outlives uninstall unless it is removed - do it here, while still elevated.
+; See docs/VIRTUAL_CAMERA.md.
+Filename: "{app}\vkr_vcam.exe"; Parameters: "--unregister"; Flags: runhidden skipifdoesntexist; RunOnceId: "vcamunregister"
+
 [Code]
 var
   ConfigPage: TInputOptionWizardPage;
