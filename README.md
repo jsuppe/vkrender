@@ -135,15 +135,14 @@ and talks to `vkrenderer --serve` like any other producer. Live-cast
 verified from a macOS 26.5 sender.
 
 **Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine
-a discoverable cast target ("vkrender") and feeds the cast into the scene
-as a normal producer stream. Windows negotiates the sink role dynamically
-through the Microsoft Wi-Fi Direct Virtual Adapter layered over the
-WDI/WiFiCx driver, so support depends on the whole stack (driver + virtual
-adapter + graphics driver + the "Wireless display" optional feature), not on
-a hardware role bit — see [docs/MIRACAST.md](docs/MIRACAST.md) for the
-diagnostics and our measured findings. Disable Windows' "Projecting to this
-PC" first (it owns the sink role). `Start()` runs under a watchdog, so a
-stuck sink is reported instead of hanging.
+a discoverable cast target ("vkrender") and feeds the cast into the scene as
+a normal producer stream. **Check first: Settings → System → Projecting to
+this PC.** Receiving Miracast needs a Wi-Fi driver that provides the sink
+role; many adapters (including current Wi-Fi 6E parts) can only *send*, and
+`netsh wlan show driver`'s "Wireless Display Supported" line describes
+sending, not receiving. `Start()` runs under a watchdog so an unavailable
+sink is reported instead of hanging. Full investigation:
+[docs/MIRACAST.md](docs/MIRACAST.md).
 
 **PIN authorization (M25, Windows)**: set `VKR_PIN=1234` (fixed) or
 `VKR_PIN=auto` (fresh 4-digit code per connection) before starting a

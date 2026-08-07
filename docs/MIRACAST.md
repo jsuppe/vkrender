@@ -18,6 +18,22 @@ Consequences for this project:
   because the blocker lives elsewhere in the stack (feature not installed,
   radio state, another owner of the sink role, policy).
 
+## The authoritative check for RECEIVING
+
+**Settings → System → Projecting to this PC.** If it says
+
+> *"This device doesn't support receiving Miracast, so you can't project to
+> it wirelessly"*
+
+then the sink path does not exist on this machine and no application code —
+ours or Microsoft's — can create one.
+
+> **Do not use `netsh wlan show driver`'s "Wireless Display Supported" line
+> for this.** That line describes Miracast **source** capability (this PC
+> projecting *to* a display). A machine can report
+> `Wireless Display Supported: Yes` and still be unable to *receive*, which
+> is exactly what happened here and cost real debugging time.
+
 ## Diagnostics (run these before blaming hardware)
 
 ```powershell
@@ -48,14 +64,28 @@ Get-WindowsCapability -Online -Name "App.WirelessDisplay.Connect*"
 | `App.WirelessDisplay.Connect~~~~0.0.1.0` | **NotPresent** → installed 2026-08-06 |
 | `Start()` after installing that feature | **still never returns** (no reboot flag set) |
 | Projection policy keys | absent (PolicyManager / Policies / HKCU WirelessDisplay) |
+| **Settings → Projecting to this PC** | **"This device doesn't support receiving Miracast"** ← the answer |
 
-So the driver stack is capable, yet the sink never starts.
+**Conclusion for this machine: Miracast receiving is not available**, per
+Windows itself. The Realtek 8852CE's driver supports Miracast *source* but
+not the *sink* role, so `MiracastReceiverSession::Start()` had nothing to
+start — and rather than returning `MiracastNotSupported` it simply never
+returned.
 
-**Tested and ruled out: the missing optional feature.** It was `NotPresent`;
-installing `App.WirelessDisplay.Connect~~~~0.0.1.0` did **not** change the
-behaviour — `Start()` still never returns, no reboot was flagged, and no
-projection policy keys exist to be blocking it. So the FOD was a genuine
-prerequisite gap but not *the* cause.
+The investigation, in order, so the dead ends are on record:
+
+1. ~~"No Miracast-capable Wi-Fi adapter / wired-only PC"~~ — wrong model;
+   Windows negotiates the sink role dynamically through the Wi-Fi Direct
+   Virtual Adapter over a WDI/WiFiCx driver.
+2. ~~Missing "Wireless display" optional feature~~ — it *was* missing (a
+   genuine prerequisite gap), but installing it changed nothing.
+3. ~~Pending reboot / projection policy~~ — no CBS reboot flag, no policy
+   keys.
+4. ~~`netsh` says "Wireless Display Supported: Yes"~~ — misread: that is
+   **source** capability, not sink.
+5. **Settings → Projecting to this PC states the device cannot receive
+   Miracast.** Case closed; no application-side fix exists (packaging the
+   receiver as MSIX would not help).
 
 > Note: this contradicts an assumption carried in this project since M16
 > ("Windows' own Projecting to this PC must be off **or not installed**").
@@ -70,13 +100,15 @@ Install it (elevated, downloads from Microsoft) and retest:
 Add-WindowsCapability -Online -Name "App.WirelessDisplay.Connect~~~~0.0.1.0"
 ```
 
-Remaining candidates, in current order of suspicion:
+On a machine that *does* report receiving support, if `Start()` still hangs,
+the remaining candidate is:
 
-1. **Package identity (now the leading hypothesis).** `Windows.Media.Miracast` is a WinRT API intended
-   for a sink *app*; several WinRT surfaces behave differently (or block on
+1. **Package identity.** `Windows.Media.Miracast` is a WinRT API intended
+   for a sink *app*; some WinRT surfaces behave differently (or block on
    UI/consent plumbing) when called from a plain unpackaged console EXE like
    `vkr_miracast.exe`. Testing this means packaging the receiver (MSIX) or
-   giving it a CoreApplication view.
+   giving it a CoreApplication view. Untested — we never reached a machine
+   with a working sink.
 2. **Radio state.** The physical Wi-Fi adapter is enabled but **not
    associated with any network** (`Status: Disconnected`) — the cheapest
    remaining test is to join any Wi-Fi network and retry, since some drivers

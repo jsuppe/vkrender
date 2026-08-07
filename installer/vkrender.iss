@@ -40,7 +40,12 @@ Name: "custom"; Description: "Custom"; Flags: iscustom
 [Components]
 Name: "core"; Description: "Renderer + appliance launcher"; Types: full receivers custom; Flags: fixed
 Name: "webrtc"; Description: "WebRTC / WHIP receiver (Flutter sender, browsers, OBS)"; Types: full receivers custom
-Name: "miracast"; Description: "Miracast receiver (Windows / Android senders)"; Types: full receivers custom
+; Miracast RECEIVING needs a Wi-Fi driver that provides the sink role - many
+; adapters (incl. some current Wi-Fi 6E parts) support projecting only. Check
+; Settings > System > Projecting to this PC before enabling this. Off by
+; default in the standard install types so nobody gets a receiver that cannot
+; work; still selectable under "Custom". See docs/MIRACAST.md.
+Name: "miracast"; Description: "Miracast receiver (needs a Wi-Fi adapter that can RECEIVE Miracast - see Settings > Projecting to this PC)"; Types: custom
 Name: "airplay"; Description: "AirPlay receiver (Apple senders, GPLv3)"; Types: full receivers custom; Check: AirplayAvailable
 Name: "vcam"; Description: "Virtual camera (scene as a webcam)"; Types: full custom
 Name: "vcam\dshow"; Description: "DirectShow camera (Chrome, OBS, Zoom, classic Teams)"; Types: full custom

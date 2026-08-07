@@ -188,12 +188,13 @@ int main(int argc, char** argv) {
         // the whole stack. Print what to check instead. See docs/MIRACAST.md.
         wprintf(L"miracast: Start() did not return within 15 s - giving up so the appliance "
                 L"isn't left with a receiver that is silently doing nothing.\n"
-                L"miracast: check, in this order:\n"
-                L"miracast:   netsh wlan show driver | findstr \"Wireless Display\"\n"
-                L"miracast:   (elevated) Get-WindowsCapability -Online -Name "
-                L"App.WirelessDisplay.Connect*\n"
-                L"miracast:   Wi-Fi radio on? 'Projecting to this PC' off (it owns the sink)?\n"
-                L"miracast: details + our findings: docs/MIRACAST.md\n"
+                L"miracast: FIRST check Settings > System > Projecting to this PC. If it says "
+                L"this device doesn't support RECEIVING Miracast, the sink does not exist on "
+                L"this machine and no app can create one (that is a Wi-Fi driver capability).\n"
+                L"miracast: NB 'netsh wlan show driver' -> 'Wireless Display Supported' "
+                L"describes SENDING, not receiving - it can say Yes on a device that cannot "
+                L"receive.\n"
+                L"miracast: background + the full investigation: docs/MIRACAST.md\n"
                 L"miracast: AirPlay and WebRTC receiving are unaffected - set miracast=0 in "
                 L"vkrender.ini to skip this.\n");
         fflush(stdout);
