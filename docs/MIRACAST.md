@@ -64,13 +64,25 @@ Get-WindowsCapability -Online -Name "App.WirelessDisplay.Connect*"
 | `App.WirelessDisplay.Connect~~~~0.0.1.0` | **NotPresent** → installed 2026-08-06 |
 | `Start()` after installing that feature | **still never returns** (no reboot flag set) |
 | Projection policy keys | absent (PolicyManager / Policies / HKCU WirelessDisplay) |
-| **Settings → Projecting to this PC** | **"This device doesn't support receiving Miracast"** ← the answer |
+| **Settings → Projecting to this PC** | "This device doesn't support receiving Miracast" |
+| `netsh wlan show wirelesscapabilities` | **`Miracast Sink: Supported`**, Wi-Fi Direct Device/GO/Client all Supported |
+| Restart state when all of the above was measured | **`PendingFileRenameOperations` set; last boot 17 days before the feature was installed** |
 
-**Conclusion for this machine: Miracast receiving is not available**, per
-Windows itself. The Realtek 8852CE's driver supports Miracast *source* but
-not the *sink* role, so `MiracastReceiverSession::Start()` had nothing to
-start — and rather than returning `MiracastNotSupported` it simply never
-returned.
+**Status: unresolved, pending a restart.** Two measurements disagree:
+
+- Settings → Projecting to this PC says the device cannot receive Miracast.
+- The Wi-Fi driver itself reports **`Miracast Sink: Supported`** (plus
+  Wi-Fi Direct Device / GO / Client).
+
+The tiebreaker is almost certainly that the "Wireless display" feature was
+installed **after** the machine last booted, with
+`PendingFileRenameOperations` still set — so the sink infrastructure is
+staged but not active, and Settings is reporting the pre-install state.
+
+**Next step: restart, then re-check Settings and rerun the receiver.** An
+earlier revision of this document declared the case closed on the strength
+of the Settings message alone; the capability dump reopened it. Record what
+each source actually measures before concluding.
 
 The investigation, in order, so the dead ends are on record:
 
