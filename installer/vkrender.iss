@@ -71,6 +71,11 @@ Name: "{autodesktop}\vkrender appliance"; Filename: "{app}\vkr_appliance.exe"; W
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts"
+; Miracast receiving builds on Windows' "Wireless display" optional feature
+; (it supplies the sink infrastructure). Offered - never forced: it is an OS
+; feature that downloads from Microsoft, may be blocked on managed machines,
+; and also enables "Projecting to this PC".
+Name: "wirelessdisplay"; Description: "Install Windows' ""Wireless display"" feature (needed to receive Miracast; downloads from Microsoft)"; GroupDescription: "Miracast prerequisite"; Components: miracast; Check: WirelessDisplayMissing
 
 [Run]
 Filename: "{app}\vkr_appliance.exe"; Description: "Start the vkrender appliance now"; Flags: postinstall nowait skipifsilent
@@ -79,6 +84,13 @@ Filename: "{app}\vkr_appliance.exe"; Description: "Start the vkrender appliance 
 var
   ConfigPage: TInputOptionWizardPage;
   PinPage: TInputQueryWizardPage;
+
+// Line break helper: a source line may not START with '#' (the Inno
+// preprocessor claims those), which makes inline #13#10 awkward.
+function NL(): String;
+begin
+  Result := Chr(13) + Chr(10);
+end;
 
 // '1'/'0' for vkrender.ini (Pascal Script needs helpers declared first).
 function BoolToStr2(B: Boolean): String;
@@ -99,6 +111,20 @@ function GStreamerInstalled(): Boolean;
 begin
   Result := DirExists('C:\gstreamer\1.0\msvc_x86_64\bin')
          or DirExists('C:\Program Files\gstreamer\1.0\msvc_x86_64\bin');
+end;
+
+// Is the "Wireless display" FOD absent? (Any query failure -> treat as
+// missing, so we offer the option rather than silently skipping it.)
+function WirelessDisplayMissing(): Boolean;
+var
+  Code: Integer;
+begin
+  Result := True;
+  if Exec('powershell.exe',
+          '-NoProfile -ExecutionPolicy Bypass -Command "if ((Get-WindowsCapability -Online ' +
+          '-Name App.WirelessDisplay.Connect*).State -eq ''Installed'') { exit 0 } else { exit 1 }"',
+          '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Result := (Code <> 0);
 end;
 
 procedure InitializeWizard();
@@ -134,10 +160,10 @@ begin
     if (WizardIsComponentSelected('webrtc') or WizardIsComponentSelected('airplay'))
        and (not GStreamerInstalled()) then
     begin
-      if MsgBox('The GStreamer MSVC x86_64 runtime was not found.' #13#10 #13#10
-                'The WebRTC and AirPlay receivers need it. Install it from'  #13#10
-                'https://gstreamer.freedesktop.org/download/ (runtime MSI),' #13#10
-                'then start the appliance.' #13#10 #13#10
+      if MsgBox('The GStreamer MSVC x86_64 runtime was not found.' + NL + NL +
+                'The WebRTC and AirPlay receivers need it. Install it from' + NL +
+                'https://gstreamer.freedesktop.org/download/ (runtime MSI),' + NL +
+                'then start the appliance.' + NL + NL +
                 'Continue installing anyway?', mbConfirmation, MB_YESNO) = IDNO then
         Result := False;
     end;
@@ -148,8 +174,29 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Ini, Pin, VcamMode: String;
+  Code: Integer;
 begin
   if CurStep <> ssPostInstall then Exit;
+
+  // Optional prerequisite, only when the user ticked it. Non-fatal: a
+  // failure here (no internet, WSUS policy, managed device) must not fail
+  // the install - the other two receivers do not need it.
+  if WizardIsTaskSelected('wirelessdisplay') then
+  begin
+    WizardForm.StatusLabel.Caption := 'Installing the Windows "Wireless display" feature...';
+    if not Exec('powershell.exe',
+                '-NoProfile -ExecutionPolicy Bypass -Command "Add-WindowsCapability -Online ' +
+                '-Name App.WirelessDisplay.Connect~~~~0.0.1.0"',
+                '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+      MsgBox('The "Wireless display" feature could not be installed automatically' + NL +
+             '(common on offline or company-managed machines).' + NL + NL +
+             'Miracast receiving will not work until it is present. To install it' + NL +
+             'later, run this in an elevated PowerShell:' + NL + NL +
+             '  Add-WindowsCapability -Online -Name App.WirelessDisplay.Connect~~~~0.0.1.0'
+             + NL + NL + 'AirPlay and WebRTC receiving are unaffected.',
+             mbInformation, MB_OK);
+  end;
+
   Ini := ExpandConstant('{app}\vkrender.ini');
 
   if not ConfigPage.Values[0] then

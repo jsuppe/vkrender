@@ -28,11 +28,24 @@ The AirPlay receiver comes from the sibling
 The wizard asks about PIN policy (off / new code per connection / fixed) and
 writes `vkrender.ini` next to the executables.
 
-## Runtime dependency
+## Runtime dependencies
 
-The WebRTC and AirPlay receivers need the **GStreamer MSVC x86_64 runtime**
-(<https://gstreamer.freedesktop.org/download/>). The installer checks for it
-and warns if it is missing; everything else works without it.
+**GStreamer MSVC x86_64 runtime** (<https://gstreamer.freedesktop.org/download/>)
+— needed by the WebRTC and AirPlay receivers. The installer checks and warns;
+everything else works without it.
+
+**Windows "Wireless display" optional feature** — needed to *receive*
+Miracast (it supplies the sink infrastructure; see
+[docs/MIRACAST.md](../docs/MIRACAST.md)). When you select the Miracast
+component and the feature is absent, the wizard offers a checkbox to install
+it. It is **offered, never forced**: it is an OS feature that downloads from
+Microsoft, can be blocked on managed machines, and also switches on
+"Projecting to this PC". If the install fails the wizard says so and
+continues — AirPlay and WebRTC are unaffected. Manual equivalent:
+
+```powershell
+Add-WindowsCapability -Online -Name App.WirelessDisplay.Connect~~~~0.0.1.0
+```
 
 ## vkrender.ini
 
