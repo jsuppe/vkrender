@@ -96,6 +96,16 @@ public:
     // For the headless dump path (primary target is vk.swapImages[0]).
     VkCommandPool commandPool() const { return cmdPool_; }
 
+    // M31: is this stream still on screen? True while it is settled OR still
+    // animating out. A producer whose pipe has closed must have its ring kept
+    // alive until this goes false, otherwise the exit animation samples freed
+    // memory - which is why the service defers teardown rather than freeing on
+    // disconnect. Only the Presentation layout animates, so this is false
+    // elsewhere and teardown is immediate as before.
+    bool retainsStream(uint64_t id) const {
+        return layout_ == SceneLayout::Presentation && motion_.has(id);
+    }
+
     // Called from the GLFW key callback; public for the C callback trampoline.
     void handleKey(int key);
 
@@ -143,9 +153,12 @@ private:
     };
     FrameSync frames_[kFramesInFlight];
     uint64_t frameIndex_ = 0;
-    // M31: entry/reflow animation for presentation tiles. Shared with the
+    // M31: entry/reflow/exit animation for presentation tiles. Shared with the
     // Android wall demo (scene_motion.h) so the motion is written once.
     SceneMotion motion_;
+    // Last known pool slot per stream id, so a stream that has left `streams`
+    // can still be sampled while it animates out.
+    std::vector<std::pair<uint64_t, int64_t>> tileSlots_;
     uint64_t renders_ = 0;
     int64_t rateWindowStart_ = 0;
     // M28: VKR_SCENE_TIMING breakdown, accumulated over the 5 s report window.

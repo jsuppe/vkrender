@@ -480,19 +480,27 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             }
             motion_.update(enabledIds.data(), targets, n, (float)dtSec, W);
 
+            // Remember each live stream's pool slot. A departing stream is no
+            // longer in `streams` (that is how motion learns it is leaving),
+            // so without this its texture could not be found and the exit
+            // would pop. The service keeps the ring alive until
+            // retainsStream() goes false, so the slot stays valid throughout.
+            for (size_t i = 0; i < enabledIds.size(); ++i) {
+                bool found = false;
+                for (auto& e : tileSlots_)
+                    if (e.first == enabledIds[i]) {
+                        e.second = enabled[i];
+                        found = true;
+                        break;
+                    }
+                if (!found) tileSlots_.push_back({enabledIds[i], enabled[i]});
+            }
+
             for (size_t k = 0; k < motion_.count(); ++k) {
-                // A departing stream's producer slot is freed the moment it
-                // disconnects, so there is nothing left to sample and the exit
-                // animation cannot be drawn here (the Android harness can,
-                // because its tiles are procedural). Skipping keeps the reflow
-                // of the survivors, which is the visible half. Animating exits
-                // on desktop needs the service to hold a slot until
-                // motion_.leavingAt() clears - see docs/MULTIDISPLAY.md.
-                if (motion_.leavingAt(k)) continue;
                 int64_t slot = -1;
-                for (size_t i = 0; i < enabledIds.size(); ++i)
-                    if (enabledIds[i] == motion_.idAt(k)) {
-                        slot = enabled[i];
+                for (const auto& e : tileSlots_)
+                    if (e.first == motion_.idAt(k)) {
+                        slot = e.second;
                         break;
                     }
                 if (slot < 0) continue;
@@ -503,6 +511,11 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                 faceSlots.push_back(slot);
                 for (int f = 1; f < 6; ++f) faceSlots.push_back(-1);
             }
+            // Drop cache entries for tiles the motion has finished with, so a
+            // long session does not accumulate one per stream ever seen.
+            for (size_t i = tileSlots_.size(); i-- > 0;)
+                if (!motion_.has(tileSlots_[i].first))
+                    tileSlots_.erase(tileSlots_.begin() + (long)i);
             break;
         }
         default: break;

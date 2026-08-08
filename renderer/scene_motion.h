@@ -105,7 +105,13 @@ public:
             if (t.present) continue;
             if (!t.leaving) {
                 t.leaving = true;
-                t.target.cx = canvasHalfWidth + t.target.hw;
+                // Aim WELL past the reap threshold, not exactly at it. A
+                // critically damped spring converges from below and never
+                // overshoots, so a target of `canvasHalfWidth + hw` leaves
+                // `cx - hw` approaching `canvasHalfWidth` asymptotically and
+                // the strict test below never fires - the tile hangs off-screen
+                // forever, pinning the producer ring that is waiting on it.
+                t.target.cx = canvasHalfWidth + t.target.hw * 3.0f;
             }
         }
 
@@ -144,6 +150,16 @@ public:
     // True while a tile is on its way out - callers that own a slot (a real
     // producer connection) can keep it alive until this stops being reported.
     bool leavingAt(size_t i) const { return tiles_[i].leaving; }
+
+    // Is this stream still being drawn (settled OR animating out)? The Windows
+    // service uses this to decide when a departed producer's ring may finally
+    // be freed: free it as soon as the pipe closes and the exit animation has
+    // nothing left to sample.
+    bool has(uint64_t id) const {
+        for (const auto& t : tiles_)
+            if (t.id == id) return true;
+        return false;
+    }
 
 private:
     struct Tile {

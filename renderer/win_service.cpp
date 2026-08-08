@@ -64,6 +64,12 @@ struct Client {
     uint64_t currentReady = 0;
     uint64_t lastConsumedSignal = 0;
     uint64_t pendingConsumed = 0; // 0 = none this frame
+    // M31: the pipe has closed but the scene is still drawing this stream's
+    // last frame while it animates off. The ring stays imported until the
+    // scene says it is done (SceneHost::retainsStream), so the exit animation
+    // has something to sample instead of popping.
+    bool departing = false;
+    int64_t departedNs = 0;
 };
 
 // M24: a scene-view consumer (the mirror of Client): the renderer renders a
@@ -520,7 +526,20 @@ int runWinService(const WinServeOptions& options) {
                     c.channel = IpcChannel();
                 }
             }
-            if (!c.channel.connected()) {
+            // M31: do not free on disconnect. Mark departing and hold the ring
+            // so the exit animation still has a texture; the scene reports
+            // when it has finished with the stream. The timeout is a backstop
+            // - a bug in the motion layer must not pin a ring forever.
+            if (!c.channel.connected() && !c.departing) {
+                c.departing = true;
+                c.departedNs = nowNs();
+            }
+            const bool expired =
+                c.departing && (nowNs() - c.departedNs) > 3000000000ll; // 3 s
+            if (c.departing && (expired || !host.retainsStream((uint64_t)c.id))) {
+                if (expired)
+                    VKR_WARN("service: client %u ring held 3 s after disconnect, forcing",
+                             c.id);
                 teardownClient(c);
                 it = clients.erase(it);
             } else {
@@ -532,6 +551,13 @@ int runWinService(const WinServeOptions& options) {
         SceneHost::Extras extras;
         for (auto& cp : clients) {
             Client& c = *cp;
+            // A departing client is deliberately NOT offered as a stream: that
+            // absence is exactly how the scene's motion layer learns it is
+            // leaving and starts animating it out. Its ring is still alive
+            // (teardown is deferred above), so the tile keeps its texture.
+            // No fence waits either - the producer is gone, and its last frame
+            // was already waited on when it was delivered.
+            if (c.departing) continue;
             streams.push_back({(uint64_t)c.id, c.currentSlot});
             if (c.currentSlot >= 0 && c.readySem) {
                 extras.waitSems.push_back(c.readySem);

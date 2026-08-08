@@ -316,13 +316,32 @@ Verified on the Android wall (emulator, three panels, one submit):
 Verified on Windows (three windows, real WHIP presenter): the tile is caught
 mid-flight crossing panels rather than at its settled position.
 
-**Desktop cannot animate exits yet.** A departing stream's producer slot is
-freed the instant it disconnects, so there is nothing left to sample and the
-tile is skipped rather than drawn mid-exit; the survivors' reflow still plays.
-The Android harness can do it because its tiles are procedural. Animating
-desktop exits needs the service to hold a slot until `SceneMotion::leavingAt()`
-clears - `leavingAt` exists for exactly that, it is simply not wired into
-`win_service.cpp` yet.
+### Desktop exits (M31.1)
+
+A departing producer's ring used to be freed the instant its pipe closed, so
+there was nothing left to sample and exits popped. The service now defers it:
+
+- On disconnect a client is marked **departing** rather than erased, and its
+  ring stays imported.
+- A departing client is deliberately **not** offered as a stream - that absence
+  is precisely how the motion layer learns it is leaving. Nor are its fences
+  waited on; the producer is gone and its last frame was already waited on when
+  delivered.
+- `SceneHost` caches each stream's pool slot, so a tile that has left `streams`
+  can still find its texture.
+- The ring is released when `SceneHost::retainsStream()` goes false, with a 3 s
+  backstop so a motion bug can never pin a ring forever.
+
+**The backstop earned its place immediately.** The first run logged
+`client 3 ring held 3 s after disconnect, forcing`, which exposed a real bug:
+the exit target was `canvasHalfWidth + hw` while the reap test was
+`(cx - hw) > canvasHalfWidth`. A critically damped spring converges from below
+and never overshoots, so `cx - hw` approached the threshold asymptotically and
+the strict comparison never fired - the tile hung off-screen forever, pinning
+the ring. The exit target now aims well past the threshold
+(`canvasHalfWidth + hw * 3`) so the tile crosses it long before settling.
+Without the backstop this would have been a silent resource leak rather than a
+warning.
 
 ## Constraints and open decisions
 
