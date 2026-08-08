@@ -33,6 +33,7 @@
 #include <volk.h>
 
 #include "scene_math.h"
+#include "scene_motion.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "vkrender-wall", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "vkrender-wall", __VA_ARGS__)
@@ -94,7 +95,11 @@ struct Wall {
     uint64_t frameIndex = 0;
 
     std::mutex lock;
-    int presenters = 0; // simulated streams currently "connected"
+    // Simulated streams, by identity rather than count: the motion layer keys
+    // off ids, so a leaver must be distinguishable from "the list got shorter".
+    std::vector<uint64_t> presenterIds;
+    uint64_t nextPresenterId = 1;
+    vkr::SceneMotion motion;
     std::atomic<bool> running{false};
     std::atomic<bool> dirty{true}; // panels changed -> rebuild canvas
     std::thread thread;
@@ -464,6 +469,7 @@ void renderLoop() {
     auto start = std::chrono::steady_clock::now();
     uint64_t rendered = 0;
     auto lastReport = start;
+    auto lastFrame = start;
 
     while (g.running.load()) {
         if (g.dirty.exchange(false)) {
@@ -511,15 +517,28 @@ void renderLoop() {
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(f.cmd, &bi);
 
-        int presenters;
+        std::vector<uint64_t> ids;
         {
             std::lock_guard<std::mutex> hold(g.lock);
-            presenters = g.presenters;
+            ids = g.presenterIds;
         }
         const float H = 3.11f, W = H * g.canvasAspect;
         Region regs[4];
-        size_t tiles = layoutRegions(presenters, W, H, regs);
-        float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
+        size_t tiles = layoutRegions((int)ids.size(), W, H, regs);
+        auto nowT = std::chrono::steady_clock::now();
+        float t = std::chrono::duration<float>(nowT - start).count();
+        float dt = std::chrono::duration<float>(nowT - lastFrame).count();
+        lastFrame = nowT;
+
+        // Layout produces TARGETS; the motion layer owns where tiles actually
+        // are. Entry, reflow and exit all come out of this one call.
+        vkr::TileTransform targets[4];
+        for (size_t k = 0; k < tiles; ++k) {
+            float sx = std::min(regs[k].hw, regs[k].hh * 16.0f / 9.0f) * 0.94f;
+            targets[k] = {regs[k].cx, regs[k].cy, sx, sx * 9.0f / 16.0f};
+        }
+        g.motion.update(ids.data(), targets, tiles, dt, W);
+        const size_t drawn = g.motion.count();
 
         for (uint32_t i = 0; i < g.panelCount; ++i) {
             Panel& p = g.panels[i];
@@ -563,22 +582,20 @@ void renderLoop() {
             // Per-panel off-centre projection over the shared canvas: this is
             // what makes a tile cross a panel boundary without a seam.
             Mat4 proj = vkr::matFrustumSub(g.canvasAspect, p.u0, p.v0, p.u1, p.v1);
-            for (size_t k = 0; k < tiles; ++k) {
-                const Region& r = regs[k];
-                float sx = std::min(r.hw, r.hh * 16.0f / 9.0f) * 0.94f;
-                float sy = sx * 9.0f / 16.0f;
-                // A slow drift so motion across seams is visible even before
-                // the animation layer exists.
-                float drift = 0.15f * sinf(t * 0.6f + (float)k);
-                Mat4 model = vkr::cubeModel(0.0f, r.cx + drift, r.cy, 0, 0, 0, sx, sy, 0.01f);
+            for (size_t k = 0; k < drawn; ++k) {
+                const vkr::TileTransform tr = g.motion.at(k);
+                Mat4 model =
+                    vkr::cubeModel(0.0f, tr.cx, tr.cy, 0, 0, 0, tr.hw, tr.hh, 0.01f);
                 Push pc{};
                 Mat4 mvp = vkr::matMul(proj, model);
                 memcpy(pc.mvp, mvp.m, sizeof(mvp.m));
-                const float hue = (float)k * 0.37f;
+                // Colour follows the stream id, not the slot, so a tile keeps
+                // its identity while others reflow around it.
+                const float hue = (float)(g.motion.idAt(k) % 7) * 0.37f;
                 pc.color[0] = 0.35f + 0.6f * fabsf(sinf(hue * 6.2831f));
                 pc.color[1] = 0.35f + 0.6f * fabsf(sinf((hue + 0.33f) * 6.2831f));
                 pc.color[2] = 0.35f + 0.6f * fabsf(sinf((hue + 0.66f) * 6.2831f));
-                pc.color[3] = (float)(k + 1); // index -> label bars
+                pc.color[3] = (float)(g.motion.idAt(k) % 12) + 1.0f; // id -> label bars
                 vkCmdPushConstants(f.cmd, g.layout,
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    0, sizeof(pc), &pc);
@@ -636,8 +653,10 @@ void renderLoop() {
         ++rendered;
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration<float>(now - lastReport).count() >= 5.0f) {
-            LOGI("wall: %llu frames in 5s (%u panels, %d presenters)",
-                 (unsigned long long)rendered, live, presenters);
+            // `drawn` can exceed the presenter count while a leaver animates
+            // off - useful signal that the exit path is actually running.
+            LOGI("wall: %llu frames in 5s (%u panels, %zu presenters, %zu tiles drawn)",
+                 (unsigned long long)rendered, live, ids.size(), drawn);
             rendered = 0;
             lastReport = now;
         }
@@ -746,13 +765,13 @@ Java_dev_vkrender_wall_WallActivity_nativeStop(JNIEnv*, jobject) {
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_vkrender_wall_WallActivity_nativeAddPresenter(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> hold(g.lock);
-    if (g.presenters < 4) g.presenters++;
-    return g.presenters;
+    if (g.presenterIds.size() < 4) g.presenterIds.push_back(g.nextPresenterId++);
+    return (jint)g.presenterIds.size();
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_vkrender_wall_WallActivity_nativeRemovePresenter(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> hold(g.lock);
-    if (g.presenters > 0) g.presenters--;
-    return g.presenters;
+    if (!g.presenterIds.empty()) g.presenterIds.pop_back();
+    return (jint)g.presenterIds.size();
 }

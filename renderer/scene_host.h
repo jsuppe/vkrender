@@ -27,6 +27,7 @@
 
 #include "background_pass.h"
 #include "external_video_image.h"
+#include "scene_motion.h"
 #include "video_pass.h"
 #include "vk_context.h"
 
@@ -142,6 +143,9 @@ private:
     };
     FrameSync frames_[kFramesInFlight];
     uint64_t frameIndex_ = 0;
+    // M31: entry/reflow animation for presentation tiles. Shared with the
+    // Android wall demo (scene_motion.h) so the motion is written once.
+    SceneMotion motion_;
     uint64_t renders_ = 0;
     int64_t rateWindowStart_ = 0;
     // M28: VKR_SCENE_TIMING breakdown, accumulated over the 5 s report window.

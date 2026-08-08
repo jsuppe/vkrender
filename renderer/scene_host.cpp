@@ -335,17 +335,24 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
 
     int64_t now = nowNs();
+    // Real elapsed time, NOT sceneTime_: the animation must keep settling
+    // while the scene is paused or slowed, otherwise SPACE freezes a tile
+    // halfway across the wall.
+    const double dtSec = lastFrameNs_ ? (double)(now - lastFrameNs_) * 1e-9 : 0.0;
     if (!paused_) sceneTime_ += (double)(now - lastFrameNs_) * 1e-9 * (double)speed_;
     lastFrameNs_ = now;
     float t = (float)sceneTime_;
 
     lastStreamIds_.clear();
     std::vector<int64_t> enabled;
+    std::vector<uint64_t> enabledIds; // M31: motion keys off identity, not order
     for (const auto& s : streams) {
         lastStreamIds_.push_back(s.id);
         if (std::find(disabledIds_.begin(), disabledIds_.end(), s.id) == disabledIds_.end() &&
-            s.slot >= 0)
+            s.slot >= 0) {
             enabled.push_back(s.slot);
+            enabledIds.push_back(s.id);
+        }
     }
 
     // Build the scene: model matrices + per-face slots per instance.
@@ -461,15 +468,39 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             }
             if (best < 0.0f) break; // no arrangement for this count
 
+            // M31: the layout produces TARGETS; SceneMotion owns where tiles
+            // actually are, so a join or leave makes everyone glide instead of
+            // teleport. Shared with the Android wall demo via scene_motion.h.
             const float margin = 0.98f;
+            TileTransform targets[4];
             for (size_t i = 0; i < n; ++i) {
                 const Region& r = regs[i];
                 float sx = std::min(r.hw, r.hh * 16.0f / 9.0f) * margin;
-                float sy = sx * 9.0f / 16.0f;
+                targets[i] = {r.cx, r.cy, sx, sx * 9.0f / 16.0f};
+            }
+            motion_.update(enabledIds.data(), targets, n, (float)dtSec, W);
+
+            for (size_t k = 0; k < motion_.count(); ++k) {
+                // A departing stream's producer slot is freed the moment it
+                // disconnects, so there is nothing left to sample and the exit
+                // animation cannot be drawn here (the Android harness can,
+                // because its tiles are procedural). Skipping keeps the reflow
+                // of the survivors, which is the visible half. Animating exits
+                // on desktop needs the service to hold a slot until
+                // motion_.leavingAt() clears - see docs/MULTIDISPLAY.md.
+                if (motion_.leavingAt(k)) continue;
+                int64_t slot = -1;
+                for (size_t i = 0; i < enabledIds.size(); ++i)
+                    if (enabledIds[i] == motion_.idAt(k)) {
+                        slot = enabled[i];
+                        break;
+                    }
+                if (slot < 0) continue;
+                const TileTransform tr = motion_.at(k);
                 // Static, face-on: zero rotation params, wafer-thin depth.
                 models.push_back(
-                    cubeModel(0.0f, r.cx, r.cy, 0.0f, 0.0f, 0.0f, sx, sy, 0.01f));
-                faceSlots.push_back(enabled[i]);
+                    cubeModel(0.0f, tr.cx, tr.cy, 0.0f, 0.0f, 0.0f, tr.hw, tr.hh, 0.01f));
+                faceSlots.push_back(slot);
                 for (int f = 1; f < 6; ++f) faceSlots.push_back(-1);
             }
             break;

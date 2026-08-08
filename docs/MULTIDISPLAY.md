@@ -296,6 +296,34 @@ restart and visibly snaps.
 Chosen motion (M28 discussion): slide in across the wall, existing tiles glide
 aside, new tile eases into place.
 
+### Built (M31)
+
+`renderer/scene_motion.h` — header-only, no Vulkan or platform types, so the
+desktop scene host and the Android wall demo share it and the motion exists
+once. Semi-implicit critically damped spring per component, clamped `dt` so a
+stalled frame cannot launch tiles across the wall. `VKR_MOTION_OMEGA` tunes
+stiffness; `VKR_MOTION_OFF=1` snaps instead, which is the honest fallback if
+cross-display skew ever makes motion across a seam unacceptable.
+
+Verified on the Android wall (emulator, three panels, one submit):
+
+- **entry** — tile appears beyond the right edge and travels across the wall to
+  its slot;
+- **reflow** — a second join re-targets both, and the survivors glide;
+- **exit** — the leaver slides off the right and is reaped only once fully
+  clear, confirmed by `tiles drawn` exceeding the presenter count mid-flight.
+
+Verified on Windows (three windows, real WHIP presenter): the tile is caught
+mid-flight crossing panels rather than at its settled position.
+
+**Desktop cannot animate exits yet.** A departing stream's producer slot is
+freed the instant it disconnects, so there is nothing left to sample and the
+tile is skipped rather than drawn mid-exit; the survivors' reflow still plays.
+The Android harness can do it because its tiles are procedural. Animating
+desktop exits needs the service to hold a slot until `SceneMotion::leavingAt()`
+clears - `leavingAt` exists for exactly that, it is simply not wired into
+`win_service.cpp` yet.
+
 ## Constraints and open decisions
 
 **Refresh mismatch is the sharpest edge.** FIFO across swapchains paces to the
@@ -355,7 +383,7 @@ whether Android gets lockstep only or needs the canvas path too.
 | ~~M29~~ | ~~Verify 3-window spanning + bezel compensation on Windows~~ | **done** — spanning seamless at 120 fps, bezels occlude correctly |
 | M30 | Unify `SceneHost` across all three platforms | Stops the Android fork; everything after is written once |
 | M31 | `DisplayTarget` + present strategies (lockstep / canvas-blit) | Handles mixed refresh and future multi-GPU |
-| M32 | Animation layer (spring transforms, entry/exit/reflow/span) | The visible feature |
+| ~~M31~~ | ~~Animation layer (spring transforms, entry/exit/reflow)~~ | **done** — `renderer/scene_motion.h`, shared by desktop and the Android wall |
 | M32.5 | Per-display `presentOffsetNs` / `timeOffsetNs` + the self-measuring skew loop | Buildable now with both at zero; hardware only confirms convergence |
 | M33 | Android multi-display via `Presentation` + hotplug + `VK_GOOGLE_display_timing` | Third platform |
 | M34 | Bezel compensation + 3-display validation on all platforms | Finish |
