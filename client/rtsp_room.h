@@ -42,17 +42,21 @@ extern "C" {
 typedef struct RtspRoom RtspRoom;
 
 typedef struct {
-    // A source's decoded video pad appeared. Build and link the sink branch
-    // for `pad` (elements added to `pipeline` by the callback) and return an
-    // opaque per-source handle (may be NULL).
+    // A source's video pad appeared. Build and link the sink branch for `pad`
+    // (elements added to `pipeline` by the callback) and return an opaque
+    // per-source handle (may be NULL).
     //
-    // Two differences from whip_room's onTrack, both because a source owns its
-    // whole pipeline here:
-    //   - `pad` is already DECODED video (uridecodebin's output), not an
-    //     encoded RTP pad, so no decodebin is needed in the branch.
-    //   - `elements` need not be filled. The room tears the entire pipeline
-    //     down, so there is nothing to reap individually; the parameter exists
-    //     to keep this signature interchangeable with the WHIP one.
+    // `pad` is rtspsrc's ENCODED RTP pad - deliberately the same contract as
+    // whip_room's onTrack, so a platform's sink code is near-identical between
+    // the two ingest types. It matters most on Android, where the sink must
+    // feed H.264 access units to MediaCodec decoding straight into a renderer
+    // slot Surface; a centrally-decoded pad would have thrown that zero-copy
+    // path away.
+    //
+    // `elements` need not be filled: a source owns its whole pipeline here, so
+    // the room tears that down rather than reaping individual elements. The
+    // parameter exists to keep this signature interchangeable with the WHIP
+    // one.
     void* (*onStream)(GstElement* pipeline, GstPad* pad, unsigned sourceId,
                       GstElement** elements, int maxElements, void* user);
     // Reap time (main thread, elements already at GST_STATE_NULL): release

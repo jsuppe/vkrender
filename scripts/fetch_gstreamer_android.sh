@@ -20,8 +20,11 @@ WORK="${WORK_DIR:-${TMPDIR:-/tmp}/gst-android-fetch}"
 URL="https://gstreamer.freedesktop.org/data/pkg/android/${VER}/gstreamer-1.0-android-universal-${VER}.tar.xz"
 
 # Union of the static-link closures the Android CMakeLists files pull in
-# (renderer/decoder, airplay, webrtc). The pruned tree must be a superset of
-# every module's needs, so keep this in sync with the pkg_check_modules lists.
+# (renderer/decoder, airplay, webrtc, rtsp). The pruned tree must be a superset
+# of every module's needs, so keep this in sync with the pkg_check_modules
+# lists - a module asking for a plugin that was pruned fails at link with a
+# bare "unable to find library -lgst<plugin>", which is a long way from the
+# cause.
 MODULES="gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 \
 gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gio-2.0 \
 gstcoreelements gstapp gstrtsp gstrtp gstrtpmanager gstudp gsttcp \

@@ -17,5 +17,7 @@ android/airplay/build/
 android/airplay/.cxx/
 android/webrtc/build/
 android/webrtc/.cxx/
+android/rtsp/build/
+android/rtsp/.cxx/
 android/gstreamer-android/
 installer/Output/

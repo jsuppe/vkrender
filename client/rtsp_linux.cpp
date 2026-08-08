@@ -29,20 +29,23 @@
 
 namespace {
 
-// rtsp_room callback: a source's DECODED video pad appeared (uridecodebin has
-// already handled depay + decode, so unlike the WHIP sink there is no
-// decodebin here). waylandsink hands frames to the compositor as this
+// rtsp_room callback: a source's video pad appeared (rtspsrc's encoded RTP
+// pad - the same contract as whip_room's onTrack, so this is the WHIP sink
+// with the leaky queue added). decodebin handles depay + decode for whatever
+// the camera negotiated; waylandsink hands frames to the compositor as this
 // source's own surface.
 void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement**, int,
                void*) {
+    GstElement* decode = gst_element_factory_make("decodebin", nullptr);
     // leaky queue: a camera that outruns the compositor must drop, never stall
     // the RTSP session (a stalled session eventually drops the connection).
     GstElement* queue = gst_element_factory_make("queue", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
     GstElement* sink = gst_element_factory_make("waylandsink", nullptr);
-    if (!queue || !convert || !sink) {
+    if (!decode || !queue || !convert || !sink) {
         fprintf(stderr,
-                "rtsp: [source %u] missing elements (queue/videoconvert/waylandsink)\n",
+                "rtsp: [source %u] missing elements "
+                "(decodebin/queue/videoconvert/waylandsink)\n",
                 sourceId);
         return nullptr;
     }
@@ -50,13 +53,21 @@ void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement*
                  "max-size-bytes", 0, "max-size-time", (guint64)0, nullptr);
     g_object_set(sink, "sync", FALSE, nullptr);
 
-    gst_bin_add_many(GST_BIN(pipeline), queue, convert, sink, nullptr);
+    gst_bin_add_many(GST_BIN(pipeline), decode, queue, convert, sink, nullptr);
+    gst_element_sync_state_with_parent(decode);
     gst_element_sync_state_with_parent(queue);
     gst_element_sync_state_with_parent(convert);
     gst_element_sync_state_with_parent(sink);
     gst_element_link_many(queue, convert, sink, nullptr);
+    // decodebin's src pad appears dynamically -> link to the queue then.
+    g_signal_connect(decode, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* p, gpointer c) {
+                         GstPad* q = gst_element_get_static_pad(GST_ELEMENT(c), "sink");
+                         gst_pad_link(p, q);
+                         gst_object_unref(q);
+                     }),
+                     queue);
 
-    GstPad* sinkpad = gst_element_get_static_pad(queue, "sink");
+    GstPad* sinkpad = gst_element_get_static_pad(decode, "sink");
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
 

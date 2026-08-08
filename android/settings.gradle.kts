@@ -19,3 +19,4 @@ include(":decoder")
 
 include(":airplay")
 include(":webrtc")
+include(":rtsp")

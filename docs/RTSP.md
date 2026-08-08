@@ -103,6 +103,31 @@ the `recv-stats:` fields mean.
 > queue latency. The tell that it is working is `behind_ms` staying flat
 > instead of climbing.
 
+## Android
+
+`android/rtsp/` is a separate APK, mirroring `android/webrtc/`. It binds the
+renderer over Binder and takes one slot Surface per camera, so each source
+lands on its own cube face.
+
+```bash
+gradle -p android :rtsp:assembleDebug
+
+# manage the source list without a UI (persisted in SharedPreferences)
+adb shell am start -n dev.vkrender.rtsp/.MainActivity -e url rtsp://cam.local/stream
+adb shell am start -n dev.vkrender.rtsp/.MainActivity -e clear true
+# or at runtime, same control API as desktop
+curl -d rtsp://cam.local/stream http://<device-ip>:8890/sources
+```
+
+**H.264 only**, like the Android WHIP receiver: the sink is MediaCodec
+decoding straight into the renderer's slot Surface, which is the whole point
+of the zero-copy path. A non-H.264 source is discarded and the connect
+watchdog retries it.
+
+The renderer and receiver APKs must be **signed with the same key** (the
+Binder service sits behind a signature permission) — build both from one CI
+run.
+
 ## Architecture
 
 `client/rtsp_room.{h,cpp}` is the shared core across all three platforms —
@@ -112,19 +137,34 @@ same split as `whip_room`:
 rtsp_room  (shared)          per-platform sink
   N sources, one             rtsp_win.cpp    -> vkrender_client ring
   GstPipeline each     ->    rtsp_linux.cpp  -> waylandsink (M13 compositor)
-  + HTTP control API         android/rtsp/   -> renderer Surface
+  + HTTP control API         android/rtsp/   -> MediaCodec -> renderer Surface
   + backoff/watchdogs
 ```
 
-Two deliberate differences from `whip_room`:
+`onStream` receives **rtspsrc's encoded RTP pad** — deliberately the same
+contract as `whip_room`'s `onTrack`, so a platform's sink code is nearly
+identical between the two ingest types.
 
-1. **One pipeline per source, not one shared pipeline.** RTSP endpoints fail
-   independently and often; a private pipeline means one dead camera cannot
-   error out the others, and reconnect is just `NULL` → `PLAYING` on that
-   pipeline alone.
-2. **`onStream` receives a decoded pad**, not an encoded RTP pad —
-   `uridecodebin` has already done depay + decode — so platform sinks need no
-   `decodebin` of their own.
+> That contract was not the first design. `rtsp_room` originally decoded
+> centrally with `uridecodebin` and handed over a raw pad, which was simpler
+> for Windows and Linux and **completely broke Android**: MediaCodec-into-
+> Surface needs encoded H.264 access units, so a centrally-decoded pad would
+> have thrown the zero-copy path away. Matching `whip_room` fixed it and was
+> better anyway — `recv-stats` now separates RTP arrival from decoded output,
+> exposing a ~35 ms decode stage the old shape hid entirely.
+
+The one real difference from `whip_room` is **one pipeline per source rather
+than one shared pipeline**. RTSP endpoints fail independently and often; a
+private pipeline means one dead camera cannot error out the others, and
+reconnect is just `NULL` → `PLAYING` on that pipeline alone.
 
 Threading matches `whip_room`: the HTTP listener only ever queues intent, and
 every pipeline mutation happens in `rtsp_room_poll()` on the main thread.
+
+## Verification status
+
+| Platform | Status |
+|---|---|
+| Windows | **Verified end to end** — two sources at different resolutions, runtime add/remove, stall detection, backoff, recovery |
+| Android | **Builds** (arm64-v8a + x86_64, APK links clean) — not yet device-verified |
+| Linux | **Written, not yet compiled** — no Linux host available when it was added |

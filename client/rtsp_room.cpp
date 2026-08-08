@@ -90,13 +90,9 @@ namespace {
 
 // ------------------------------------------------------------------ sources
 
-// uridecodebin hands us the real source element before it goes to PLAYING.
-// Configure it if it is an rtspsrc; a non-RTSP uri (file://, http://) simply
-// won't have these properties, which is why every set is guarded.
-void onSourceSetup(GstElement*, GstElement* src, gpointer data) {
-    RtspRoom* room = static_cast<RtspRoom*>(data);
+// Configure rtspsrc for live, low-latency, fail-fast behaviour.
+void configureSrc(RtspRoom* room, GstElement* src) {
     GObjectClass* klass = G_OBJECT_GET_CLASS(src);
-
     // rtspsrc defaults to 2000 ms of jitter buffer - far too much for a
     // compositor that is otherwise sub-100 ms. VKR_RTSP_LATENCY_MS overrides
     // (mirrors VKR_WEBRTC_LATENCY_MS).
@@ -129,14 +125,22 @@ GstPadProbeReturn onFrameProbe(GstPad*, GstPadProbeInfo*, gpointer data) {
     return GST_PAD_PROBE_OK;
 }
 
-// uridecodebin exposes a decoded stream. We only want video; audio pads are
-// left unlinked (uridecodebin drops them harmlessly).
+// rtspsrc exposes one pad per SDP stream, still RTP-encoded. We want the video
+// one; audio pads are left unlinked (rtspsrc drops them harmlessly).
 void onPadAdded(GstElement*, GstPad* pad, gpointer data) {
     PadCtx* ctx = static_cast<PadCtx*>(data);
     GstCaps* caps = gst_pad_get_current_caps(pad);
     if (!caps) caps = gst_pad_query_caps(pad, nullptr);
-    const char* name = caps ? gst_structure_get_name(gst_caps_get_structure(caps, 0)) : "";
-    bool isVideo = name && strncmp(name, "video/", 6) == 0;
+    bool isVideo = false;
+    if (caps && gst_caps_get_size(caps) > 0) {
+        GstStructure* st = gst_caps_get_structure(caps, 0);
+        const char* name = gst_structure_get_name(st);
+        const char* media = gst_structure_get_string(st, "media");
+        // application/x-rtp with media=video. Fall back to a raw/encoded video
+        // caps name in case a source ever hands over an already-parsed pad.
+        isVideo = (name && strncmp(name, "video/", 6) == 0) ||
+                  (media && strcmp(media, "video") == 0);
+    }
     if (caps) gst_caps_unref(caps);
     if (!isVideo) return;
 
@@ -170,24 +174,22 @@ void buildSource(RtspRoom* room, RtspSource* s) {
     char name[64];
     snprintf(name, sizeof(name), "rtsp-source-%u", s->id);
     GstElement* pipeline = gst_pipeline_new(name);
-    GstElement* src = gst_element_factory_make("uridecodebin", nullptr);
+    GstElement* src = gst_element_factory_make("rtspsrc", nullptr);
     if (!pipeline || !src) {
-        fprintf(stderr, "rtsp-room: [source %u] uridecodebin missing\n", s->id);
+        fprintf(stderr, "rtsp-room: [source %u] rtspsrc missing\n", s->id);
         if (pipeline) gst_object_unref(pipeline);
         if (src) gst_object_unref(src);
         g_mutex_lock(&room->lock);
         s->state = kRetrying;
-        s->lastError = "uridecodebin missing";
+        s->lastError = "rtspsrc missing";
         s->retryMs = (int)kRetryMaxMs;
         s->retryAtUs = g_get_monotonic_time() + kRetryMaxMs * 1000;
         g_mutex_unlock(&room->lock);
         return;
     }
 
-    g_object_set(src, "uri", s->url.c_str(), nullptr);
-    // buffer-duration/use-buffering left at defaults: this is live, and
-    // uridecodebin's buffering would add exactly the latency we're avoiding.
-    g_signal_connect(src, "source-setup", G_CALLBACK(onSourceSetup), room);
+    g_object_set(src, "location", s->url.c_str(), nullptr);
+    configureSrc(room, src);
     PadCtx* ctx = new PadCtx{room, s};
     g_signal_connect_data(src, "pad-added", G_CALLBACK(onPadAdded), ctx,
                           [](gpointer d, GClosure*) { delete static_cast<PadCtx*>(d); },
