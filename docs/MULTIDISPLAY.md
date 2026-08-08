@@ -140,6 +140,43 @@ Java side:
   (`recreateWindow`/`VK_ERROR_OUT_OF_DATE_KHR`), so this extends existing
   machinery rather than inventing new.
 
+#### Zero-copy survives multi-display for free
+
+A reasonable worry is that surfaces must become display-specific and that this
+would break the zero-copy import. It does not, and the reason is worth stating
+because it constrains everything else.
+
+The AHB import in
+[external_video_image.cpp](../renderer/external_video_image.cpp) is bound to
+`vk.device` and nothing else — `vkGetAndroidHardwareBufferPropertiesANDROID`,
+`vkCreateSamplerYcbcrConversion`, then a `VkImage`/`VkDeviceMemory` on that
+device. No surface, no swapchain, no display appears anywhere. An imported
+producer buffer is a **sampled texture on the device**.
+
+So with one `VkDevice` and N display swapchains:
+
+- each producer buffer is imported **once** and sampled by **all** displays'
+  render passes;
+- a stream spanning two displays is the same `VkImage` sampled twice in the
+  same command buffer — no copy, no duplication.
+
+Display-specific state is confined to the **swapchain** (one `Surface` per
+`Presentation`), which is our render target, never the producer's buffer.
+
+This would only change if a producer buffer were **scanned out directly** by
+the hardware composer, bypassing our render pass — then it would have to be
+allocated compatible with that display controller and cross-display sharing
+could fail. We composite everything, so producer buffers only ever need
+`GPU_SAMPLED_IMAGE`, which is display-agnostic.
+
+**The real Android multi-display risk is pacing, not buffers.** Single-submit
+lockstep presents all swapchains together, so mismatched per-display refresh
+(or independent SurfaceFlinger latching) stalls to the slowest. The canvas-blit
+fallback that fixes this on desktop costs a full-canvas write and read — the
+worst thing to ask of a tile GPU. Mixed-refresh Android multi-display is
+therefore the hardest configuration in this whole design, and needs measuring
+on the actual device before committing to a strategy.
+
 Caveats to verify on real hardware, not assume:
 
 - OEM support for `Presentation` varies enormously.
