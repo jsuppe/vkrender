@@ -177,6 +177,49 @@ worst thing to ask of a tile GPU. Mixed-refresh Android multi-display is
 therefore the hardest configuration in this whole design, and needs measuring
 on the actual device before committing to a strategy.
 
+#### Target hardware: QCS8250
+
+The Android wall is a QCS8250 (Snapdragon 865 class, Adreno 650) driving
+displays over **2x MIPI-DSI** and **DisplayPort 1.4 over USB-C**. Two things
+follow, and they resolve the "different devices drive the displays" question:
+
+- **One GPU, therefore one Vulkan physical device.** Those are different
+  display *interfaces* on the same display subsystem, not different GPUs. The
+  zero-copy analysis above holds unchanged: one import per producer buffer,
+  sampled by all three displays' passes.
+- **The USB display is DisplayPort alt-mode, i.e. real scanout** — not a
+  DisplayLink-style USB graphics adapter that encodes and ships frames. Worth
+  confirming on the device, because the two are indistinguishable from the app
+  and only one of them is zero-copy.
+
+#### Frame-accurate sync is the real constraint, and it is not free
+
+The requirement is that a tile sliding across the wall must not tear at a seam.
+Be clear about what Android can and cannot give:
+
+- **Achievable:** the same logical frame on every display.
+- **Not achievable:** the same *instant*. DSI and DP are independently clocked,
+  Android has no cross-display genlock, and SurfaceFlinger's DispSync is a
+  per-display software PLL locked to that display's own hardware vsync.
+
+The best tool available is `VK_GOOGLE_display_timing`: a single
+`vkQueuePresentKHR` carries `VkPresentTimesInfoGOOGLE` with a per-swapchain
+desired present time, so all three can target one timestamp. That minimises
+skew but does not remove it — each display still lands on its own next vsync,
+so worst case is one refresh period, **16.6 ms at 60 Hz**.
+
+That is the number that matters for the animation. A tile crossing the wall at
+~1000 px/s is offset by ~16 px at a seam under one frame of skew. Whether that
+reads as "torn" is a product judgement, and it is **the single biggest risk to
+the animate-across-displays premise** — worth measuring before the animation
+layer is built, not after.
+
+One mitigation worth raising at bring-up: the QCS8250 has *two* DSI
+interfaces. If two panels are driven as a single logical display in dual-DSI
+split mode, those two are genlocked by construction and only the DP panel can
+drift. That is a hardware/bring-up decision, not something the app can choose,
+but it converts the problem from three drifting displays to two.
+
 Caveats to verify on real hardware, not assume:
 
 - OEM support for `Presentation` varies enormously.
@@ -274,7 +317,8 @@ whether Android gets lockstep only or needs the canvas path too.
 | M30 | Unify `SceneHost` across all three platforms | Stops the Android fork; everything after is written once |
 | M31 | `DisplayTarget` + present strategies (lockstep / canvas-blit) | Handles mixed refresh and future multi-GPU |
 | M32 | Animation layer (spring transforms, entry/exit/reflow/span) | The visible feature |
-| M33 | Android multi-display via `Presentation` + hotplug | Third platform |
+| M32.5 | **Measure cross-display skew on the QCS8250** | De-risks everything after it; if skew is unacceptable the animation premise changes |
+| M33 | Android multi-display via `Presentation` + hotplug + `VK_GOOGLE_display_timing` | Third platform |
 | M34 | Bezel compensation + 3-display validation on all platforms | Finish |
 
 M29 first is deliberate: it is an afternoon, and it either validates the whole
