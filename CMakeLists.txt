@@ -230,6 +230,14 @@ if(WIN32)
         gio-2.0.lib gstsdp-1.0.lib gstwebrtc-1.0.lib d3d11 dxgi dnsapi)
     target_compile_options(vkr_webrtc PRIVATE /EHsc)
 
+    # M27: RTSP multi-source receiver -> producer. Pull-side ingest (we dial
+    # out to cameras/encoders); the shared rtsp_room core also drives the
+    # Linux and Android receivers. gio for the room's HTTP control API.
+    add_executable(vkr_rtsp client/rtsp_win.cpp client/rtsp_room.cpp)
+    target_link_libraries(vkr_rtsp PRIVATE vkrender_client GStreamer::win
+        gio-2.0.lib d3d11 dxgi)
+    target_compile_options(vkr_rtsp PRIVATE /EHsc)
+
 endif()
 
 # --- Wayland compositor mode (M13, Linux only) -------------------------------
@@ -289,6 +297,16 @@ if(NOT WIN32)
         target_link_libraries(vkr_webrtc PRIVATE PkgConfig::GST PkgConfig::GSTRTC)
     else()
         message(STATUS "gstreamer-webrtc-1.0 not found - skipping vkr_webrtc (M22)")
+    endif()
+
+    # M27: RTSP multi-source receiver -> waylandsink into the compositor. Needs
+    # no webrtc/sdp - only gio, for the room's HTTP control API.
+    pkg_check_modules(GIO IMPORTED_TARGET gio-2.0)
+    if(GIO_FOUND)
+        add_executable(vkr_rtsp client/rtsp_linux.cpp client/rtsp_room.cpp)
+        target_link_libraries(vkr_rtsp PRIVATE PkgConfig::GST PkgConfig::GIO)
+    else()
+        message(STATUS "gio-2.0 not found - skipping vkr_rtsp (M27)")
     endif()
 endif()
 add_custom_command(TARGET vkrenderer POST_BUILD

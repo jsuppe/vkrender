@@ -6,6 +6,7 @@
 //   vkr_webrtc              (WHIP room: Flutter sender / browser / OBS)
 //   vkr_miracast            (Windows + Android senders)
 //   vkr_airplay             (Apple senders; optional, separate GPLv3 exe)
+//   vkr_rtsp                (IP cameras / encoders we DIAL OUT to; opt-in)
 //   vkr_vcam                (the scene as a virtual camera)
 //
 // Children inherit our environment, so PIN mode (VKR_PIN) and the starting
@@ -194,6 +195,12 @@ int main(int argc, char** argv) {
     const bool wantAirplay = iniGet("airplay", "1") != "0";
     const bool wantMiracast = iniGet("miracast", "1") != "0";
     const std::string name = iniGet("name", "vkrender");
+    // M27: RTSP is PULL - we dial out to cameras/encoders. Off unless a
+    // control port is configured, since unlike the other receivers there is
+    // nothing to advertise and nothing to wait for.
+    const bool wantRtsp = iniGet("rtsp", "0") != "0";
+    const std::string rtspPort = iniGet("rtsp_port", "8890");
+    const std::string rtspUrls = iniGet("rtsp_urls", "");
 
     // Propagate policy to every child through the environment.
     SetEnvironmentVariableA("VKR_PIN", pin == "off" ? nullptr : pin.c_str());
@@ -235,6 +242,20 @@ int main(int argc, char** argv) {
     if (wantMiracast) launch("vkr_miracast.exe", name + " " + name, "miracast", false);
     launch("vkr_webrtc.exe", name + " " + webrtcPort + " " + name, "webrtc", false);
     if (wantAirplay) launch("vkr_airplay.exe", name + " " + name, "airplay", false);
+    if (wantRtsp) {
+        // rtsp_urls is a semicolon-separated list -> repeated --url flags.
+        std::string rtspArgs = "--pipe " + name + " --port " + rtspPort;
+        size_t start = 0;
+        while (start < rtspUrls.size()) {
+            size_t sep = rtspUrls.find(';', start);
+            std::string one =
+                rtspUrls.substr(start, sep == std::string::npos ? sep : sep - start);
+            if (!one.empty()) rtspArgs += " --url " + one;
+            if (sep == std::string::npos) break;
+            start = sep + 1;
+        }
+        launch("vkr_rtsp.exe", rtspArgs, "rtsp", false);
+    }
     if (wantVcam)
         launch("vkr_vcam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
                "vcam", false);

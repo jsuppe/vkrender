@@ -23,6 +23,7 @@ The AirPlay receiver comes from the sibling
 | WebRTC / WHIP receiver | `vkr_webrtc.exe` — Flutter sender, browsers, OBS |
 | Miracast receiver | `vkr_miracast.exe` — Windows / Android senders |
 | AirPlay receiver | `vkr_airplay.exe` — Apple senders (GPLv3) |
+| RTSP receiver | `vkr_rtsp.exe` — pulls from IP cameras / encoders. Installed by default but **idle until `rtsp=1` and URLs are set** (see [docs/RTSP.md](../docs/RTSP.md)) |
 | Virtual camera | `vkr_vcam.exe` + `softcam.dll` (DirectShow) and/or `vkrender_vcam_source.dll` (Media Foundation) — **both registered by the installer** (`regserver`), no manual `regsvr32` |
 
 The wizard asks about PIN policy (off / new code per connection / fixed) and
@@ -72,6 +73,9 @@ virtual_camera=1
 vcam_mode=dshow        ; dshow | mf
 airplay=1
 miracast=1
+rtsp=0                 ; 1 to pull from RTSP sources
+rtsp_port=8890         ; control API: GET/POST/DELETE /sources
+rtsp_urls=             ; "rtsp://cam1/stream;rtsp://user:pw@cam2/h264"
 ```
 
 `vkr_appliance.exe` starts everything as one kill-on-close group: closing the

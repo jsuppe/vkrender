@@ -47,6 +47,11 @@ Name: "webrtc"; Description: "WebRTC / WHIP receiver (Flutter sender, browsers, 
 ; work; still selectable under "Custom". See docs/MIRACAST.md.
 Name: "miracast"; Description: "Miracast receiver (needs a Wi-Fi adapter that can RECEIVE Miracast - see Settings > Projecting to this PC)"; Types: custom
 Name: "airplay"; Description: "AirPlay receiver (Apple senders, GPLv3)"; Types: full receivers custom; Check: AirplayAvailable
+; M27: RTSP is the odd one out - it PULLS from cameras/encoders rather than
+; waiting to be discovered, so it does nothing until URLs are configured in
+; vkrender.ini (or POSTed to its control API). Installed with the receivers,
+; started only when rtsp=1.
+Name: "rtsp"; Description: "RTSP receiver (pull from IP cameras / encoders)"; Types: full receivers custom
 Name: "vcam"; Description: "Virtual camera (scene as a webcam)"; Types: full custom
 Name: "vcam\dshow"; Description: "DirectShow camera (Chrome, OBS, Zoom, classic Teams)"; Types: full custom
 Name: "vcam\mf"; Description: "Media Foundation camera (also Windows Camera, new Teams)"; Types: full custom
@@ -61,6 +66,7 @@ Source: "{#BuildDir}\shaders\*"; DestDir: "{app}\shaders"; Components: core; Fla
 Source: "{#BuildDir}\vkr_webrtc.exe"; DestDir: "{app}"; Components: webrtc; Flags: ignoreversion
 Source: "{#BuildDir}\vkr_miracast.exe"; DestDir: "{app}"; Components: miracast; Flags: ignoreversion
 Source: "{#AirplayDir}\vkr_airplay.exe"; DestDir: "{app}"; Components: airplay; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#BuildDir}\vkr_rtsp.exe"; DestDir: "{app}"; Components: rtsp; Flags: ignoreversion
 ; --- virtual camera ---
 Source: "{#BuildDir}\vkr_vcam.exe"; DestDir: "{app}"; Components: vcam; Flags: ignoreversion
 Source: "{#BuildDir}\softcam.dll"; DestDir: "{app}"; Components: vcam\dshow; Flags: ignoreversion regserver
@@ -229,4 +235,10 @@ begin
   SetIniString('appliance', 'vcam_mode', VcamMode, Ini);
   SetIniString('appliance', 'airplay', BoolToStr2(WizardIsComponentSelected('airplay')), Ini);
   SetIniString('appliance', 'miracast', BoolToStr2(WizardIsComponentSelected('miracast')), Ini);
+  // RTSP ships enabled-but-idle: installing the component is not the same as
+  // wanting it running, because it only does anything once URLs exist. Set
+  // rtsp=1 and list rtsp_urls (or POST to the control API) to start pulling.
+  SetIniString('appliance', 'rtsp', '0', Ini);
+  SetIniString('appliance', 'rtsp_port', '8890', Ini);
+  SetIniString('appliance', 'rtsp_urls', '', Ini);
 end;
