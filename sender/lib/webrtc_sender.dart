@@ -45,7 +45,7 @@ class WebrtcSender {
   static bool get _isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  Future<MediaStream> _capture(CaptureSource src) async {
+  Future<MediaStream> _capture(CaptureSource src, {String? desktopSourceId}) async {
     if (src == CaptureSource.screen) {
       // Android 14+ requires the mediaProjection foreground service to be
       // running *before* getDisplayMedia; no-op elsewhere.
@@ -53,17 +53,24 @@ class WebrtcSender {
       _fgsRunning = true;
       // Desktop flutter_webrtc does not honor a bare {'video': true} - the
       // capturer needs an explicit source id from desktopCapturer (found
-      // live: hourglass -> stopped with zero frames sent). Grab the primary
-      // screen; a real source picker is a UI refinement.
+      // live: hourglass -> stopped with zero frames sent).
+      //
+      // M32: that id now comes from the picker, so this can be one WINDOW or a
+      // chosen DISPLAY. Falling back to the first screen keeps the old
+      // behaviour when no choice was made (e.g. a caller that skips the UI).
       if (_isDesktop) {
-        final sources =
-            await desktopCapturer.getSources(types: [SourceType.Screen]);
-        if (sources.isEmpty) {
-          throw StateError('no screen capture sources found');
+        var id = desktopSourceId;
+        if (id == null) {
+          final sources =
+              await desktopCapturer.getSources(types: [SourceType.Screen]);
+          if (sources.isEmpty) {
+            throw StateError('no screen capture sources found');
+          }
+          id = sources.first.id;
         }
         return navigator.mediaDevices.getDisplayMedia({
           'video': {
-            'deviceId': {'exact': sources.first.id},
+            'deviceId': {'exact': id},
             'mandatory': {'frameRate': 30.0},
           },
           'audio': false,
@@ -135,10 +142,14 @@ class WebrtcSender {
     await done.future;
   }
 
-  Future<void> start(Uri whipEndpoint, CaptureSource source, {String? pin}) async {
+  /// [desktopSourceId] picks a specific display or window on desktop (M32);
+  /// null falls back to the primary screen. Ignored on mobile and web, where
+  /// the platform's own consent dialog does the choosing.
+  Future<void> start(Uri whipEndpoint, CaptureSource source,
+      {String? pin, String? desktopSourceId}) async {
     try {
       _emit(SenderState.capturing);
-      final stream = await _capture(source);
+      final stream = await _capture(source, desktopSourceId: desktopSourceId);
       _stream = stream;
 
       final pc = await createPeerConnection({

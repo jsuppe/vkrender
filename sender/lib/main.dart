@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'discovery.dart';
+import 'source_picker.dart';
 import 'webrtc_sender.dart';
 import 'whip_client.dart';
 
@@ -52,9 +53,19 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  void _castTo(Uri whipUri) {
+  Future<void> _castTo(Uri whipUri) async {
+    // M32: on desktop, ask WHAT to share before connecting. Doing it here
+    // rather than inside CastPage means cancelling the picker simply returns
+    // to this screen instead of opening a cast page that immediately fails.
+    DesktopSourceChoice? chosen;
+    if (_source == CaptureSource.screen && desktopPickerApplies) {
+      chosen = await showDesktopSourcePicker(context);
+      if (chosen == null) return; // cancelled
+      if (!mounted) return;
+    }
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => CastPage(endpoint: whipUri, source: _source),
+      builder: (_) =>
+          CastPage(endpoint: whipUri, source: _source, desktopSource: chosen),
     ));
   }
 
@@ -162,7 +173,17 @@ class _HomePageState extends State<HomePage> {
 class CastPage extends StatefulWidget {
   final Uri endpoint;
   final CaptureSource source;
-  const CastPage({super.key, required this.endpoint, required this.source});
+
+  /// M32: the display or window chosen in the picker. Null means "let the
+  /// platform decide" - the primary screen on desktop, or the OS/browser
+  /// consent dialog on mobile and web.
+  final DesktopSourceChoice? desktopSource;
+
+  const CastPage(
+      {super.key,
+      required this.endpoint,
+      required this.source,
+      this.desktopSource});
   @override
   State<CastPage> createState() => _CastPageState();
 }
@@ -189,7 +210,8 @@ class _CastPageState extends State<CastPage> {
   Future<void> _boot({String? pin}) async {
     await _renderer.initialize();
     try {
-      await _sender.start(widget.endpoint, widget.source, pin: pin);
+      await _sender.start(widget.endpoint, widget.source,
+          pin: pin, desktopSourceId: widget.desktopSource?.id);
       if (mounted) _renderer.srcObject = _sender.stream;
     } on WhipPinRequired catch (e) {
       if (mounted) await _promptForPin(retry: e.retry);
@@ -251,7 +273,11 @@ class _CastPageState extends State<CastPage> {
   String get _statusText {
     switch (_state) {
       case SenderState.capturing:
-        return 'Capturing ${widget.source == CaptureSource.screen ? 'screen' : 'camera'}…';
+        // Name what is actually being shared - "screen" is misleading once a
+        // single window can be the source.
+        return widget.source == CaptureSource.camera
+            ? 'Capturing camera…'
+            : 'Capturing ${widget.desktopSource?.label ?? 'screen'}…';
       case SenderState.signalling:
         return 'Creating offer…';
       case SenderState.connecting:
