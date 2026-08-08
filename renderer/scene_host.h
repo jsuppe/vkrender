@@ -35,6 +35,20 @@ namespace vkr {
 struct WindowSpec {
     int width = 1280, height = 720;
     int x = 0, y = 0; // canvas + desktop position
+    // M29 bezel compensation, in pixels of this panel's own frame.
+    //
+    // The rect above is the panel's PHYSICAL footprint in canvas space - for a
+    // real wall the config gives each screen's position relative to the others,
+    // so the gaps between those rects already are the bezels. `bezel` then says
+    // how much of this panel's own edge is hidden under its frame: the scene is
+    // rendered into the rect inset by `bezel`, and whatever falls under the
+    // frame is simply not drawn. Content therefore passes BEHIND the bezel
+    // instead of jumping across it.
+    //
+    // On a single monitor (three windows on one screen) there is no real frame,
+    // so this doubles as a simulator: the inset border is cleared to the bezel
+    // colour, which is what makes the effect visible and tunable.
+    int bezel = 0;
 };
 
 // M25: Presentation = flat tiles in fixed regions, count-adaptive (1 full

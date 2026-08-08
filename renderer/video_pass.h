@@ -55,7 +55,12 @@ public:
                      VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                      class BackgroundPass* background = nullptr, float timeSec = 0.0f,
                      float bgAspect = 0.0f, float bgOffX = 0.0f, float bgOffY = 0.0f,
-                     float bgSclX = 1.0f, float bgSclY = 1.0f);
+                     float bgSclX = 1.0f, float bgSclY = 1.0f,
+                     // M29: pixels of this panel's own bezel. The pass clears
+                     // the full attachment to the bezel colour and renders the
+                     // scene into the rect inset by this much, so the border is
+                     // the frame and the content under it is hidden.
+                     uint32_t bezelPx = 0);
 
 private:
     VkShaderModule loadShader(VkDevice device, const std::string& path);

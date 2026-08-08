@@ -110,10 +110,11 @@ bool BackgroundPass::init(VkContext& vk, const std::string& shaderDir) {
 
 void BackgroundPass::draw(VkCommandBuffer cmd, VkExtent2D extent, float timeSec,
                           float canvasAspect, float uvOffX, float uvOffY, float uvScaleX,
-                          float uvScaleY) {
+                          float uvScaleY, uint32_t originPx) {
     if (!pipeline_) return;
-    VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
-    VkRect2D scissor{{0, 0}, extent};
+    VkViewport viewport{(float)originPx, (float)originPx, (float)extent.width,
+                        (float)extent.height, 0.0f, 1.0f};
+    VkRect2D scissor{{(int32_t)originPx, (int32_t)originPx}, extent};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);

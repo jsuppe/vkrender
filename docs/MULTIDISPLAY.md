@@ -33,14 +33,22 @@ into one continuous space, so a stream animating from `cx = +W` to `cx = 0`
 slides across the whole wall with no cross-display coordination at all. There
 is no "which display am I on" logic to write, and there never should be.
 
-Three displays should work today on Windows/Linux with:
+### Verified (M29)
+
+Three windows tiled across one 5120x1440 monitor:
 
 ```
-vkrenderer --serve vkrender --window 1920x1080+0+0 \
-    --window 1920x1080+1920+0 --window 1920x1080+3840+0
+vkrenderer --serve vkrender --window 1100x900+10+30 \
+    --window 1100x900+1120+30 --window 1100x900+2230+30
 ```
 
-Untested at three. That is the first thing to verify, before any new code.
+Result: `canvas 3320x900 (aspect 3.69)`, three surfaces, three swapchains,
+**120 fps** with `present=8.1 ms` — one 119 Hz refresh, i.e. the extra two
+swapchains cost nothing measurable. Per-window snapshots stitched side by side
+show the vaporwave horizon, sunset gradient and perspective grid continuing
+across both seams with no discontinuity.
+
+The premise holds. The spanning model needed no changes to run at three.
 
 ## Gaps
 
@@ -177,15 +185,45 @@ slowest display. M28 measured how brutally presentation dominates this renderer
 beside a 119 Hz one will halve the wall unless canvas-blit decouples them.
 This is the main reason the strategy split exists.
 
-**Bezel compensation.** Physical bezels mean the canvas should optionally be
-*larger* than the sum of the visible pixels, with each display's `u0..u1`
-insetting to account for the gap — so a sliding tile passes *behind* the bezel
-instead of jumping. Cheap to add to the rect maths; needs a per-display bezel
-value in config.
+**Bezel compensation — built (M29).**
+
+```
+vkrenderer --serve vkrender --window 1100x900+10+30 --window ... --bezel 30
+```
+
+Model: a `--window` rect is that panel's **physical footprint** in canvas
+space, so on a real wall the config gives each screen's position relative to
+the others and *the gaps between those rects are the bezels*. `:bezel` (or the
+uniform `--bezel`) then says how much of a panel's own edge its frame hides.
+
+Implementation is two things:
+
+- `SceneHost::init` builds each panel's sub-frustum from its rect **inset by
+  the bezel**, while the canvas still spans the full physical footprints. So
+  content landing under a frame is never drawn.
+- `VideoPass::recordScene` renders into a viewport inset by the same amount;
+  the cleared border left around it is the frame. `VKR_BEZEL_COLOR=r,g,b`
+  makes it visible while tuning.
+
+On a single monitor this doubles as a **bezel simulator**, which is how it was
+validated: with `--bezel 30` and a red frame colour, the horizon sits at the
+same height across all three panels and the perspective grid lines continue on
+their correct trajectory through each frame. That is the test that matters —
+content must be *occluded* by the bezel, not squeezed inside it. Without
+compensation, insetting compresses each panel and every grid line kinks at the
+seam.
 
 **One GPU is assumed initially.** `deviceIndex` exists in the struct so
 multi-GPU is not designed out, but the first implementation should reject a
 mixed-device target set with a clear error rather than silently misbehave.
+
+**Layouts do not adapt to a wide canvas.** Found during M29: with two streams
+on a 3.69-aspect wall, the Presentation layout stacks them top/bottom in the
+*middle* and leaves both ends empty. Its regions were designed for a 16:9
+canvas, and `sx = min(hw, hh * 16/9)` aspect-fits each tile so wide walls go
+unused. A three-panel wall wants two streams side by side, not stacked. The
+layout region tables need to key off `canvasAspect` — worth doing with the
+animation work, since both touch the same target computation.
 
 **Open:** which Android device provides the second/third display, and what its
 `Presentation` support and per-display refresh actually are. That determines
@@ -195,7 +233,7 @@ whether Android gets lockstep only or needs the canvas path too.
 
 | | Work | Value |
 |---|---|---|
-| M29 | Verify 3-display spanning on Windows today; fix what breaks | Proves the existing model before building on it |
+| ~~M29~~ | ~~Verify 3-window spanning + bezel compensation on Windows~~ | **done** — spanning seamless at 120 fps, bezels occlude correctly |
 | M30 | Unify `SceneHost` across all three platforms | Stops the Android fork; everything after is written once |
 | M31 | `DisplayTarget` + present strategies (lockstep / canvas-blit) | Handles mixed refresh and future multi-GPU |
 | M32 | Animation layer (spring transforms, entry/exit/reflow/span) | The visible feature |

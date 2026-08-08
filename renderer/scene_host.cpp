@@ -175,12 +175,18 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
     }
     float cw = (float)(maxX - minX), ch = (float)(maxY - minY);
     canvasAspect_ = ch > 0 ? cw / ch : 1.0f;
+    // The canvas spans the panels' PHYSICAL footprints (above), but each panel
+    // only shows the part not hidden by its own frame - so the sub-frustum is
+    // built from the rect inset by `bezel`. Content landing under a frame is
+    // never drawn, which is exactly what makes a shape crossing the wall look
+    // like it passed behind the bezel rather than skipping over it.
     for (const auto& s : specs_) {
+        const float b = (float)s.bezel;
         WindowRects r;
-        r.u0 = (float)(s.x - minX) / cw;
-        r.v0 = (float)(s.y - minY) / ch;
-        r.u1 = (float)(s.x - minX + s.width) / cw;
-        r.v1 = (float)(s.y - minY + s.height) / ch;
+        r.u0 = ((float)(s.x - minX) + b) / cw;
+        r.v0 = ((float)(s.y - minY) + b) / ch;
+        r.u1 = ((float)(s.x - minX + s.width) - b) / cw;
+        r.v1 = ((float)(s.y - minY + s.height) - b) / ch;
         rects_.push_back(r);
     }
 
@@ -516,7 +522,8 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                          (uint32_t)models.size(), mvps.empty() ? nullptr : mvps.data(), view,
                          extent, vk.queueFamily,
                          backgroundOn_ && background_.valid() ? &background_ : nullptr, t,
-                         canvasAspect_, r.u0, r.v0, r.u1 - r.u0, r.v1 - r.v0);
+                         canvasAspect_, r.u0, r.v0, r.u1 - r.u0, r.v1 - r.v0,
+                         (uint32_t)specs_[w].bezel);
 
         // M24: consumer-view deliveries - blit window 0's rendered scene
         // (scaled) into each consumer's shared ring texture before the final

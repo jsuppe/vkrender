@@ -282,7 +282,17 @@ void beginClearedRendering(VkCommandBuffer cmd, VkImageView target, VkExtent2D e
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{0.05f, 0.05f, 0.08f, 1.0f}};
+    // Doubles as the bezel colour when a panel declares one: the scene is
+    // rendered into an inset viewport, so whatever remains of this clear IS the
+    // visible frame. VKR_BEZEL_COLOR=r,g,b (0..1) to make it obvious while
+    // tuning, e.g. 0.6,0,0.
+    static float clr[3] = {0.05f, 0.05f, 0.08f};
+    static bool clrRead = false;
+    if (!clrRead) {
+        clrRead = true;
+        if (const char* c = getenv("VKR_BEZEL_COLOR")) sscanf(c, "%f,%f,%f", &clr[0], &clr[1], &clr[2]);
+    }
+    color.clearValue.color = {{clr[0], clr[1], clr[2], 1.0f}};
 
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ri.renderArea = {{0, 0}, extent};
@@ -345,8 +355,15 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
                             const int64_t* faceSlots, uint32_t cubeCount, const float* mvps,
                             VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                             BackgroundPass* background, float timeSec, float bgAspect,
-                            float bgOffX, float bgOffY, float bgSclX, float bgSclY) {
+                            float bgOffX, float bgOffY, float bgSclX, float bgSclY,
+                            uint32_t bezelPx) {
     static const bool noExternalBarrier = getenv("VKR_NO_EXTERNAL_BARRIER") != nullptr;
+    // Inset everything the scene draws by the bezel; the cleared border left
+    // around it is the frame. Clamp so an over-large bezel cannot invert the
+    // rect.
+    const uint32_t bez =
+        bezelPx * 2 < extent.width && bezelPx * 2 < extent.height ? bezelPx : 0;
+    const VkExtent2D inner{extent.width - bez * 2, extent.height - bez * 2};
     const uint32_t faceCount = cubeCount * 6;
 
     // Resolve each face to a drawable (slot imported AND descriptor present);
@@ -373,12 +390,16 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
 
     beginClearedRendering(cmd, target, extent);
 
+    // Background is part of the scene, so it is inset with everything else -
+    // otherwise the backdrop would run under the frame while the cubes stopped
+    // at it, and the bezel would look like a floating rectangle.
     if (background)
-        background->draw(cmd, extent, timeSec, bgAspect, bgOffX, bgOffY, bgSclX, bgSclY);
+        background->draw(cmd, inner, timeSec, bgAspect, bgOffX, bgOffY, bgSclX, bgSclY, bez);
 
     if (anyVideo) {
-        VkViewport viewport{0.0f, 0.0f, (float)extent.width, (float)extent.height, 0.0f, 1.0f};
-        VkRect2D scissor{{0, 0}, extent};
+        VkViewport viewport{(float)bez, (float)bez, (float)inner.width, (float)inner.height,
+                            0.0f, 1.0f};
+        VkRect2D scissor{{(int32_t)bez, (int32_t)bez}, inner};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);

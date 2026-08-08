@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
     std::vector<vkr::WindowSpec> windowSpecs; // M15: --window WxH+X+Y (repeatable)
+    int defaultBezel = 0;                     // M29: --bezel applies to all panels
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dumpPath = argv[++i];
@@ -103,13 +104,25 @@ int main(int argc, char** argv) {
             if (i + 1 < argc && argv[i + 1][0] != '-') pipe = argv[++i];
         } else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
             vkr::WindowSpec spec;
-            if (sscanf(argv[++i], "%dx%d+%d+%d", &spec.width, &spec.height, &spec.x,
-                       &spec.y) < 2 ||
-                spec.width <= 0 || spec.height <= 0) {
-                fprintf(stderr, "bad --window (want WxH+X+Y, e.g. 1920x1080+0+0)\n");
+            // WxH+X+Y[:bezel] - the rect is this panel's PHYSICAL place on the
+            // wall, so for real multi-display the config supplies each screen's
+            // position relative to the others and the gaps between them are the
+            // bezels. :bezel is how much of this panel's own edge its frame
+            // hides. See docs/MULTIDISPLAY.md.
+            if (sscanf(argv[++i], "%dx%d+%d+%d:%d", &spec.width, &spec.height, &spec.x,
+                       &spec.y, &spec.bezel) < 2 ||
+                spec.width <= 0 || spec.height <= 0 || spec.bezel < 0) {
+                fprintf(stderr, "bad --window (want WxH+X+Y[:bezel], e.g. 1920x1080+0+0:24)\n");
                 return 1;
             }
             windowSpecs.push_back(spec);
+        } else if (!strcmp(argv[i], "--bezel") && i + 1 < argc) {
+            // Uniform bezel applied to every window given so far AND to any
+            // that follow - the common case is one wall of identical panels.
+            int b = atoi(argv[++i]);
+            if (b < 0) { fprintf(stderr, "bad --bezel\n"); return 1; }
+            defaultBezel = b;
+            for (auto& s : windowSpecs) s.bezel = b;
         } else if (!strcmp(argv[i], "--pacing") && i + 1 < argc) {
             std::string mode = argv[++i];
             if (mode == "pts") ptsPacing = true;
@@ -118,10 +131,15 @@ int main(int argc, char** argv) {
             fprintf(stderr,
                     "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
                     "[--wayland [socket]] [--serve [pipe]] "
-                    "[--window WxH+X+Y]... [--headless N [--dump out.ppm]]\n");
+                    "[--window WxH+X+Y[:bezel]]... [--bezel px] "
+                    "[--headless N [--dump out.ppm]]\n");
             return 1;
         }
     }
+    // --bezel given before any --window still applies to them all.
+    if (defaultBezel > 0)
+        for (auto& s : windowSpecs)
+            if (s.bezel == 0) s.bezel = defaultBezel;
 #ifdef _WIN32
     if (waylandMode) {
         fprintf(stderr, "--wayland is Linux-only\n");
