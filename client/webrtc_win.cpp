@@ -185,14 +185,28 @@ int main(int argc, char** argv) {
 
     gst_init(&argc, &argv);
 
-    // Fail fast if the renderer service isn't up (presenter connections are
-    // made lazily per session, but a dead service should be loud at launch).
-    vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64);
-    if (!probe) {
-        fprintf(stderr, "webrtc: cannot reach vkrenderer service on pipe '%s'\n", g_pipe);
-        return 1;
+    // M28: wait for the renderer rather than dying on a startup race. Exiting
+    // here silently costs the appliance a whole modality, and there are two
+    // easy ways to lose the probe: the launcher starts us seconds after the
+    // renderer, and a service already holding its 12-client maximum rejects
+    // the probe too. Presenter connections are lazy, so once there is room we
+    // work.
+    bool serviceUp = false;
+    for (int attempt = 0; attempt < 30 && !serviceUp; ++attempt) {
+        if (vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64)) {
+            vkrDisconnect(probe);
+            serviceUp = true;
+            break;
+        }
+        if (attempt == 0)
+            printf("webrtc: waiting for the vkrenderer service on pipe '%s'...\n", g_pipe);
+        Sleep(1000);
     }
-    vkrDisconnect(probe);
+    if (!serviceUp)
+        fprintf(stderr,
+                "webrtc: vkrenderer service on pipe '%s' still unreachable - continuing "
+                "anyway; presenters will attach once it has room\n",
+                g_pipe);
 
     GstElement* pipeline = gst_pipeline_new("webrtc-room");
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
