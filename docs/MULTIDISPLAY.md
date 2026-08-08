@@ -220,6 +220,45 @@ split mode, those two are genlocked by construction and only the DP panel can
 drift. That is a hardware/bring-up decision, not something the app can choose,
 but it converts the problem from three drifting displays to two.
 
+#### Skew compensation: two offsets, and a loop that measures itself
+
+Skew does not have to be eliminated - it has to be *compensated*, and it can be
+calibrated per display without designing around a number nobody has yet.
+
+Two per-display values, both defaulting to zero:
+
+| | Fixes | Mechanism |
+|---|---|---|
+| `presentOffsetNs` | whole-frame skew | which vsync this display targets, via the per-swapchain time in `VkPresentTimesInfoGOOGLE` |
+| `timeOffsetNs` | sub-frame phase | the animation clock used for **this display's pass** |
+
+The second is the one that actually saves the animation, and it is worth being
+precise about why. A *presentation* offset cannot fix sub-frame phase: a panel
+only scans out on its own vsync, so you may choose which vsync to aim at but
+never a fraction of one. Instead, fix the CONTENT rather than the timing - if
+display B lights up 8 ms after display A, render B's pass with `t + 8 ms`. When
+B illuminates it shows the position the tile has actually reached by then, so
+the tile lines up across the seam even though the panels lit at different
+instants.
+
+This is nearly free here: each display already renders through its own
+sub-frustum in the same command buffer, so only the model matrices need
+recomputing per display - a handful of matrices per frame.
+
+**The loop measures itself.** `VK_GOOGLE_display_timing` also gives
+`vkGetPastPresentationTimingGOOGLE`, which reports the ACTUAL present time per
+swapchain. Comparing those across displays for one logical frame yields the
+measured skew, from the device, with no camera or external instrumentation.
+That matters because a static calibration decays - DSI and DP have separate
+PLLs, so any rate difference makes the phase drift and a number measured once
+goes stale. A feedback loop tracks it.
+
+Consequence for sequencing: the compensation path can be **designed and built
+now** with both offsets at zero, because the structure is identical whether the
+real skew turns out to be 0 or 16 ms. Hardware is then needed only to confirm
+the loop converges - not to make design decisions. This is what demotes the
+"measure skew first" milestone from a blocker to a validation step.
+
 Caveats to verify on real hardware, not assume:
 
 - OEM support for `Presentation` varies enormously.
@@ -317,7 +356,7 @@ whether Android gets lockstep only or needs the canvas path too.
 | M30 | Unify `SceneHost` across all three platforms | Stops the Android fork; everything after is written once |
 | M31 | `DisplayTarget` + present strategies (lockstep / canvas-blit) | Handles mixed refresh and future multi-GPU |
 | M32 | Animation layer (spring transforms, entry/exit/reflow/span) | The visible feature |
-| M32.5 | **Measure cross-display skew on the QCS8250** | De-risks everything after it; if skew is unacceptable the animation premise changes |
+| M32.5 | Per-display `presentOffsetNs` / `timeOffsetNs` + the self-measuring skew loop | Buildable now with both at zero; hardware only confirms convergence |
 | M33 | Android multi-display via `Presentation` + hotplug + `VK_GOOGLE_display_timing` | Third platform |
 | M34 | Bezel compensation + 3-display validation on all platforms | Finish |
 
