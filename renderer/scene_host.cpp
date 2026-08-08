@@ -1,4 +1,4 @@
-// M15 scene host implementation - see scene_host.h.
+﻿// M15 scene host implementation - see scene_host.h.
 
 #ifndef __ANDROID__
 
@@ -76,7 +76,27 @@ bool buildSwapchain(VkContext& vk, GLFWwindow* window, VkSurfaceKHR surface,
     if (extent.width == 0 || extent.height == 0) return false;
 
     // FIFO everywhere: the scene loop is vsync-paced, not latency-critical.
+    // M28: VKR_PRESENT_MODE overrides it. FIFO paces on the compositor, so on
+    // a box whose display is asleep or driven remotely, vkQueuePresentKHR can
+    // block far longer than a refresh interval and drag the whole scene down
+    // (measured: 134 ms/frame on an idle RTX 5090 - the GPU was finishing
+    // instantly, presentation was the entire cost). `immediate` or `mailbox`
+    // decouples the scene from the display for headless/appliance use.
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    if (const char* pm = getenv("VKR_PRESENT_MODE")) {
+        VkPresentModeKHR want = presentMode;
+        if (!strcmp(pm, "immediate")) want = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        else if (!strcmp(pm, "mailbox")) want = VK_PRESENT_MODE_MAILBOX_KHR;
+        uint32_t modeCount = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(vk.phys, surface, &modeCount, nullptr);
+        std::vector<VkPresentModeKHR> modes(modeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(vk.phys, surface, &modeCount,
+                                                  modes.data());
+        for (VkPresentModeKHR m : modes)
+            if (m == want) presentMode = want;
+        if (presentMode != want)
+            VKR_WARN("scene: present mode '%s' unsupported, staying on FIFO", pm);
+    }
 
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
@@ -417,7 +437,17 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
 
     FrameSync& f = frames_[frameIndex_ % kFramesInFlight];
     ++frameIndex_;
+
+    // M28: where does a scene frame actually go? The receive side has had
+    // recv_stats since M23; this is the render-side counterpart, because "the
+    // scene is slow" is otherwise indistinguishable between waiting on the
+    // previous frame's GPU work, waiting on the compositor for a swapchain
+    // image, and our own recording. VKR_SCENE_TIMING=1 to enable.
+    static const bool kTiming = getenv("VKR_SCENE_TIMING") != nullptr;
+    const int64_t tFrameStart = kTiming ? nowNs() : 0;
+
     vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
+    const int64_t tAfterFence = kTiming ? nowNs() : 0;
 
     // Acquire every window's image.
     const size_t windowCount = vk.headless ? 1 : 1 + extra_.size();
@@ -449,6 +479,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             }
         }
     }
+    const int64_t tAfterAcquire = kTiming ? nowNs() : 0;
     vkResetFences(vk.device, 1, &f.inFlight);
 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -566,6 +597,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
 
     vkEndCommandBuffer(f.cmd);
+    const int64_t tAfterRecord = kTiming ? nowNs() : 0;
 
     std::vector<VkSemaphore> waitSems;
     std::vector<VkPipelineStageFlags> waitStages;
@@ -614,6 +646,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         VKR_ERR("scene: submit failed");
         return false;
     }
+    const int64_t tAfterSubmit = kTiming ? nowNs() : 0;
 
     if (!vk.headless) {
         std::vector<VkSwapchainKHR> chains;
@@ -643,10 +676,30 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
 
     ++renders_;
+    if (kTiming) {
+        const int64_t tEnd = nowNs();
+        fenceNs_ += tAfterFence - tFrameStart;
+        acquireNs_ += tAfterAcquire - tAfterFence;
+        recordNs_ += tAfterRecord - tAfterAcquire;
+        submitNs_ += tAfterSubmit - tAfterRecord;
+        presentNs_ += tEnd - tAfterSubmit;
+    }
     if (nowNs() - rateWindowStart_ > 5000000000ll) {
         VKR_LOG("scene: %llu frames in 5s (%s, %zu/%zu streams in scene, %zu windows)",
                 (unsigned long long)renders_, layoutName(layout_), enabled.size(),
                 streams.size(), windowCount);
+        if (kTiming && renders_) {
+            // fence  = waiting for this frame slot's previous GPU work
+            // acquire= waiting for the compositor to hand back a swapchain image
+            //          (under FIFO this is where vsync pacing shows up)
+            // record = our own CPU work: recording, submit, present call
+            VKR_LOG("scene-timing: per frame avg fence=%.1f acquire=%.1f record=%.1f "
+                    "submit=%.1f present=%.1f (ms)",
+                    (double)fenceNs_ / renders_ * 1e-6, (double)acquireNs_ / renders_ * 1e-6,
+                    (double)recordNs_ / renders_ * 1e-6, (double)submitNs_ / renders_ * 1e-6,
+                    (double)presentNs_ / renders_ * 1e-6);
+            fenceNs_ = acquireNs_ = recordNs_ = submitNs_ = presentNs_ = 0;
+        }
         renders_ = 0;
         rateWindowStart_ = nowNs();
     }

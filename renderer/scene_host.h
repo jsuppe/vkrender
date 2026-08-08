@@ -130,6 +130,12 @@ private:
     uint64_t frameIndex_ = 0;
     uint64_t renders_ = 0;
     int64_t rateWindowStart_ = 0;
+    // M28: VKR_SCENE_TIMING breakdown, accumulated over the 5 s report window.
+    int64_t fenceNs_ = 0;   // waiting on this slot's previous GPU work
+    int64_t acquireNs_ = 0; // waiting for a swapchain image (vsync pacing)
+    int64_t recordNs_ = 0;  // command buffer recording
+    int64_t submitNs_ = 0;  // vkQueueSubmit
+    int64_t presentNs_ = 0; // vkQueuePresentKHR
 
     // Snapshot control (P key, or VKR_SNAPSHOT_SECONDS for periodic dumps):
     // writes each window's last presented frame to scene-w<N>.ppm.

@@ -322,13 +322,24 @@ bool VkContext::createSwapchain() {
     // MAILBOX when available: newest-image-wins presentation without tearing,
     // so a late frame never queues behind stale ones (lowest display latency).
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    if (!preferFifo) {
+    // M28: VKR_PRESENT_MODE forces a mode on the PRIMARY window (scene_host
+    // applies the same override to extra windows). This is the one that
+    // matters for a single-window appliance - patching only the extra-window
+    // path looks like it works and changes nothing.
+    const char* pmEnv = getenv("VKR_PRESENT_MODE");
+    if (pmEnv || !preferFifo) {
+        VkPresentModeKHR want = VK_PRESENT_MODE_MAILBOX_KHR;
+        if (pmEnv) {
+            if (!strcmp(pmEnv, "immediate")) want = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            else if (!strcmp(pmEnv, "fifo")) want = VK_PRESENT_MODE_FIFO_KHR;
+            else if (!strcmp(pmEnv, "mailbox")) want = VK_PRESENT_MODE_MAILBOX_KHR;
+        }
         uint32_t pmCount = 0;
         vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, nullptr);
         std::vector<VkPresentModeKHR> modes(pmCount);
         vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &pmCount, modes.data());
         for (VkPresentModeKHR m : modes)
-            if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
+            if (m == want) presentMode = m;
     }
 
 #ifdef __ANDROID__

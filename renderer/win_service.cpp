@@ -560,6 +560,45 @@ int runWinService(const WinServeOptions& options) {
                 presenting = true;
                 break;
             }
+
+        // M28: keep the display awake while a presentation is live.
+        //
+        // Not cosmetic. A sleeping display stops the compositor consuming
+        // swapchain images, so FIFO vkQueuePresentKHR blocks ~134 ms and the
+        // ENTIRE scene collapses to ~7 fps - measured on this box after its
+        // monitor had been asleep for three hours, with the GPU otherwise
+        // finishing frames instantly (136k fps under IMMEDIATE). In a meeting
+        // room that is a live failure: the display sleeps after five idle
+        // minutes, someone casts, and every producer's ring starves against a
+        // 7 fps consumer.
+        //
+        // Held only while presenting, so an idle room display is still allowed
+        // to sleep.
+        static bool displayHeld = false;
+        if (presenting != displayHeld) {
+            SetThreadExecutionState(presenting ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                                                  ES_DISPLAY_REQUIRED)
+                                               : ES_CONTINUOUS);
+            // ES_DISPLAY_REQUIRED only PREVENTS sleep - it will not wake a
+            // display that is already off, which is exactly the state a room
+            // appliance is in when someone starts casting. Waking needs input,
+            // so synthesise a zero-delta mouse move: it resets the idle timer
+            // and powers the panel without moving the user's cursor.
+            // VKR_NO_DISPLAY_WAKE=1 opts out (useful on a dev box, where a
+            // receiver stealing the display is just rude).
+            static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
+            if (presenting && wakeAllowed) {
+                INPUT in{};
+                in.type = INPUT_MOUSE;
+                in.mi.dwFlags = MOUSEEVENTF_MOVE;
+                in.mi.dx = 0;
+                in.mi.dy = 0;
+                SendInput(1, &in, sizeof(in));
+            }
+            displayHeld = presenting;
+            VKR_LOG("service: display wake %s (presentation %s)",
+                    presenting ? "held" : "released", presenting ? "active" : "idle");
+        }
         for (auto& cp : consumers) {
             Consumer& c = *cp;
             c.pendingSlot = -1;
