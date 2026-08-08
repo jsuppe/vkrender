@@ -9,7 +9,7 @@
 ; Output: installer\Output\vkrender-setup-<version>.exe
 
 #define MyAppName "vkrender"
-#define MyAppVersion "0.25.0"
+#define MyAppVersion "0.28.0"
 #define MyAppPublisher "vkrender"
 #define BuildDir "..\build\Release"
 #define AirplayDir "..\..\vkrender-airplay\build\Release"
