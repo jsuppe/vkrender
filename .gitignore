@@ -19,5 +19,7 @@ android/webrtc/build/
 android/webrtc/.cxx/
 android/rtsp/build/
 android/rtsp/.cxx/
+android/wall/build/
+android/wall/.cxx/
 android/gstreamer-android/
 installer/Output/
