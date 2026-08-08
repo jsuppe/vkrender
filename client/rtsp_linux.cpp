@@ -41,12 +41,16 @@ void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement*
     // the RTSP session (a stalled session eventually drops the connection).
     GstElement* queue = gst_element_factory_make("queue", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
-    GstElement* sink = gst_element_factory_make("waylandsink", nullptr);
+    // waylandsink is the real sink (one compositor surface per source), but a
+    // headless box has no display to open - VKR_RTSP_SINK=fakesink exercises
+    // the whole ingest path over SSH, which is how this file is regression
+    // tested without a compositor.
+    const char* sinkName = getenv("VKR_RTSP_SINK");
+    if (!sinkName || !*sinkName) sinkName = "waylandsink";
+    GstElement* sink = gst_element_factory_make(sinkName, nullptr);
     if (!decode || !queue || !convert || !sink) {
-        fprintf(stderr,
-                "rtsp: [source %u] missing elements "
-                "(decodebin/queue/videoconvert/waylandsink)\n",
-                sourceId);
+        fprintf(stderr, "rtsp: [source %u] missing elements (decodebin/queue/videoconvert/%s)\n",
+                sourceId, sinkName);
         return nullptr;
     }
     g_object_set(queue, "leaky", 2 /* downstream */, "max-size-buffers", 3,
@@ -80,7 +84,7 @@ void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement*
     stats->attachProbe(statPad, vkr::kStageSink);
     gst_object_unref(statPad);
 
-    printf("rtsp: [source %u] video -> compositor surface\n", sourceId);
+    printf("rtsp: [source %u] video -> %s\n", sourceId, sinkName);
     return stats;
 }
 

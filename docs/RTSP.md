@@ -93,6 +93,7 @@ backoff, then automatic recovery when the publisher returns.
 | `VKR_RTSP_PROTOCOLS` | auto | `tcp` forces TCP interleaved; useful where UDP is firewalled. |
 | `VKR_RTSP_STALL_MS` | 8000 | Lower for faster failover, higher for sources with long GOPs or sparse keyframes. |
 | `VKR_RTSP_CONNECT_MS` | 15000 | |
+| `VKR_RTSP_SINK` | `waylandsink` | **Linux only.** Swap the sink element. `fakesink` exercises the whole ingest path on a headless box with no compositor — that is how the Linux receiver is regression tested over SSH. |
 
 Measured on CASPAR against mediamtx (h264, 1280x720@30): **~44 ms behind live**,
 stable across intervals, `qdrop=0`. See [PROFILING.md](PROFILING.md) for what
@@ -166,5 +167,26 @@ every pipeline mutation happens in `rtsp_room_poll()` on the main thread.
 | Platform | Status |
 |---|---|
 | Windows | **Verified end to end** — two sources at different resolutions, runtime add/remove, stall detection, backoff, recovery |
+| Linux | **Verified end to end, cross-machine** — pulled from a Windows RTSP server over the LAN (see below) |
 | Android | **Builds** (arm64-v8a + x86_64, APK links clean) — not yet device-verified |
-| Linux | **Written, not yet compiled** — no Linux host available when it was added |
+
+The Linux run is the most realistic test of the three, because the source was
+on a different machine: melchior (Ubuntu, GStreamer 1.24.2) pulling from
+mediamtx on CASPAR across the LAN, with `VKR_RTSP_SINK=fakesink` standing in
+for the compositor on a headless box.
+
+```
+recv-stats: [session 2] 5.0s pkts=161 frames=151 (30.0 fps)
+  behind_ms ingress=9.4/15.6 sink=43.1/49.3 (avg/max) stage_ms=33.7
+  pulled=0 qdrop=0 ringdrop=0 gap=0
+```
+
+Two sources live at once, `POST` → 201, `DELETE` → 204, and on killing the
+publisher: backoff 2 s → 4 s → 8 s → 16 s with the real error surfaced
+(`Not found`), then automatic recovery to `live` when it came back. The
+latency numbers land within a millisecond of Windows, including the ~34 ms
+decode stage — the shared core behaves identically on both.
+
+> `pulled=0` is expected on Linux: that counter is incremented by the
+> Windows/Android sinks, which pull from an appsink. The Linux sink hands
+> buffers straight to waylandsink, so nothing pulls.
