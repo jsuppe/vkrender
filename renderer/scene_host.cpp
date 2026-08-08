@@ -402,25 +402,65 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                 float cx, cy, hw, hh;
             };
             const float H = 3.11f, W = H * canvasAspect_;
+
+            // M29: pick the arrangement, don't hardcode it.
+            //
+            // The old table assumed a 16:9 canvas: 2 streams always went
+            // top/bottom. But a 16:9 tile fitted into a half-height band is
+            // limited by HEIGHT, so it can never be wider than half the canvas
+            // - and on a three-panel wall (aspect 3.69) that left each tile at
+            // ~24% of the width with both ends empty. Nothing to do with the
+            // per-window frustum; this is purely where the tiles are placed in
+            // canvas space.
+            //
+            // So evaluate the sensible arrangements and keep whichever makes
+            // the tiles biggest. On 16:9 this reproduces the original choices;
+            // on a wide wall 2 streams land side by side instead of stacked.
+            struct Arrangement {
+                int cols, rows;
+                bool triangle; // 3-up: one across the top, two beneath
+            };
+            const Arrangement candidates[] = {
+                {1, 1, false}, {2, 1, false}, {1, 2, false}, {3, 1, false},
+                {1, 3, false}, {0, 0, true},  {2, 2, false}, {4, 1, false},
+                {1, 4, false},
+            };
+
+            auto buildRegions = [&](const Arrangement& a, Region* out) -> float {
+                if (a.triangle) {
+                    out[0] = {0, H / 2, W, H / 2};
+                    out[1] = {-W / 2, -H / 2, W / 2, H / 2};
+                    out[2] = {W / 2, -H / 2, W / 2, H / 2};
+                } else {
+                    const float hw = W / (float)a.cols, hh = H / (float)a.rows;
+                    for (int r = 0; r < a.rows; ++r)
+                        for (int c = 0; c < a.cols; ++c)
+                            out[r * a.cols + c] = {-W + hw * (2 * c + 1),
+                                                   H - hh * (2 * r + 1), hw, hh};
+                }
+                // Score = the SMALLEST tile the arrangement produces, so a
+                // layout is only preferred if it helps the worst-off stream.
+                float worst = 1e9f;
+                const size_t count = a.triangle ? 3 : (size_t)(a.cols * a.rows);
+                for (size_t i = 0; i < count; ++i)
+                    worst = std::min(worst, std::min(out[i].hw, out[i].hh * 16.0f / 9.0f));
+                return worst;
+            };
+
             Region regs[4];
-            switch (n) {
-                case 1: regs[0] = {0, 0, W, H}; break;
-                case 2:
-                    regs[0] = {0, H / 2, W, H / 2};
-                    regs[1] = {0, -H / 2, W, H / 2};
-                    break;
-                case 3:
-                    regs[0] = {0, H / 2, W, H / 2};
-                    regs[1] = {-W / 2, -H / 2, W / 2, H / 2};
-                    regs[2] = {W / 2, -H / 2, W / 2, H / 2};
-                    break;
-                default:
-                    regs[0] = {-W / 2, H / 2, W / 2, H / 2};
-                    regs[1] = {W / 2, H / 2, W / 2, H / 2};
-                    regs[2] = {-W / 2, -H / 2, W / 2, H / 2};
-                    regs[3] = {W / 2, -H / 2, W / 2, H / 2};
-                    break;
+            float best = -1.0f;
+            for (const Arrangement& a : candidates) {
+                const size_t count = a.triangle ? 3 : (size_t)(a.cols * a.rows);
+                if (count != n) continue;
+                Region trial[4];
+                float score = buildRegions(a, trial);
+                if (score > best) {
+                    best = score;
+                    for (size_t i = 0; i < n; ++i) regs[i] = trial[i];
+                }
             }
+            if (best < 0.0f) break; // no arrangement for this count
+
             const float margin = 0.98f;
             for (size_t i = 0; i < n; ++i) {
                 const Region& r = regs[i];
