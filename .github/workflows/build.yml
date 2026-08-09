@@ -3,7 +3,9 @@ name: build
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 jobs:
   windows:
@@ -52,10 +54,19 @@ jobs:
           Copy-Item build/Release/*.dll dist/
           Copy-Item -Recurse build/Release/shaders dist/shaders
 
+      # Uploaded only for a tag or an explicit manual run. Every push to master
+      # used to publish ~160 MB of Android APKs plus a Windows bundle on the
+      # 90-day default retention, which filled the account's artifact storage in
+      # about a week and then failed EVERY upload with "Artifact storage quota
+      # has been hit" - while the builds themselves passed. CI's job is to fail
+      # loudly when the build breaks; it does that either way, and these outputs
+      # are reproducible from any checkout.
       - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
           name: vkrender-win64
           path: dist
+          retention-days: 7
 
   linux:
     runs-on: ubuntu-latest
@@ -155,9 +166,14 @@ jobs:
       - name: Assemble APKs (renderer + decoder + airplay + webrtc)
         run: gradle -p android assembleDebug
 
+      # Tag/manual only, and short-lived - see the note on the Windows upload.
+      # This job is the expensive one: 4.23 GB of the 4.90 GB that filled the
+      # quota was Android APKs, at 139-161 MB per run.
       - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
           name: vkrender-android
+          retention-days: 7
           path: |
             android/renderer/build/outputs/apk/debug/renderer-debug.apk
             android/decoder/build/outputs/apk/*/debug/*.apk
