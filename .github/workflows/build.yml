@@ -81,6 +81,39 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  # The sender is a Flutter app, so it builds and tests entirely outside the
+  # CMake tree and needs its own job. Ubuntu is deliberate: the suite is pure
+  # Dart over mocked platform channels, so it does not need Windows, a GPU, or
+  # a display -- which is the whole point of testing the source picker this way
+  # (see sender/test/source_picker_test.dart).
+  sender:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Pinned to the version the sender is developed against; `stable`
+          # would silently move and turn an SDK change into a mystery failure
+          # in an unrelated PR.
+          flutter-version: 3.38.9
+          channel: stable
+          cache: true
+
+      - name: Fetch packages
+        working-directory: sender
+        run: flutter pub get
+
+      # Warnings are failures here: the app is small enough that a clean
+      # analyze is achievable, so anything less means it has started to rot.
+      - name: Analyze
+        working-directory: sender
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Test
+        working-directory: sender
+        run: flutter test --reporter expanded
+
   android:
     runs-on: ubuntu-latest
     steps:

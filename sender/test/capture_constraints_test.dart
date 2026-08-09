@@ -88,6 +88,15 @@ void main() {
   WebrtcSender make(void Function(SenderState) sink) =>
       WebrtcSender(onState: (s, {detail}) => sink(s));
 
+  // `flutter test` always runs on a desktop host, which is exactly the branch
+  // WebrtcSender takes for screen capture. Assert that rather than skipping the
+  // desktop cases on non-Windows hosts: that would quietly drop them on the
+  // Linux CI runner, which is the one place they most need to run.
+  setUpAll(() {
+    expect(Platform.isWindows || Platform.isLinux || Platform.isMacOS, isTrue,
+        reason: 'these tests assume the desktop getDisplayMedia path');
+  });
+
   setUp(() {
     rec = _Recorder();
     rec.install();
@@ -109,7 +118,7 @@ void main() {
     // A chosen id must NOT trigger enumeration - that would be a wasted
     // round trip, and on a busy desktop it is a slow one.
     expect(rec.calls, isNot(contains('getDesktopSources')));
-  }, skip: !Platform.isWindows ? 'desktop capture path is desktop-only' : null);
+  });
 
   test('no chosen id falls back to the first enumerated screen', () async {
     await _run(make, (s) => s.start(endpoint, CaptureSource.screen));
@@ -117,7 +126,7 @@ void main() {
     expect(rec.calls, contains('getDesktopSources'));
     final video = rec.displayConstraints!['video'] as Map;
     expect(video['deviceId'], {'exact': 'screen:first'});
-  }, skip: !Platform.isWindows ? 'desktop capture path is desktop-only' : null);
+  });
 
   test('no sources at all fails loudly rather than capturing nothing',
       () async {
@@ -131,7 +140,7 @@ void main() {
     }
     expect('$err', contains('no screen capture sources found'));
     expect(rec.calls, isNot(contains('getDisplayMedia')));
-  }, skip: !Platform.isWindows ? 'desktop capture path is desktop-only' : null);
+  });
 
   test('camera capture ignores the desktop id entirely', () async {
     await _run(make,
