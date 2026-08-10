@@ -1,4 +1,6 @@
-# framelink — zero-copy GPU frames between Windows processes
+# framelink — zero-copy GPU frames between processes
+
+Windows, Linux and Android from one C API; macOS later (see the caveat).
 
 Draft. `framelink` is a working name; the prefix `fl` below changes with it.
 
@@ -10,9 +12,9 @@ Nothing here is implemented yet. It exists to make the shape reviewable.
 
 ## What it is, and what it deliberately is not
 
-**Is:** a frame channel between Windows processes. One process publishes GPU
-frames; others subscribe and read the *same GPU memory*. No copies, no
-encode/decode, no network.
+**Is:** a frame channel between processes on one machine. One process publishes
+GPU frames; others read the *same GPU memory*. No copies, no encode/decode, no
+network. The same calls on Windows, Linux and Android.
 
 **Is not:** a compositor, a scene graph, a layout engine, a codec, or a
 cross-machine transport.
@@ -180,9 +182,10 @@ FL_API flResult flRelease(flChannel*, const flFrame*);
 FL_API flResult flQuery(flChannel*, flChannelInfo* out);
 FL_API void     flClose(flChannel*);
 
-/* Discovery. Needed because producers now own channels (see Topology).
- * Returns the count; pass names=NULL to size the buffer first. */
-FL_API flResult flEnumerate(const char** names, uint32_t cap, uint32_t* count);
+/* No enumeration API. An earlier draft needed one because producers owned
+ * channels and had to be discovered; with consumer-owned rings the consumer
+ * already knows the name it created, and a producer is configured with the name
+ * it should attach to. Adding discovery later is easy; removing it is not. */
 
 /* Sync, expressed portably. Wait for `waitValue` on the channel's timeline
  * before reading an acquired image; signal after writing one. Platform headers
@@ -313,20 +316,46 @@ vkrender's renderer keeps its consumer-view negotiation, because that is
 genuinely about compositing: it is the thing deciding what a 1280x720@30 view of
 a four-tile scene means.
 
+## Decided: consumer-owned, with no create-if-absent
+
+Only a consumer creates a channel. `flOpenProducer` attaches to one that exists
+and fails `FL_NOT_FOUND` otherwise — it never allocates. A standalone publisher
+with no consumer running uses the optional broker below.
+
+The alternative — letting a producer create a ring and hand it over to the first
+consumer — was rejected. It is friendlier for exactly one scenario and costs:
+
+- **Android cannot do it idiomatically.** Buffer ownership cannot be handed to a
+  `Surface` consumer that appears later, so it needs a second, non-Surface path
+  over raw `AHardwareBuffer`. That forks the thing this API exists to unify, and
+  it is a structural crack rather than a cost.
+- **Creation becomes a race** needing atomic create-or-attach, with a different
+  primitive on each platform.
+- **The same call means two things depending on start order** — sometimes
+  choosing geometry, sometimes accepting it.
+- **Creator exit is unanswerable.** Either an unrelated process quitting tears
+  down a live consumer, or something else owns the allocation, which is a broker
+  that has not admitted what it is.
+- **Negotiation turns bidirectional**, so `flReconfigure` runs during ordinary
+  startup instead of on a rare stream reset.
+- **Name squatting.** If anyone may create a channel by name, a hostile process
+  can pre-create the one the compositor expects and own it. The flagship
+  consumer is a virtual camera, so this is not theoretical.
+
+**The broker (`framelinkd`, optional).** A small daemon that creates channels on
+request, for publishers with no consumer. One process to deploy, in exchange for
+one ownership rule, one code path per platform, no creation race, a well-defined
+owner for access control, and Android staying on the Surface path. It is not
+required for the vkrender case, where the renderer is already the consumer.
+
 ## Open questions
 
-1. **Who creates a channel when the consumer is not the compositor?** The ring
-   is consumer-owned (settled above, by Android). But a standalone integrator
-   who only wants to *publish* — a capture tool with no consumer running — has
-   nobody to allocate buffers. Either they run a broker, or `flOpenProducer`
-   grows a "create if absent" mode that allocates a ring and hands ownership to
-   the first consumer. The second is friendlier and much fiddlier.
-2. **What happens to a slow consumer?** Today the fence pair gives
+1. **What happens to a slow consumer?** Today the fence pair gives
    back-pressure to a single peer. With N consumers, one slow reader must not
    stall the producer — almost certainly latest-frame-wins per consumer, but the
    fence bookkeeping needs revisiting for the fan-out case.
-3. **Lifetimes as contract.** "owned by the library; valid until `vkrDisconnect`"
+2. **Lifetimes as contract.** "owned by the library; valid until `vkrDisconnect`"
    is currently a comment. Published, it becomes something we cannot quietly
    change, so it wants to be specified and tested before 1.0, not after.
-4. **Name and licence.** `vkrender_client` reads as "client of vkrender". MIT or
+3. **Name and licence.** `vkrender_client` reads as "client of vkrender". MIT or
    Apache-2.0, kept well away from the GPLv3 receiver.
