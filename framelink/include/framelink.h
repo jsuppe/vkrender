@@ -102,7 +102,28 @@ typedef struct flBuffer {
 // reason an Android producer does not choose a Surface's size.
 FL_API flResult flOpenProducer(const char* name, flChannel** out);
 FL_API flResult flAcquireBuffer(flChannel*, flBuffer* out, uint32_t timeoutMs);
+
+// Submit, having drawn with the channel's own D3D11 device. framelink signals
+// readiness for you.
 FL_API flResult flSubmit(flChannel*, const flBuffer*, int64_t ptsNs); // -1 = no pts
+
+// Submit, having drawn with your OWN GPU API - Vulkan, D3D12, Metal.
+//
+// flSubmit signals the ready fence from framelink's D3D11 context, which orders
+// nothing if your writes came from a different device: a Vulkan producer that
+// used it would hand consumers half-drawn frames. Instead:
+//
+//   1. flSharedReadyFence() once, and import the handle as a timeline
+//      semaphore (Vulkan: VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT).
+//   2. flBeginSubmit() -> the value to signal for this frame.
+//   3. queue your own work, signalling that value as part of it.
+//   4. flEndSubmit() to publish the frame.
+//
+// The vkrender renderer is exactly this case: it composites with Vulkan and
+// signals the imported semaphore inside its frame submit.
+FL_API flResult flSharedReadyFence(flChannel*, void** handle); // borrowed
+FL_API flResult flBeginSubmit(flChannel*, const flBuffer*, uint64_t* signalValue);
+FL_API flResult flEndSubmit(flChannel*, const flBuffer*, uint64_t signalValue, int64_t ptsNs);
 
 // ---- both --------------------------------------------------------------------
 

@@ -359,10 +359,15 @@ FL_API flResult flOpenProducer(const char* name, flChannel** out) {
         ch->images.push_back(img);
         ch->slotReadyValue.push_back(0);
     }
-    if (FAILED(dev5->OpenSharedFence((HANDLE)(uintptr_t)pd->readyFenceHandle,
-                                     IID_PPV_ARGS(&ch->readyFence))) ||
-        FAILED(dev5->OpenSharedFence((HANDLE)(uintptr_t)pd->consumedFenceHandle,
-                                     IID_PPV_ARGS(&ch->consumedFence)))) {
+    // Keep the duplicated handles, not just the opened fences: a producer that
+    // draws with Vulkan or D3D12 needs the raw ready-fence handle to import as
+    // its own timeline semaphore (flSharedReadyFence). Dropping them here made
+    // flSharedReadyFence return NULL, which only showed up once the renderer -
+    // the first non-D3D11 producer - tried to use it.
+    ch->readyShared = (HANDLE)(uintptr_t)pd->readyFenceHandle;
+    ch->consumedShared = (HANDLE)(uintptr_t)pd->consumedFenceHandle;
+    if (FAILED(dev5->OpenSharedFence(ch->readyShared, IID_PPV_ARGS(&ch->readyFence))) ||
+        FAILED(dev5->OpenSharedFence(ch->consumedShared, IID_PPV_ARGS(&ch->consumedFence)))) {
         flClose(ch);
         return FL_INTERNAL;
     }
@@ -403,16 +408,41 @@ FL_API flResult flAcquireBuffer(flChannel* ch, flBuffer* out, uint32_t timeoutMs
 }
 
 FL_API flResult flSubmit(flChannel* ch, const flBuffer* buf, int64_t ptsNs) {
-    if (!ch || ch->isConsumer || !buf || buf->slot >= ch->images.size()) return FL_INVALID;
-    if (!ch->link.connected()) return FL_DISCONNECTED;
-    const uint64_t value = ++ch->readyValue;
+    uint64_t value = 0;
+    flResult r = flBeginSubmit(ch, buf, &value);
+    if (r != FL_OK) return r;
+    // Correct only because the caller drew with THIS device's context.
     ch->ctx->Signal(ch->readyFence.Get(), value);
     ch->ctx->Flush(); // no Flush after Signal == intermittent hangs (M2)
-    ch->slotReadyValue[buf->slot] = value;
+    return flEndSubmit(ch, buf, value, ptsNs);
+}
+
+FL_API flResult flSharedReadyFence(flChannel* ch, void** handle) {
+    if (!ch || !handle) return FL_INVALID;
+    // Producers get the handle they must signal; consumers own the fence and
+    // have no reason to ask.
+    if (ch->isConsumer) return FL_INVALID;
+    *handle = ch->readyShared;
+    return *handle ? FL_OK : FL_INTERNAL;
+}
+
+FL_API flResult flBeginSubmit(flChannel* ch, const flBuffer* buf, uint64_t* signalValue) {
+    if (!ch || ch->isConsumer || !buf || !signalValue || buf->slot >= ch->images.size())
+        return FL_INVALID;
+    if (!ch->link.connected()) return FL_DISCONNECTED;
+    *signalValue = ++ch->readyValue;
+    return FL_OK;
+}
+
+FL_API flResult flEndSubmit(flChannel* ch, const flBuffer* buf, uint64_t signalValue,
+                            int64_t ptsNs) {
+    if (!ch || ch->isConsumer || !buf || buf->slot >= ch->images.size()) return FL_INVALID;
+    if (!ch->link.connected()) return FL_DISCONNECTED;
+    ch->slotReadyValue[buf->slot] = signalValue;
 
     vkr::proto::FrameReadyMsg fr{};
     fr.slot = buf->slot;
-    fr.readyValue = value;
+    fr.readyValue = signalValue;
     fr.ptsNs = ptsNs;
     return ch->link.send(vkr::proto::MsgType::FrameReady, fr) ? FL_OK : FL_DISCONNECTED;
 }

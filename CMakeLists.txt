@@ -135,7 +135,7 @@ add_dependencies(vkrenderer vkr_shaders)
 if(WIN32)
     # M14: producer-facing service mode (--serve) + client library + demo.
     target_sources(vkrenderer PRIVATE renderer/win_service.cpp)
-    target_link_libraries(vkrenderer PRIVATE d3d11 dxgi)
+    target_link_libraries(vkrenderer PRIVATE d3d11 dxgi framelink)
 
     add_library(vkrender_client SHARED client/vkrender_client.cpp)
     target_include_directories(vkrender_client PUBLIC client)
@@ -187,7 +187,9 @@ if(WIN32)
 
     add_executable(vkr_vcam client/vcam_win.cpp)
     target_include_directories(vkr_vcam PRIVATE ${SC}/softcam ${CMAKE_SOURCE_DIR}/common)
-    target_link_libraries(vkr_vcam PRIVATE vkrender_client softcam d3d11 dxgi
+    # M35: the camera consumes a framelink channel it owns, not a negotiated
+    # scene view from the renderer.
+    target_link_libraries(vkr_vcam PRIVATE framelink softcam d3d11 dxgi
         mfplat mfuuid mfsensorgroup)
     target_compile_options(vkr_vcam PRIVATE /EHsc)
 

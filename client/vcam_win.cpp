@@ -34,7 +34,8 @@
 
 #include "softcam.h"
 #include "vcam_shared.h"
-#include "vkrender_client.h"
+#include "framelink.h"
+#include "framelink_d3d11.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -122,12 +123,23 @@ int main(int argc, char** argv) {
     unsigned fps = argn > 4 ? (unsigned)atoi(args[4]) : 30;
     if (mfMode) { w = 1280; h = 720; } // must match the camera's advertised format
 
-    vkrClient* c = vkrConnectConsumer(pipe, nullptr, &w, &h, fps);
-    if (!c) {
-        fprintf(stderr, "vcam: cannot reach vkrenderer service on pipe '%s'\n", pipe);
+    // framelink: the camera OWNS the ring and the renderer attaches as a
+    // producer. That is the inversion the library forces, and it is why the
+    // renderer now dials out to us rather than us negotiating a view from it -
+    // the ring belongs to whoever consumes it, on every platform.
+    //
+    // Consequence worth knowing: this no longer fails when the renderer is
+    // down. The channel exists as soon as we create it; the renderer attaches
+    // whenever it comes up, and flAcquireFrame simply times out until then.
+    char channel[128];
+    snprintf(channel, sizeof(channel), "%s.scene", pipe);
+    flChannel* c = nullptr;
+    flResult fr = flCreateChannel(channel, w, h, FL_FORMAT_BGRA8, 4, &c);
+    if (fr != FL_OK) {
+        fprintf(stderr, "vcam: flCreateChannel('%s') -> %s\n", channel, flResultString(fr));
         return 1;
     }
-    printf("vcam: negotiated scene view %ux%u @%u fps\n", w, h, fps);
+    printf("vcam: channel '%s' %ux%u @%u fps - waiting for the renderer\n", channel, w, h, fps);
 
     // softcam wants multiples of four.
     if ((w & 3) || (h & 3)) {
@@ -172,7 +184,7 @@ int main(int argc, char** argv) {
         printf("vcam: virtual camera 'DirectShow Softcam' up - open it in a camera app\n");
     }
 
-    ID3D11Device* dev = vkrGetDevice(c);
+    ID3D11Device* dev = flChannelD3D11Device(c);
     ComPtr<ID3D11DeviceContext> ctx;
     dev->GetImmediateContext(&ctx);
 
@@ -192,11 +204,14 @@ int main(int argc, char** argv) {
     uint64_t frames = 0, lastLog = 0;
 
     for (;;) {
-        vkrFrame frame;
-        int r = vkrAcquireFrame(c, &frame, 2000);
-        if (r == 1) continue; // renderer idle; keep the camera alive
-        if (r != 0) {
-            fprintf(stderr, "vcam: renderer disconnected\n");
+        flFrame frame{};
+        flResult r = flAcquireFrame(c, &frame, 2000);
+        // Neither an idle renderer nor a departed one is fatal now: we own the
+        // channel, so the camera stays up and the renderer can reattach. Before
+        // the port a disconnect ended the process and took the camera with it.
+        if (r == FL_TIMEOUT || r == FL_DISCONNECTED) continue;
+        if (r != FL_OK) {
+            fprintf(stderr, "vcam: flAcquireFrame -> %s\n", flResultString(r));
             break;
         }
         // MF mode: the transport appears once a camera app opens the stream
@@ -210,7 +225,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        ctx->CopyResource(staging.Get(), frame.texture);
+        ctx->CopyResource(staging.Get(), flImageD3D11(frame.image));
         D3D11_MAPPED_SUBRESOURCE map;
         if (SUCCEEDED(ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map))) {
             if (mfMode) {
@@ -244,7 +259,7 @@ int main(int argc, char** argv) {
             }
             ctx->Unmap(staging.Get(), 0);
         }
-        vkrReleaseFrame(c, &frame);
+        flRelease(c, &frame);
 
         if (frames - lastLog >= 150) {
             if (mfMode) {
@@ -271,7 +286,7 @@ int main(int argc, char** argv) {
     if (shmMutex) CloseHandle(shmMutex);
     if (shm) CloseHandle(shm);
     if (cam) scDeleteCamera(cam);
-    vkrDisconnect(c);
+    flClose(c);
     return 0;
 }
 

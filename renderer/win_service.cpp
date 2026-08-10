@@ -11,6 +11,11 @@
 
 #include "win_service.h"
 
+// M35: the scene view now goes out over framelink (docs/FRAMELINK.md)
+// instead of the M24 consumer protocol - the CONSUMER owns the ring.
+#include "framelink.h"
+#include "framelink_d3d11.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -72,24 +77,24 @@ struct Client {
     int64_t departedNs = 0;
 };
 
-// M24: a scene-view consumer (the mirror of Client): the renderer renders a
-// negotiated view into this ring and signals readyFence; the consumer reads
-// and signals consumedFence.
-struct Consumer {
-    IpcChannel channel;
-    uint32_t id = 0;
-    uint32_t width = 0, height = 0, fps = 0, poolSize = 0;
-    ComPtr<ID3D11Texture2D> textures[proto::kMaxPoolSize];
-    HANDLE localTexHandle[proto::kMaxPoolSize] = {};
-    VkImage images[proto::kMaxPoolSize] = {};
+// M35: the scene view, published over framelink. Was `Consumer`: the renderer
+// allocated the ring and handed it out, which is backwards from every other
+// platform - Android's Surface belongs to whoever consumes it. Now the camera
+// (or any consumer) creates the channel and we attach as a producer.
+//
+// We composite with VULKAN, so we cannot use flSubmit: it signals from
+// framelink's D3D11 context, which orders nothing against our writes. We import
+// the channel's ready fence as a timeline semaphore and signal it inside our own
+// frame submit - flBeginSubmit/flEndSubmit exist for exactly this.
+struct SceneOut {
+    flChannel* channel = nullptr;
+    uint32_t width = 0, height = 0, poolSize = 0;
+    VkImage images[proto::kMaxPoolSize] = {};        // imported per slot, cached
     VkDeviceMemory memories[proto::kMaxPoolSize] = {};
-    ComPtr<ID3D11Fence> readyFence, consumedFence;
-    HANDLE localFenceHandle[2] = {};
-    VkSemaphore readySem = VK_NULL_HANDLE; // we signal (via the frame submit)
-    uint64_t readyValue = 0;
-    uint64_t slotReady[proto::kMaxPoolSize] = {}; // readyValue signaled per slot
-    int64_t lastDeliverNs = 0;
-    int pendingSlot = -1; // blit recorded this frame; FrameReady after submit
+    VkSemaphore readySem = VK_NULL_HANDLE;           // we signal, consumer waits
+    int pendingSlot = -1;                            // blit recorded this frame
+    uint64_t pendingValue = 0;
+    int64_t nextRetryNs = 0;                         // the consumer may not exist yet
 };
 
 struct PendingConnection {
@@ -97,14 +102,8 @@ struct PendingConnection {
     proto::ClientHelloMsg hello;
 };
 
-struct PendingConsumer {
-    IpcChannel channel;
-    proto::ConsumerHelloMsg hello;
-};
-
 std::mutex g_acceptMutex;
 std::vector<std::unique_ptr<PendingConnection>> g_pending;
-std::vector<std::unique_ptr<PendingConsumer>> g_pendingConsumers;
 
 void acceptLoop(std::string pipeName) {
     for (;;) {
@@ -123,14 +122,6 @@ void acceptLoop(std::string pipeName) {
             pending->hello = *hello;
             std::lock_guard<std::mutex> lock(g_acceptMutex);
             g_pending.push_back(std::move(pending));
-        } else if (msg->type == proto::MsgType::ConsumerHello) {
-            const auto* hello = msg->as<proto::ConsumerHelloMsg>();
-            if (!hello) continue;
-            auto pending = std::make_unique<PendingConsumer>();
-            pending->channel = std::move(ch);
-            pending->hello = *hello;
-            std::lock_guard<std::mutex> lock(g_acceptMutex);
-            g_pendingConsumers.push_back(std::move(pending));
         }
     }
 }
@@ -341,119 +332,54 @@ int runWinService(const WinServeOptions& options) {
         return c;
     };
 
-    std::vector<std::unique_ptr<Consumer>> consumers;
-    uint32_t nextConsumerId = 1;
+    // M35: attach to a framelink channel that a CONSUMER created. Retried,
+    // because the consumer owns the channel and may start after us - the
+    // inverse of the old model, where we allocated the ring and the consumer
+    // dialled in to collect it.
+    SceneOut sceneOut;
+    const std::string sceneChannel = options.pipeName + ".scene";
 
-    auto teardownConsumer = [&](Consumer& c) {
+    auto teardownSceneOut = [&](SceneOut& so) {
+        if (!so.channel) return;
         vkDeviceWaitIdle(vk.device);
-        for (uint32_t i = 0; i < c.poolSize; ++i) {
-            if (c.images[i]) vkDestroyImage(vk.device, c.images[i], nullptr);
-            if (c.memories[i]) vkFreeMemory(vk.device, c.memories[i], nullptr);
+        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+            if (so.images[i]) vkDestroyImage(vk.device, so.images[i], nullptr);
+            if (so.memories[i]) vkFreeMemory(vk.device, so.memories[i], nullptr);
+            so.images[i] = VK_NULL_HANDLE;
+            so.memories[i] = VK_NULL_HANDLE;
         }
-        if (c.readySem) vkDestroySemaphore(vk.device, c.readySem, nullptr);
-        for (HANDLE h : c.localTexHandle)
-            if (h) CloseHandle(h);
-        for (HANDLE h : c.localFenceHandle)
-            if (h) CloseHandle(h);
-        VKR_LOG("service: consumer %u gone", c.id);
+        if (so.readySem) vkDestroySemaphore(vk.device, so.readySem, nullptr);
+        so.readySem = VK_NULL_HANDLE;
+        flClose(so.channel);
+        so.channel = nullptr;
+        so.pendingSlot = -1;
+        VKR_LOG("service: scene channel '%s' released", sceneChannel.c_str());
     };
 
-    auto integrateConsumer = [&](PendingConsumer& pc) -> std::unique_ptr<Consumer> {
-        auto c = std::make_unique<Consumer>();
-        c->channel = std::move(pc.channel);
-        c->id = nextConsumerId++;
-        // Negotiate: clamp to sane bounds, force even dimensions (video
-        // consumers feed encoders/cameras that require them).
-        c->width = pc.hello.width ? pc.hello.width : 1920;
-        c->height = pc.hello.height ? pc.hello.height : 1080;
-        c->width = (std::min(std::max(c->width, 16u), 4096u)) & ~1u;
-        c->height = (std::min(std::max(c->height, 16u), 4096u)) & ~1u;
-        c->fps = std::min(pc.hello.fps, 240u); // 0 = every rendered frame
-        c->poolSize = pc.hello.poolSize ? pc.hello.poolSize : 4;
-        if (c->poolSize > proto::kMaxPoolSize) c->poolSize = proto::kMaxPoolSize;
-
-        HANDLE clientProcess = OpenProcess(PROCESS_DUP_HANDLE, FALSE, pc.hello.clientPid);
-        if (!clientProcess) {
-            VKR_ERR("service: consumer OpenProcess(%u) failed", pc.hello.clientPid);
-            return nullptr;
+    auto attachSceneOut = [&](SceneOut& so) {
+        if (so.channel || nowNs() < so.nextRetryNs) return;
+        so.nextRetryNs = nowNs() + 1000000000ll; // 1 s between attempts
+        flChannel* ch = nullptr;
+        if (flOpenProducer(sceneChannel.c_str(), &ch) != FL_OK)
+            return; // FL_NOT_FOUND until a consumer creates it
+        flChannelInfo info{};
+        flQuery(ch, &info);
+        // We composite with Vulkan, so we must signal the channel's ready fence
+        // from our own submit; flSubmit's D3D11 signal would order nothing.
+        void* fenceHandle = nullptr;
+        if (flSharedReadyFence(ch, &fenceHandle) != FL_OK ||
+            !importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)fenceHandle,
+                                          &so.readySem)) {
+            VKR_ERR("service: scene channel ready-fence import failed");
+            flClose(ch);
+            return;
         }
-
-        proto::PoolDescMsg desc{};
-        desc.width = c->width;
-        desc.height = c->height;
-        desc.format = proto::SharedFormat::BGRA8;
-        desc.matrix = proto::Matrix::BT709;
-        desc.range = proto::Range::Full;
-        desc.poolSize = c->poolSize;
-        desc.planeCount = 1;
-
-        bool ok = true;
-        for (uint32_t i = 0; i < c->poolSize && ok; ++i) {
-            D3D11_TEXTURE2D_DESC td{};
-            td.Width = c->width;
-            td.Height = c->height;
-            td.MipLevels = 1;
-            td.ArraySize = 1;
-            td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-            td.SampleDesc.Count = 1;
-            td.Usage = D3D11_USAGE_DEFAULT;
-            td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-            td.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
-            ok = SUCCEEDED(d3d->CreateTexture2D(&td, nullptr, &c->textures[i]));
-            ComPtr<IDXGIResource1> res;
-            if (ok) ok = SUCCEEDED(c->textures[i].As(&res));
-            if (ok)
-                ok = SUCCEEDED(res->CreateSharedHandle(
-                    nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr,
-                    &c->localTexHandle[i]));
-            if (ok)
-                ok = importWin32BlitTarget(vk, (uint64_t)(uintptr_t)c->localTexHandle[i],
-                                           c->width, c->height, &c->images[i], &c->memories[i]);
-            if (ok) ok = duplicateForClient(c->localTexHandle[i], clientProcess,
-                                            &desc.textureHandle[i]);
-        }
-        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
-                                                IID_PPV_ARGS(&c->readyFence)));
-        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
-                                                IID_PPV_ARGS(&c->consumedFence)));
-        if (ok)
-            ok = SUCCEEDED(c->readyFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
-                                                             &c->localFenceHandle[0])) &&
-                 SUCCEEDED(c->consumedFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
-                                                                &c->localFenceHandle[1]));
-        // Only the ready semaphore is imported into Vulkan (we signal it from
-        // the frame submit); consumed is polled via GetCompletedValue.
-        if (ok)
-            ok = importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)c->localFenceHandle[0],
-                                              &c->readySem);
-        if (ok)
-            ok = duplicateForClient(c->localFenceHandle[0], clientProcess,
-                                    &desc.readyFenceHandle) &&
-                 duplicateForClient(c->localFenceHandle[1], clientProcess,
-                                    &desc.consumedFenceHandle);
-
-        if (ok) {
-            proto::HelloMsg hello{};
-            hello.rendererPid = GetCurrentProcessId();
-            hello.luidValid = vk.luidValid ? 1 : 0;
-            memcpy(hello.deviceLUID, vk.deviceLUID, sizeof(hello.deviceLUID));
-            proto::ConsumerConfigMsg cfg{};
-            cfg.width = c->width;
-            cfg.height = c->height;
-            cfg.fps = c->fps;
-            ok = c->channel.send(proto::MsgType::Hello, hello) &&
-                 c->channel.send(proto::MsgType::ConsumerConfig, cfg) &&
-                 c->channel.send(proto::MsgType::PoolDesc, desc);
-        }
-        CloseHandle(clientProcess);
-        if (!ok) {
-            VKR_ERR("service: consumer %u setup failed", c->id);
-            teardownConsumer(*c);
-            return nullptr;
-        }
-        VKR_LOG("service: consumer %u connected (view %ux%u @%u fps cap, ring of %u)", c->id,
-                c->width, c->height, c->fps, c->poolSize);
-        return c;
+        so.channel = ch;
+        so.width = info.width;   // the consumer's geometry, not ours
+        so.height = info.height;
+        so.poolSize = info.poolSize;
+        VKR_LOG("service: publishing scene to '%s' (%ux%u, ring of %u)", sceneChannel.c_str(),
+                info.width, info.height, info.poolSize);
     };
 
     bool quit = false;
@@ -483,32 +409,7 @@ int runWinService(const WinServeOptions& options) {
                 if (auto c = integrateClient(*pc)) clients.push_back(std::move(c));
             }
         }
-        {
-            std::vector<std::unique_ptr<PendingConsumer>> pending;
-            {
-                std::lock_guard<std::mutex> lock(g_acceptMutex);
-                pending.swap(g_pendingConsumers);
-            }
-            for (auto& pc : pending) {
-                if (consumers.size() >= 8) {
-                    VKR_WARN("service: rejecting consumer (8 views active)");
-                    continue;
-                }
-                if (auto c = integrateConsumer(*pc)) consumers.push_back(std::move(c));
-            }
-        }
-        for (auto it = consumers.begin(); it != consumers.end();) {
-            Consumer& c = **it;
-            while (auto msg = c.channel.tryRecv()) {
-                if (msg->type == proto::MsgType::Bye) c.channel = IpcChannel();
-            }
-            if (!c.channel.connected()) {
-                teardownConsumer(c);
-                it = consumers.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        attachSceneOut(sceneOut);
 
         for (auto it = clients.begin(); it != clients.end();) {
             Client& c = **it;
@@ -625,28 +526,37 @@ int runWinService(const WinServeOptions& options) {
             VKR_LOG("service: display wake %s (presentation %s)",
                     presenting ? "held" : "released", presenting ? "active" : "idle");
         }
-        for (auto& cp : consumers) {
-            Consumer& c = *cp;
-            c.pendingSlot = -1;
-            if (!presenting) continue;
-            if (c.fps > 0 && c.lastDeliverNs &&
-                nowNs() - c.lastDeliverNs < (int64_t)(1000000000ull / c.fps))
-                continue;
-            uint64_t completed = c.consumedFence->GetCompletedValue();
-            for (uint32_t s = 0; s < c.poolSize; ++s) {
-                if (c.slotReady[s] == 0 || completed >= c.slotReady[s]) {
-                    c.pendingSlot = (int)s;
-                    break;
+        sceneOut.pendingSlot = -1;
+        if (sceneOut.channel && presenting) {
+            flBuffer buf{};
+            // Non-blocking: if the consumer is behind, skip this frame rather
+            // than stall the scene. framelink's ring is the back-pressure.
+            if (flAcquireBuffer(sceneOut.channel, &buf, 0) == FL_OK) {
+                const uint32_t slot = buf.slot;
+                // Import once per slot; flImage is stable for the channel's
+                // lifetime, so the VkImage can be cached against the slot.
+                if (!sceneOut.images[slot]) {
+                    void* h = flImageSharedHandle(buf.image);
+                    if (!importWin32BlitTarget(vk, (uint64_t)(uintptr_t)h, sceneOut.width,
+                                               sceneOut.height, &sceneOut.images[slot],
+                                               &sceneOut.memories[slot])) {
+                        VKR_ERR("service: scene blit-target import failed (slot %u)", slot);
+                        sceneOut.images[slot] = VK_NULL_HANDLE;
+                    }
+                }
+                uint64_t value = 0;
+                if (sceneOut.images[slot] &&
+                    flBeginSubmit(sceneOut.channel, &buf, &value) == FL_OK) {
+                    sceneOut.pendingSlot = (int)slot;
+                    sceneOut.pendingValue = value;
+                    // The signal rides OUR Vulkan submit, which is the whole
+                    // reason flSubmit is unusable here.
+                    extras.blits.push_back({sceneOut.images[slot], sceneOut.width,
+                                            sceneOut.height});
+                    extras.signalSems.push_back(sceneOut.readySem);
+                    extras.signalValues.push_back(value);
                 }
             }
-            if (c.pendingSlot < 0) continue; // consumer is behind; skip frame
-            uint32_t s = (uint32_t)c.pendingSlot;
-            c.readyValue++;
-            c.slotReady[s] = c.readyValue;
-            c.lastDeliverNs = nowNs();
-            extras.blits.push_back({c.images[s], c.width, c.height});
-            extras.signalSems.push_back(c.readySem);
-            extras.signalValues.push_back(c.readyValue);
         }
 
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
@@ -654,15 +564,15 @@ int runWinService(const WinServeOptions& options) {
             break;
         }
 
-        // The submit carrying the blits is queued; tell each consumer.
-        for (auto& cp : consumers) {
-            Consumer& c = *cp;
-            if (c.pendingSlot < 0) continue;
-            proto::FrameReadyMsg fr{};
-            fr.slot = (uint32_t)c.pendingSlot;
-            fr.readyValue = c.readyValue;
-            fr.ptsNs = nowNs();
-            c.channel.send(proto::MsgType::FrameReady, fr);
+        // The submit carrying the blit is queued and will signal the value we
+        // reserved, so the frame can be published now.
+        if (sceneOut.pendingSlot >= 0) {
+            flBuffer buf{};
+            buf.slot = (uint32_t)sceneOut.pendingSlot;
+            buf.image = nullptr; // only the slot matters to flEndSubmit
+            if (flEndSubmit(sceneOut.channel, &buf, sceneOut.pendingValue, nowNs()) !=
+                FL_OK)
+                teardownSceneOut(sceneOut);
         }
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
@@ -679,8 +589,7 @@ int runWinService(const WinServeOptions& options) {
 
     for (auto& c : clients) teardownClient(*c);
     clients.clear();
-    for (auto& c : consumers) teardownConsumer(*c);
-    consumers.clear();
+    teardownSceneOut(sceneOut);
     host.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);
