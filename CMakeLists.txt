@@ -141,6 +141,20 @@ if(WIN32)
     target_include_directories(vkrender_client PUBLIC client)
     target_link_libraries(vkrender_client PRIVATE vkr_common d3d11 dxgi)
 
+    # framelink SPIKE (docs/FRAMELINK.md): the shared-texture transport with
+    # consumer-owned rings, built to test the API shape before extracting it
+    # into its own repo. Built here only so the spike is cheap to run and cheap
+    # to delete; it deliberately depends on nothing in vkrender except the IPC
+    # and wire format it is already proven against.
+    add_library(framelink SHARED framelink/src/framelink_win.cpp)
+    target_include_directories(framelink PUBLIC framelink/include)
+    target_link_libraries(framelink PRIVATE vkr_common d3d11 dxgi)
+
+    add_executable(fl_consume framelink/test/fl_consume.cpp)
+    target_link_libraries(fl_consume PRIVATE framelink d3d11)
+    add_executable(fl_produce framelink/test/fl_produce.cpp)
+    target_link_libraries(fl_produce PRIVATE framelink d3d11)
+
     # M25: the appliance launcher - starts the renderer + every receiver +
     # the virtual camera as one kill-on-close group, configured by
     # vkrender.ini (what the installer's Start Menu shortcut runs).
