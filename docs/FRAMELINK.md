@@ -25,33 +25,48 @@ library: a process that happens to subscribe to several channels and publish a
 composited one. `vkr_vcam` then genuinely is "a consumer of framelink" rather
 than "a consumer of vkrender", which is the property we actually want.
 
-## Topology
+## Topology: the ring stays consumer-owned
 
-Today, everything connects *to the renderer*, which owns the only pipe:
+An earlier draft of this document proposed inverting ownership so that
+producers own channels and consumers subscribe. **That was wrong, and
+cross-platform is what proves it.**
+
+The existing Windows API is already BufferQueue-shaped, and says so:
+
+> the renderer owns the buffer ring (like Android's AImageReader); the client
+> dequeues a shared D3D11 texture, renders into it with its own device, and
+> queues it back
+
+Android's service interface is the same model in Java:
+
+```java
+Surface acquireInputSurfaceSlot(int slot);   // producer renders into it
+void    releaseInputSurfaceSlot(int slot);
+```
+
+A Surface *is* a BufferQueue whose buffers belong to the consumer. On Android
+that ownership is not a design choice we get to make — it is how the platform
+works. Producer-owned channels would have ported to Windows and Linux and then
+hit a wall on Android, which is exactly the outcome a cross-platform API exists
+to prevent.
+
+So the topology stays as it is, and the library simply names it:
 
 ```
   miracast ─┐
-  airplay  ─┼─► vkrenderer (service, owns pipe "vkrender") ─► vcam consumer view
-  whip     ─┤
+  airplay  ─┼─► ring owned by the CONSUMER (vkrenderer) ─► composite ring ─► vcam
+  whip     ─┤                                                            └─► OBS, recorder, ...
   rtsp     ─┘
 ```
 
-Under framelink the ownership inverts: a **producer owns its channel** and
-consumers subscribe. vkrender subscribes to whatever is publishing and
-republishes a composite:
+A consumer (or a broker acting for one) creates a channel and owns its buffers;
+producers attach, `flAcquireBuffer` (dequeue), render, `flSubmit` (queue). This
+is `dequeueBuffer`/`queueBuffer` under a different spelling, which is precisely
+why it maps onto every platform's native mechanism without argument.
 
-```
-  miracast ─► channel "miracast"  ─┐
-  airplay  ─► channel "airplay"   ─┼─► vkrenderer ─► channel "vkrender.scene" ─► vcam
-  whip     ─► channel "whip"      ─┤                                          └─► OBS, recorder, ...
-  rtsp     ─► channel "rtsp"      ─┘
-```
-
-The inversion is what makes the library general — "publish an image" is the
-natural unit — but it costs us discovery. Today the renderer's pipe name is
-well-known and producers dial in. Under the new model the renderer must find
-channels, hence `flEnumerate` below. This is the single biggest behavioural
-change and the part most likely to need revising once real.
+It also means a producer that starts before any consumer has nothing to attach
+to — correct behaviour, not a gap: there are no buffers until someone allocates
+them.
 
 ## Draft API
 
@@ -60,16 +75,26 @@ C++ ABI pain. This keeps the existing shape (it is already this) and adds the
 four things a public library needs: versioning, a raw-handle escape hatch,
 an access model, and explicit contracts.
 
+**The core header names no platform type.** `ID3D11Texture2D*` cannot appear in
+an API that also has to compile for Linux, Android and eventually macOS, so the
+image is opaque and each platform gets a small interop header
+(`framelink_d3d11.h`, `framelink_dmabuf.h`, `framelink_ahb.h`,
+`framelink_vulkan.h`). Call sequences are then byte-identical everywhere; only
+the line that turns a handle into a texture differs.
+
 ```c
+/* framelink.h - portable core. No platform types appear here. */
 #pragma once
 #include <stdint.h>
-#ifdef _WIN32
-#include <d3d11.h>
 
-#ifdef FL_EXPORTS
-#define FL_API __declspec(dllexport)
+#if defined(_WIN32)
+#  ifdef FL_EXPORTS
+#    define FL_API __declspec(dllexport)
+#  else
+#    define FL_API __declspec(dllimport)
+#  endif
 #else
-#define FL_API __declspec(dllimport)
+#  define FL_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus
@@ -113,16 +138,20 @@ typedef struct flChannelInfo {
 
 /* ---- producer ---------------------------------------------------------- */
 
+/* An opaque image. Turn it into something you can render to with the interop
+ * header for your platform - see "Cross-platform" below. */
+typedef struct flImage flImage;
+
 typedef struct flBuffer {
     uint32_t slot;
-    ID3D11Texture2D* texture; /* borrowed; valid until flClose (see Lifetimes) */
+    flImage* image;  /* borrowed; valid until flClose (see Lifetimes) */
 } flBuffer;
 
-/* `device` may be NULL to let framelink create one on the default adapter.
- * Fails with FL_ACCESS_DENIED if `name` exists and the caller may not own it. */
-FL_API flResult flOpenProducer(const char* name, ID3D11Device* device, uint32_t width,
-                               uint32_t height, flFormat format, uint32_t poolSize,
-                               flChannel** out);
+/* Attach as a producer to a channel a consumer already created. The ring
+ * belongs to the consumer, so width/height/format are REPORTED by flQuery,
+ * not requested here - the same reason an Android producer does not get to
+ * pick a Surface's geometry. */
+FL_API flResult flOpenProducer(const char* name, flChannel** out);
 
 FL_API flResult flAcquireBuffer(flChannel*, flBuffer* out, uint32_t timeoutMs);
 FL_API flResult flSubmit(flChannel*, const flBuffer*, int64_t ptsNs); /* -1 = no pts */
@@ -135,12 +164,14 @@ FL_API flResult flReconfigure(flChannel*, uint32_t width, uint32_t height, flFor
 
 typedef struct flFrame {
     uint32_t slot;
-    ID3D11Texture2D* texture; /* borrowed; valid until flRelease */
+    flImage* image;    /* borrowed; valid until flRelease */
     int64_t  ptsNs;
-    uint64_t sequence;        /* monotonic; gaps mean frames were skipped */
+    uint64_t sequence; /* monotonic; gaps mean frames were skipped */
 } flFrame;
 
-FL_API flResult flOpenConsumer(const char* name, ID3D11Device* device, flChannel** out);
+/* Creates the channel and OWNS the ring. */
+FL_API flResult flCreateChannel(const char* name, uint32_t width, uint32_t height,
+                                flFormat format, uint32_t poolSize, flChannel** out);
 FL_API flResult flAcquireFrame(flChannel*, flFrame* out, uint32_t timeoutMs);
 FL_API flResult flRelease(flChannel*, const flFrame*);
 
@@ -153,20 +184,34 @@ FL_API void     flClose(flChannel*);
  * Returns the count; pass names=NULL to size the buffer first. */
 FL_API flResult flEnumerate(const char** names, uint32_t cap, uint32_t* count);
 
-/* ---- interop escape hatch ---------------------------------------------- */
-/* The whole point of not being D3D11-only. The handle is a shared NT handle
- * the caller may import into D3D12, Vulkan (VK_KHR_external_memory_win32),
- * CUDA or GL. Caller must NOT close it; it dies with the channel.
- * The fence is a shared ID3D11Fence/ID3D12Fence usable as a Vulkan timeline
- * semaphore (VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT). Wait for
- * `waitValue` before reading the texture. */
-FL_API flResult flFrameInterop(flChannel*, const flFrame*, void** sharedHandle,
-                               void** fenceHandle, uint64_t* waitValue);
+/* Sync, expressed portably. Wait for `waitValue` on the channel's timeline
+ * before reading an acquired image; signal after writing one. Platform headers
+ * expose the underlying object (D3D fence / sync fd / VkSemaphore) for callers
+ * who schedule their own GPU work. */
+FL_API flResult flFrameTimeline(flChannel*, const flFrame*, uint64_t* waitValue);
 
 #ifdef __cplusplus
 }
 #endif
-#endif /* _WIN32 */
+```
+
+Per-platform interop, one line each — the only code that differs:
+
+```c
+/* framelink_d3d11.h  (Windows) */
+FL_API ID3D11Texture2D* flImageD3D11(flImage*);
+FL_API void*            flImageSharedHandle(flImage*);   /* NT handle, for D3D12/CUDA */
+
+/* framelink_dmabuf.h (Linux) */
+typedef struct flDmabuf { int fd[4]; uint64_t offset[4], pitch[4];
+                          uint32_t planes, fourcc; uint64_t modifier; } flDmabuf;
+FL_API flResult flImageDmabuf(flImage*, flDmabuf* out);   /* fds borrowed, do not close */
+
+/* framelink_ahb.h    (Android) */
+FL_API struct AHardwareBuffer* flImageAHardwareBuffer(flImage*);
+
+/* framelink_vulkan.h (Windows, Linux, Android - and macOS via MoltenVK) */
+FL_API flResult flImageVulkan(flImage*, VkDevice, VkImage* out, VkDeviceMemory* out2);
 ```
 
 ## The four additions, and why each earns its place
@@ -201,6 +246,46 @@ plane offset mismatch, device lost), which is why vkrender shares BGRA via
 VideoProcessor. BGRA8 is the always-works path; anything else must be validated
 at open, not discovered at first frame.
 
+## Cross-platform
+
+One API, four backends. Everything below already exists somewhere in vkrender
+except the macOS column, which is the only genuinely new work.
+
+| | Windows | Linux | Android | macOS (later) |
+|---|---|---|---|---|
+| buffer | `ID3D11Texture2D` shared NT handle | dma-buf fd + DRM modifier + plane layouts | `AHardwareBuffer` / Surface | `IOSurface` |
+| handle transport | `DuplicateHandle`, value over named pipe | `SCM_RIGHTS` over unix socket | Binder (AIDL) or socket | mach port / IOSurface ID |
+| sync | shared D3D11/D3D12 timeline fence | sync_file fd, or VK timeline semaphore fd | acquire fence fd | `MTLSharedEvent` |
+| IPC | named pipe | unix domain socket | Binder | unix socket / XPC |
+| status in vkrender | shipped (`vkrender_client`) | shipped inside the renderer | shipped as AIDL + Surface | none |
+
+**Vulkan is the portable tier.** It exists on Windows, Linux and Android, and on
+macOS through MoltenVK, so an integrator who imports via `flImageVulkan` writes
+one code path for every platform. The native accessors stay for people already
+committed to D3D11, EGL or Metal. Making Vulkan the recommended path — rather
+than a fallback — is what actually delivers "the programming interface remains
+the same".
+
+**What is genuinely missing today.** `vkrender_client` is Windows-only: there is
+no Linux or Android build of this C API. Linux does its sharing inside the
+renderer, and Android exposes Java `Surface` over Binder. So this is not "port
+the Windows library" — it is implementing the same C API twice more on top of
+mechanisms that already work. The protocol is ready for it: `SurfaceDescMsg`
+already carries plane layouts, DRM modifiers and per-plane object indices
+precisely so the wire format spans Windows and dma-buf.
+
+**Android's Java surface stays.** An Android app that wants a `Surface` should
+keep getting one; `flOpenProducer` sits alongside as the native-code path and
+both feed the same ring. Replacing the AIDL with a C API would be a regression
+for the ordinary Android integrator.
+
+**macOS is the risk, and it is not small.** IOSurface is a good analogue of the
+other three, but MoltenVK's external-memory support is narrower than native
+Vulkan, and Metal's sync primitives do not map onto a timeline semaphore as
+neatly as D3D12 fences do. Treat the macOS column as a design intention, not a
+plan, until someone has imported an IOSurface into MoltenVK and waited on a
+shared event. Nothing else in this document should be allowed to depend on it.
+
 ## Migration sketch
 
 The library is essentially today's `client/vkrender_client.cpp` (361 lines) plus
@@ -210,12 +295,13 @@ separate `vkrender-airplay` repo and stays there.
 
 | today | after |
 |---|---|
-| `vkrConnect(pipe, dev, w, h)` | `flOpenProducer(name, dev, w, h, fmt, pool, &ch)` |
+| `vkrConnect(pipe, dev, w, h)` | `flOpenProducer(name, &ch)` + `flQuery` for geometry |
 | `vkrDequeueBuffer` / `vkrQueueBuffer` | `flAcquireBuffer` / `flSubmit` |
+| `vkrGetDevice` | `flImageD3D11` / `flImageVulkan` / … (platform header) |
 | `vkrConnectConsumer` (negotiates a *scene view*) | **stays in vkrender** — it is a compositor feature |
 | `vkrAcquireFrame` / `vkrReleaseFrame` | `flAcquireFrame` / `flRelease` |
 | `StreamReset` message | `flReconfigure` |
-| implicit "the renderer owns the pipe" | `flEnumerate` + producer-owned channels |
+| Android `acquireInputSurfaceSlot` | kept, plus `flOpenProducer` for native code |
 
 `vkr_vcam` becomes the reference consumer nearly unchanged: replace
 `vkrConnectConsumer` with `flOpenConsumer("vkrender.scene", ...)` and the
@@ -229,10 +315,12 @@ a four-tile scene means.
 
 ## Open questions
 
-1. **Does the producer or a broker own the channel?** Producer-owned is simpler
-   and matches "publish an image", but discovery gets weaker and a consumer that
-   starts first has nothing to attach to. A tiny broker fixes both and adds a
-   process to deploy.
+1. **Who creates a channel when the consumer is not the compositor?** The ring
+   is consumer-owned (settled above, by Android). But a standalone integrator
+   who only wants to *publish* — a capture tool with no consumer running — has
+   nobody to allocate buffers. Either they run a broker, or `flOpenProducer`
+   grows a "create if absent" mode that allocates a ring and hands ownership to
+   the first consumer. The second is friendlier and much fiddlier.
 2. **What happens to a slow consumer?** Today the fence pair gives
    back-pressure to a single peer. With N consumers, one slow reader must not
    stall the producer — almost certainly latest-frame-wins per consumer, but the
