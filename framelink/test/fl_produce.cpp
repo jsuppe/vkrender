@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     const char* name = argc > 1 ? argv[1] : "flspike";
     const int frames = argc > 2 ? atoi(argv[2]) : 60;
+    const int sleepMs = argc > 3 ? atoi(argv[3]) : 8; // 0 = run flat out
 
     flChannel* ch = nullptr;
     flResult r = flOpenProducer(name, &ch);
@@ -43,10 +44,15 @@ int main(int argc, char** argv) {
     ComPtr<ID3D11DeviceContext> ctx;
     dev->GetImmediateContext(&ctx);
 
-    int submitted = 0;
+    int submitted = 0, stalls = 0;
+    const DWORD t0 = GetTickCount();
     for (int i = 1; i <= frames; ++i) {
         flBuffer buf{};
-        r = flAcquireBuffer(ch, &buf, 1000);
+        const DWORD ta = GetTickCount();
+        r = flAcquireBuffer(ch, &buf, 2000);
+        // A wait here IS the back-pressure: the ring is full because the
+        // consumer has not released anything yet.
+        if (GetTickCount() - ta > 5) ++stalls;
         if (r != FL_OK) {
             printf("produce: flAcquireBuffer -> %s\n", flResultString(r));
             break;
@@ -68,9 +74,11 @@ int main(int argc, char** argv) {
             break;
         }
         ++submitted;
-        Sleep(8);
+        if (sleepMs) Sleep(sleepMs);
     }
-    printf("produce: submitted %d frames\n", submitted);
+    const DWORD ms = GetTickCount() - t0;
+    printf("produce: submitted %d frames in %lu ms (%.1f fps), %d stalls waiting for a buffer\n",
+           submitted, ms, ms ? submitted * 1000.0 / ms : 0.0, stalls);
     flClose(ch);
     return submitted > 0 ? 0 : 1;
 }

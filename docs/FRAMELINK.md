@@ -350,10 +350,27 @@ required for the vkrender case, where the renderer is already the consumer.
 
 ## Open questions
 
-1. **What happens to a slow consumer?** Today the fence pair gives
-   back-pressure to a single peer. With N consumers, one slow reader must not
-   stall the producer — almost certainly latest-frame-wins per consumer, but the
-   fence bookkeeping needs revisiting for the fan-out case.
+1. **Fan-out is N channels, not one channel with N readers.** ~~What happens to
+   a slow consumer?~~ Measured in the spike, and the single-consumer half is
+   settled. A consumer sleeping 50 ms per frame against a flat-out producer:
+   20 frames read, **57 skipped**, 0 mismatched, and the producer managed
+   27.6 fps with 21 stalls. So the behaviour is *bounded* back-pressure plus
+   drops, not one or the other: latest-frame-wins discards stale frames at the
+   message level, and because the consumed fence is monotonic, releasing one
+   frame frees every older slot at once — so the producer runs in bursts of
+   `poolSize` rather than being pinned to the reader's rate. Latency is bounded
+   by the ring, there is no unbounded queue, and the reader always gets the
+   newest frame. That is the right trade for a compositor.
+
+   What this does *not* give is zero-copy fan-out. A channel has one ring and
+   one consumer that owns it, so two consumers of the same content means two
+   channels and the producer submitting into each — one GPU write per consumer,
+   not one write shared by all. Fine for vkrender (the virtual camera is
+   normally the only consumer of the composite) and honest for a v1, but a real
+   broadcast case would want one ring with per-consumer release tracking, which
+   changes the fence bookkeeping. **Not** attempted in the spike; it is the
+   thing most likely to force a wire-format change later, so it should be
+   settled before 1.0 rather than after.
 2. **Lifetimes as contract.** "owned by the library; valid until `vkrDisconnect`"
    is currently a comment. Published, it becomes something we cannot quietly
    change, so it wants to be specified and tested before 1.0, not after.

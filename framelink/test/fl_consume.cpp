@@ -28,6 +28,10 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     const char* name = argc > 1 ? argv[1] : "flspike";
     const int want = argc > 2 ? atoi(argv[2]) : 30;
+    // Per-frame delay, to model a slow consumer. This is how the fan-out
+    // back-pressure question gets answered: does a slow reader throttle the
+    // producer, or does the producer run free and the reader sample the newest?
+    const int slowMs = argc > 3 ? atoi(argv[3]) : 0;
     const uint32_t W = 256, H = 128;
 
     flChannel* ch = nullptr;
@@ -96,11 +100,14 @@ int main(int argc, char** argv) {
             }
             ctx->Unmap(staging.Get(), 0);
         }
+        if (slowMs) Sleep(slowMs);
         flRelease(ch, &f);
     }
 
     printf("consume: %d verified, %d mismatched, %llu skipped (latest-frame-wins)\n", verified,
            mismatched, (unsigned long long)skipped);
+    printf("consume: producer submitted %llu frames while we read %d\n",
+           (unsigned long long)lastSeq, verified + mismatched);
     flClose(ch);
     const bool pass = verified > 0 && mismatched == 0;
     printf("consume: %s\n", pass ? "PASS" : "FAIL");
