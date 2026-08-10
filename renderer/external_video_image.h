@@ -43,6 +43,12 @@ public:
         // Owned slots only: persistently mapped host-visible memory + layout.
         void* mapped = nullptr;
         uint64_t rowPitch = 0;
+        // Set by EVERY path that creates a slot, not just the owned one. The
+        // scene needs a per-slot aspect ratio: with multi-producer fan-in the
+        // pool-level width/height is only the last header seen, so an iPad
+        // mirroring 752x1080 next to a 1920x1080 laptop cannot be laid out from
+        // it. Left 0 only if a path genuinely cannot know, and callers must
+        // treat 0 as "unknown" rather than dividing by it.
         uint32_t width = 0, height = 0;
     };
 

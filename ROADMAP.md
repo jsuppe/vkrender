@@ -385,7 +385,19 @@ in Screen Mirroring and the mirror becomes a scene stream.
   other vkrender APKs are unaffected (separate process over Binder - the
   M10 split contains the obligation to this one app).
 
-## M19 — AirPlay receiver on Windows (native producer) (built, 2026-08-05; live cast pending)
+## M19 — AirPlay receiver on Windows (native producer) (live cast verified, 2026-08-09)
+
+**Live cast confirmed** against a real Apple sender (iPad, `AirPlay/960.13.1`):
+discovered via `dns-sd` from a Mac on the LAN, `raop_rtp_mirror` started,
+`producing 752x1080` at ~36 fps into the scene, `1/1 streams`. The Win32
+`DnsServiceRegister` path needs no Bonjour install, as designed.
+
+It also found three defects that no synthetic sender could have (see M25 below
+for the PIN ones), plus a renderer bug: every source tested until then was
+landscape, so the presentation layout's hardcoded 16:9 tile went unnoticed until
+a portrait iPad was stretched 2.5x. Fixed by giving each tile its stream's own
+aspect; measured at 0.6949 against a 0.6963 source, 0.2% error.
+
 
 `vkr_airplay.exe` makes a Windows box an AirPlay screen-mirroring sink,
 feeding the cast into the scene as a producer stream - the same vendored
@@ -610,8 +622,21 @@ Productize the Windows receiver stack:
   code (verified: no-cred → 401 + overlay, wrong → 401, right → 201; the
   Flutter sender prompts and retries). **Miracast**: the protocol's own
   `PinDisplayRequired` flow. **AirPlay** (in vkrender-airplay): `pw=true`
-  advertised → Apple's `pair-pin` exchange → `display_pin` → same overlay
-  (verified live in the TXT records from another mDNS stack on the LAN).
+  advertised → Apple's `pair-pin` exchange → `display_pin` → same overlay.
+  **NOT done, despite the note this line used to carry.** Only the TXT-record
+  advertisement had ever been checked, from another mDNS stack; the first run
+  against a real iPad (2026-08-09) found the flow unusable end to end:
+    1. a fixed `VKR_PIN` is IGNORED — the core mints its own code, so
+       `VKR_PIN=1234` silently behaves as `auto` and the typed code is refused;
+    2. the overlay window is never created — `display_pin` fires and
+       `pinOverlayShow` runs, but `FindWindow` finds no window, so nobody can
+       ever learn the code (the code IS linked; this is a runtime failure);
+    3. a wrong PIN CRASHES the receiver, dropping the mDNS advertisement —
+       one typo takes AirPlay off the network entirely.
+  (1) and (2) compound: with no overlay and no working fixed code, PIN mode
+  cannot be completed at all, and (3) punishes the inevitable wrong guess.
+  Untriaged suspect for (3): `g_thread` is a global `std::thread` that is never
+  joined, so an exit path would hit a joinable destructor → `std::terminate`.
   Overlay rule learned the hard way: only its own UI thread touches the
   window; callers post messages.
 - **Virtual camera gating**: the service delivers consumer frames only

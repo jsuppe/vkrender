@@ -410,6 +410,24 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             };
             const float H = 3.11f, W = H * canvasAspect_;
 
+            // A tile takes its STREAM's aspect, not a hardcoded 16:9. Every
+            // source tested before this was landscape, so the assumption held
+            // by luck; the first real AirPlay cast was an iPad mirroring
+            // PORTRAIT at 752x1080 (~0.70), and forcing that into a 16:9 quad
+            // stretched it horizontally by 1.78/0.70 ~= 2.5x. Phones are
+            // narrower still.
+            //
+            // 16:9 remains the fallback for the frames between a producer
+            // connecting and its first real allocation, when the pool has no
+            // dimensions yet (the ring starts 64x64).
+            float aspects[4];
+            for (size_t i = 0; i < n; ++i) {
+                aspects[i] = 16.0f / 9.0f;
+                if (const ExternalVideoPool::Slot* s = pool.find((uint32_t)enabled[i]))
+                    if (s->width > 0 && s->height > 0)
+                        aspects[i] = (float)s->width / (float)s->height;
+            }
+
             // M29: pick the arrangement, don't hardcode it.
             //
             // The old table assumed a 16:9 canvas: 2 streams always went
@@ -447,10 +465,16 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                 }
                 // Score = the SMALLEST tile the arrangement produces, so a
                 // layout is only preferred if it helps the worst-off stream.
+                // Scored with each stream's OWN aspect: a portrait tile is
+                // height-limited where a landscape one is width-limited, so
+                // scoring them all as 16:9 would pick the wrong arrangement
+                // for a mixed set (e.g. an iPad beside a laptop).
                 float worst = 1e9f;
+                // Only ever called with count == n (checked by the caller), so
+                // aspects[i] is in range.
                 const size_t count = a.triangle ? 3 : (size_t)(a.cols * a.rows);
                 for (size_t i = 0; i < count; ++i)
-                    worst = std::min(worst, std::min(out[i].hw, out[i].hh * 16.0f / 9.0f));
+                    worst = std::min(worst, std::min(out[i].hw, out[i].hh * aspects[i]));
                 return worst;
             };
 
@@ -475,8 +499,8 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             TileTransform targets[4];
             for (size_t i = 0; i < n; ++i) {
                 const Region& r = regs[i];
-                float sx = std::min(r.hw, r.hh * 16.0f / 9.0f) * margin;
-                targets[i] = {r.cx, r.cy, sx, sx * 9.0f / 16.0f};
+                float sx = std::min(r.hw, r.hh * aspects[i]) * margin;
+                targets[i] = {r.cx, r.cy, sx, sx / aspects[i]};
             }
             motion_.update(enabledIds.data(), targets, n, (float)dtSec, W);
 

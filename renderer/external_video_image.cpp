@@ -247,6 +247,8 @@ bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
                 destroy(vk);
                 return false;
             }
+            slot.width = width;
+            slot.height = height;
             slots.emplace(i, slot);
         }
         if (!importTimelineSemaphore(vk.device, desc.readyFenceHandle, &readySem) ||
@@ -408,6 +410,10 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
                 return fail("plane view creation failed");
         }
 
+        // dma-buf surfaces carry no size of their own (SurfaceDescMsg is planes
+        // and modifiers), so they take the stream header's.
+        slot.width = width;
+        slot.height = height;
         slots.emplace(desc.slotKey, slot);
         VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx planar (%zu total, "
                 "zero-copy)",
@@ -561,6 +567,8 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
     if (!makeView(vk, slot.image[0], format, conversion, &slot.view[0]))
         return fail("view creation failed for imported dma-buf surface");
 
+    slot.width = width;
+    slot.height = height;
     slots.emplace(desc.slotKey, slot);
     VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx (%zu total, zero-copy)",
             desc.slotKey, (unsigned long long)desc.drmModifier, slots.size());
@@ -678,6 +686,9 @@ bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuff
     if (!makeView(vk, slot.image[0], fmtProps.format, conversion, &slot.view[0]))
         return fail("view creation failed");
 
+    // The buffer knows its own size, so prefer that over the stream header.
+    slot.width = ahbDesc.width;
+    slot.height = ahbDesc.height;
     slots.emplace(key, slot);
     VKR_LOG("renderer: imported AHardwareBuffer surface key=%u extFmt=0x%llx (%zu total, "
             "zero-copy)",
@@ -713,6 +724,8 @@ bool ExternalVideoPool::addSurfaceWin32(VkContext& vk, uint32_t key, uint64_t ha
     }
     Slot slot;
     if (!importWin32Slot(vk, format, w, h, handleValue, &slot, conversion)) return false;
+    slot.width = w;
+    slot.height = h;
     slots.emplace(key, slot);
     VKR_LOG("renderer: imported win32 surface key=%u %ux%u (%zu total, zero-copy)", key, w, h,
             slots.size());
