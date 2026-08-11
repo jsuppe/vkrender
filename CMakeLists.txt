@@ -208,7 +208,7 @@ if(WIN32)
     # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
     # cppwinrt projection headers and WindowsApp.lib).
     add_executable(vkr_miracast client/miracast_receiver.cpp client/pin_overlay.cpp)
-    target_link_libraries(vkr_miracast PRIVATE vkrender_client d3d11 dxgi windowsapp)
+    target_link_libraries(vkr_miracast PRIVATE framelink d3d11 dxgi windowsapp)
     # C++/WinRT on standard C++20 coroutines; /await is rejected by MSVC 14.5x.
     target_compile_options(vkr_miracast PRIVATE /EHsc)
 

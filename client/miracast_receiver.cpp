@@ -2,9 +2,9 @@
 //
 // Uses the public Windows.Media.Miracast.MiracastReceiver API (1809+) to be a
 // Wi-Fi Display sink: phones/laptops discover "vkrender" as a cast target,
-// and each received frame is copied into a dequeued vkrender_client ring
-// texture - so the cast shows up as one more stream on the scene, exactly
-// like any other producer.
+// and each received frame is copied into a buffer from one of the renderer's
+// framelink input slots (M38) - so the cast shows up as one more stream on the
+// scene, exactly like any other producer.
 //
 //   vkr_miracast [pipe] [friendlyName]
 //
@@ -45,8 +45,10 @@
 #include <string>
 #include <thread>
 
+#include "fl_slot.h"
+#include "framelink.h"
+#include "framelink_d3d11.h"
 #include "pin_overlay.h"
-#include "vkrender_client.h"
 
 using namespace winrt;
 using namespace winrt::Windows::Media::Miracast;
@@ -56,7 +58,7 @@ namespace WGDX = winrt::Windows::Graphics::DirectX::Direct3D11;
 namespace {
 
 struct CastState {
-    vkrClient* client = nullptr;
+    flChannel* channel = nullptr;
     std::mutex mutex;
     MediaPlayer player{nullptr};
     std::atomic<uint64_t> frames{0};
@@ -99,12 +101,19 @@ int main(int argc, char** argv) {
 
     init_apartment();
 
+    // M38: take an input slot up front rather than on first frame. Unlike the
+    // RTSP and WHIP receivers this one has a single session and no way to learn
+    // the sender's resolution before the Miracast stack hands over a media
+    // source, so 1280x720 is the request and the ring reallocates if a real
+    // sender needs otherwise.
     CastState state;
-    state.client = vkrConnect(pipe, nullptr, 1280, 720);
-    if (!state.client) {
-        fprintf(stderr, "miracast: cannot reach the vkrenderer service on pipe '%s'\n", pipe);
+    std::string slot;
+    state.channel = vkr::flSlotAttach(pipe, 1280, 720, 12, 30000, &slot);
+    if (!state.channel) {
+        fprintf(stderr, "miracast: no free input slot on '%s'\n", pipe);
         return 1;
     }
+    printf("miracast: attached to '%s'\n", slot.c_str());
 
     MiracastReceiver receiver;
     auto status = receiver.GetStatus();
@@ -159,15 +168,15 @@ int main(int argc, char** argv) {
         state.player.VideoFrameAvailable([&state](MediaPlayer const& mp, auto&&) {
             std::unique_lock<std::mutex> lock(state.mutex, std::try_to_lock);
             if (!lock.owns_lock()) return;
-            vkrBuffer buf;
-            if (vkrDequeueBuffer(state.client, &buf, 20) != 0) return; // drop frame
+            flBuffer buf{};
+            if (flAcquireBuffer(state.channel, &buf, 20) != FL_OK) return; // drop frame
             try {
-                mp.CopyFrameToVideoSurface(surfaceFor(buf.texture));
+                mp.CopyFrameToVideoSurface(surfaceFor(flImageD3D11(buf.image)));
             } catch (winrt::hresult_error const& e) {
                 fwprintf(stderr, L"miracast: frame copy failed: %s\n", e.message().c_str());
                 return;
             }
-            vkrQueueBuffer(state.client, &buf, -1);
+            flSubmit(state.channel, &buf, -1);
             ++state.frames;
         });
         state.player.Source(args.MediaSource());
@@ -198,7 +207,7 @@ int main(int argc, char** argv) {
                 L"miracast: AirPlay and WebRTC receiving are unaffected - set miracast=0 in "
                 L"vkrender.ini to skip this.\n");
         fflush(stdout);
-        vkrDisconnect(state.client);
+        flClose(state.channel);
         // The WinRT call is still stuck on its own thread; leave abruptly
         // rather than block the appliance shutting down.
         ExitProcess(0);
@@ -216,7 +225,7 @@ int main(int argc, char** argv) {
                     L"display' optional feature is installed. See docs/MIRACAST.md.\n"
                     L"miracast: AirPlay and WebRTC receiving are unaffected; set miracast=0 in "
                     L"vkrender.ini to skip this check.\n");
-            vkrDisconnect(state.client);
+            flClose(state.channel);
             return 0;
         }
         fwprintf(stderr, L"miracast: session start failed: %s\n",
@@ -224,7 +233,7 @@ int main(int argc, char** argv) {
         if (result.Status() == MiracastReceiverSessionStartStatus::AccessDenied)
             fwprintf(stderr, L"miracast: another app owns the sink role - turn off Windows' "
                              L"'Projecting to this PC' and retry.\n");
-        vkrDisconnect(state.client);
+        flClose(state.channel);
         return 1;
     }
     wprintf(L"miracast: receiving as '%s' - cast from a phone/laptop to see it on the scene\n",
