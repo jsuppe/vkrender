@@ -86,7 +86,15 @@ int main(int argc, char** argv) {
             ctx1->ClearView(rtv.Get(), white, &hbar, 1);
         }
 
-        if (vkrQueueBuffer(client, &buf, (long long)(t * 1e9)) != 0) break;
+        // Stamp a CLOCK, not scene time: the service subtracts this from its
+        // own steady_clock to measure the producer -> renderer hop, which is
+        // the number the framelink migration must not regress. Nothing else
+        // consumes this demo's pts.
+        const long long submitNs =
+            (long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        if (vkrQueueBuffer(client, &buf, submitNs) != 0) break;
         ++frames;
         std::this_thread::sleep_for(std::chrono::milliseconds(33)); // ~30 fps
     }

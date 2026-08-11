@@ -196,6 +196,12 @@ int runWinService(const WinServeOptions& options) {
     bool passBound = false;
     bool passNeedsBind = false;
     uint64_t adoptions = 0;
+    // M37 baseline: producer-submit -> renderer-adopt latency, the ONE number
+    // the framelink migration must not regress (docs/MIGRATION.md). Producers
+    // stamp steady_clock ns into ptsNs; MSVC's steady_clock is QPC-based and
+    // shares an epoch across processes, so the subtraction is meaningful.
+    // Ignored unless the producer opts in by stamping a plausible value.
+    uint64_t hopSamples = 0, hopTotalUs = 0, hopMaxUs = 0;
     int videoFramesSeen = 0;
     int64_t rateWindowStart = nowNs();
     const int64_t headlessDeadline = nowNs() + 60ll * 1000000000ll;
@@ -422,6 +428,18 @@ int runWinService(const WinServeOptions& options) {
                             c.pendingConsumed = fr->readyValue - 1;
                         ++adoptions;
                         ++videoFramesSeen;
+                        if (fr->ptsNs > 0) {
+                            const int64_t d = nowNs() - fr->ptsNs;
+                            // Reject nonsense rather than poison the average:
+                            // producers that stamp presentation time (not a
+                            // clock) land far outside this window.
+                            if (d >= 0 && d < 1000000000ll) {
+                                const uint64_t us = (uint64_t)(d / 1000);
+                                ++hopSamples;
+                                hopTotalUs += us;
+                                if (us > hopMaxUs) hopMaxUs = us;
+                            }
+                        }
                     }
                 } else if (msg->type == proto::MsgType::Bye) {
                     c.channel = IpcChannel();
@@ -576,9 +594,18 @@ int runWinService(const WinServeOptions& options) {
         }
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients)",
-                    (unsigned long long)adoptions, pool.slots.size(), clients.size());
+            if (hopSamples) {
+                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients) "
+                        "hop avg %.2f ms max %.2f ms over %llu",
+                        (unsigned long long)adoptions, pool.slots.size(), clients.size(),
+                        (double)hopTotalUs / (double)hopSamples / 1000.0,
+                        (double)hopMaxUs / 1000.0, (unsigned long long)hopSamples);
+            } else {
+                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients)",
+                        (unsigned long long)adoptions, pool.slots.size(), clients.size());
+            }
             adoptions = 0;
+            hopSamples = hopTotalUs = hopMaxUs = 0;
             rateWindowStart = nowNs();
         }
     }

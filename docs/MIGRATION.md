@@ -119,10 +119,35 @@ copies.
 The rule that follows: **ingest must never become a process frames flow
 through.** It is a control plane sitting beside the frame path, not in it.
 
-Verification is not optional here. `recv_stats` already reports per-session
-`behind_ms` ingress/sink averages and `stage_ms` (M23), so the check is a
-before/after comparison on the same machine under the 12-presenter load. A
-regression there fails the migration regardless of how much cleaner the code is.
+Verification is not optional here, so the instrument came first. The service now
+measures **producer-submit -> renderer-adopt** directly: producers stamp
+`steady_clock` ns into `ptsNs` and the service subtracts its own clock (MSVC's
+`steady_clock` is QPC-based and shares an epoch across processes, so the
+subtraction is meaningful). Values outside a sane window are rejected rather
+than averaged in, so a producer stamping real presentation time is simply not
+counted.
+
+### Baseline: 12 producers, legacy transport, CASPAR
+
+Measured before any porting, four consecutive 5 s windows:
+
+```
+service: 1773 adoptions in 5s (pool 48 slots, 12 clients) hop avg 4.22 ms max 8.43 ms
+service: 1773 adoptions in 5s (pool 48 slots, 12 clients) hop avg 4.22 ms max 8.49 ms
+service: 1776 adoptions in 5s (pool 48 slots, 12 clients) hop avg 4.18 ms max 8.49 ms
+service: 1774 adoptions in 5s (pool 48 slots, 12 clients) hop avg 4.19 ms max 8.59 ms
+```
+
+**avg 4.2 ms, max 8.6 ms, ~355 adoptions/s across 12 producers.** Reproduce with
+12 `vkr_client_demo` instances against `vkrenderer --serve`.
+
+The shape is what one would expect rather than a surprise, which is mild
+evidence the measurement is real: ~4.2 ms is about a quarter of a 60 Hz frame
+and the max sits near half a frame, consistent with a renderer sampling
+submissions once per frame.
+
+**The migration passes only if the framelink numbers match these**, on this
+machine, at this load. Cleaner code is not a defence against a regression here.
 
 ## Risks
 
