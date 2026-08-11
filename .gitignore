@@ -23,3 +23,4 @@ android/wall/build/
 android/wall/.cxx/
 android/gstreamer-android/
 installer/Output/
+installer/payload/

@@ -2,6 +2,7 @@
 // a vkrender scene over WebRTC/WHIP. One codebase for Android, iOS, desktop
 // and web -- the cast lands as one more producer stream on the compositor,
 // exactly like OBS or a browser WHIP sender would.
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -44,6 +45,24 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _discovery.start();
+    // M41: when served FROM the appliance (vkr_web over https), the receiver
+    // is almost certainly the host that served us - and the web build has no
+    // mDNS, so prefill the manual field with it. Served locally (flutter run,
+    // desktop builds) Uri.base is localhost or a file: URI and we leave the
+    // field alone.
+    if (kIsWeb) {
+      final base = Uri.base;
+      if (base.host.isNotEmpty &&
+          base.host != 'localhost' &&
+          base.host != '127.0.0.1') {
+        // Served over https: cast through the SAME origin (vkr_web
+        // reverse-proxies /whip/* to the room), because a browser refuses an
+        // https page's request to a plain-http port as mixed content.
+        _manual.text = base.scheme == 'https'
+            ? '${base.origin}/whip/endpoint'
+            : base.host;
+      }
+    }
   }
 
   @override

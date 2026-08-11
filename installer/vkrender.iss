@@ -65,6 +65,9 @@ Name: "airplay"; Description: "AirPlay receiver (Apple senders, GPLv3)"; Types: 
 ; vkrender.ini (or POSTed to its control API). Installed with the receivers,
 ; started only when rtsp=1.
 Name: "rtsp"; Description: "RTSP receiver (pull from IP cameras / encoders)"; Types: full receivers custom
+; M41: the web front door - serves the browser sender app over https (screen
+; share in browsers requires a secure context) and desktop-app downloads.
+Name: "web"; Description: "Web server (browser sender app + desktop-app downloads)"; Types: full receivers custom
 ; The two camera components are the ONLY things here that need administrator,
 ; and for different reasons:
 ;   dshow - DllRegisterServer writes COM keys under HKCR (HKLM-backed);
@@ -88,6 +91,11 @@ Source: "{#BuildDir}\vkr_webrtc.exe"; DestDir: "{app}"; Components: webrtc; Flag
 Source: "{#BuildDir}\vkr_miracast.exe"; DestDir: "{app}"; Components: miracast; Flags: ignoreversion
 Source: "{#AirplayDir}\vkr_airplay.exe"; DestDir: "{app}"; Components: airplay; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#BuildDir}\vkr_rtsp.exe"; DestDir: "{app}"; Components: rtsp; Flags: ignoreversion
+; --- web front door (M41) ---
+; The webroot payload (browser sender + downloads) is staged by
+; scripts\build_web_payload.ps1 before compiling this installer.
+Source: "{#BuildDir}\vkr_web.exe"; DestDir: "{app}"; Components: web; Flags: ignoreversion
+Source: "payload\webroot\*"; DestDir: "{app}\webroot"; Components: web; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
 ; --- virtual camera ---
 ; framelink.dll is NOT optional: both vkrenderer.exe and framecam.exe link
 ; it, so it ships with the base install whatever components are chosen. It
@@ -314,8 +322,10 @@ begin
     False, False);
   ConfigPage.Add('Require a PIN before a sender may present');
   ConfigPage.Add('Use a fixed PIN instead of a new code per connection');
+  ConfigPage.Add('Headless: no scene window - the composite exists only in the virtual camera');
   ConfigPage.Values[0] := True;
   ConfigPage.Values[1] := False;
+  ConfigPage.Values[2] := False;
 
   PinPage := CreateInputQueryPage(ConfigPage.ID,
     'Fixed PIN', 'Choose the PIN senders must enter',
@@ -433,7 +443,12 @@ begin
   SetIniString('appliance', 'name', 'vkrender', Ini);
   SetIniString('appliance', 'pin', Pin, Ini);
   SetIniString('appliance', 'layout', 'presentation', Ini);
-  SetIniString('appliance', 'window', '', Ini);
+  // M41: window=none is the vcam-only appliance - the scene renders
+  // offscreen and the virtual camera is the sole output.
+  if ConfigPage.Values[2] then
+    SetIniString('appliance', 'window', 'none', Ini)
+  else
+    SetIniString('appliance', 'window', '', Ini);
   SetIniString('appliance', 'webrtc_port', '8889', Ini);
   SetIniString('appliance', 'virtual_camera', BoolToStr2(VcamActive), Ini);
   SetIniString('appliance', 'vcam_mode', VcamMode, Ini);
@@ -445,6 +460,9 @@ begin
   SetIniString('appliance', 'rtsp', '0', Ini);
   SetIniString('appliance', 'rtsp_port', '8890', Ini);
   SetIniString('appliance', 'rtsp_urls', '', Ini);
+  // M41: the web front door (browser sender + downloads).
+  SetIniString('appliance', 'web', BoolToStr2(WizardIsComponentSelected('web')), Ini);
+  SetIniString('appliance', 'web_ports', '8080,8443s', Ini);
 end;
 
 // Uninstall is unelevated too, so the machine-wide bits need the same

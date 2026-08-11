@@ -201,6 +201,9 @@ int main(int argc, char** argv) {
     const bool wantRtsp = iniGet("rtsp", "0") != "0";
     const std::string rtspPort = iniGet("rtsp_port", "8890");
     const std::string rtspUrls = iniGet("rtsp_urls", "");
+    // M41: the web front door - the browser sender app + desktop downloads.
+    const bool wantWeb = iniGet("web", "1") != "0";
+    const std::string webPorts = iniGet("web_ports", "8080,8443s");
 
     // Propagate policy to every child through the environment.
     SetEnvironmentVariableA("VKR_PIN", pin == "off" ? nullptr : pin.c_str());
@@ -259,6 +262,8 @@ int main(int argc, char** argv) {
     if (wantVcam)
         launch("framecam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
                "vcam", false);
+    if (wantWeb)
+        launch("vkr_web.exe", "--ports " + webPorts + " --name " + name, "web", false);
 
     if (window == "none")
         printf("appliance: HEADLESS - the composite exists only in the virtual camera\n");
