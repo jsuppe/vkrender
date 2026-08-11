@@ -260,6 +260,8 @@ int main(int argc, char** argv) {
         launch("framecam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
                "vcam", false);
 
+    if (window == "none")
+        printf("appliance: HEADLESS - the composite exists only in the virtual camera\n");
     printf("appliance: %zu processes up - close this window to stop everything\n",
            g_children.size());
 
