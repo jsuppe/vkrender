@@ -223,7 +223,7 @@ if(WIN32)
     # Linux/Android receivers).
     add_executable(vkr_webrtc client/webrtc_win.cpp client/whip_room.cpp
         client/whip_mdns_win.c client/pin_overlay.cpp)
-    target_link_libraries(vkr_webrtc PRIVATE vkrender_client GStreamer::win
+    target_link_libraries(vkr_webrtc PRIVATE framelink GStreamer::win
         gio-2.0.lib gstsdp-1.0.lib gstwebrtc-1.0.lib d3d11 dxgi dnsapi)
     target_compile_options(vkr_webrtc PRIVATE /EHsc)
 

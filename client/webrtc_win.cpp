@@ -32,9 +32,12 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
+#include "fl_slot.h"
+#include "framelink.h"
+#include "framelink_d3d11.h"
 #include "recv_stats.h"
-#include "vkrender_client.h"
 #include "whip_mdns_win.h"
 #include "whip_room.h"
 
@@ -44,12 +47,12 @@ namespace {
 
 const char* g_pipe = "vkrender";
 
-// One presenter's frame path: their producer connection + frame counter. The
-// connection is made on the FIRST decoded frame so the ring matches the
-// presenter's actual resolution (a fixed-size ring would letterbox them into
-// a corner of their cube face).
+// One presenter's frame path: their input slot + frame counter. The slot is
+// taken on the FIRST decoded frame, so flRequestGeometry can ask for the
+// presenter's actual resolution (a fixed-size ring would letterbox them into a
+// corner of their cube face).
 struct Track {
-    vkrClient* client = nullptr;
+    flChannel* channel = nullptr;
     unsigned sessionId = 0;
     bool connectFailed = false;
     std::atomic<uint64_t> frames{0};
@@ -71,37 +74,42 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
     GstBuffer* buffer = gst_sample_get_buffer(sample);
     GstMapInfo map;
     if (w > 0 && h > 0 && buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
-        if (!trk->client && !trk->connectFailed) {
-            trk->client = vkrConnect(g_pipe, nullptr, w, h);
-            if (!trk->client) {
-                trk->connectFailed = true; // service gone; drop frames quietly
+        if (!trk->channel && !trk->connectFailed) {
+            // No wait: a decoded frame is in hand and an appsink callback is
+            // not the place to block. All slots occupied means this presenter
+            // has nowhere to go, which is what the 12-client limit used to say.
+            std::string slot;
+            trk->channel = vkr::flSlotAttach(g_pipe, (uint32_t)w, (uint32_t)h, 12, 0, &slot);
+            if (!trk->channel) {
+                trk->connectFailed = true; // no free slot; drop frames quietly
                 fprintf(stderr,
-                        "webrtc: [session %u] cannot reach vkrenderer service on pipe "
-                        "'%s' - discarding track\n",
+                        "webrtc: [session %u] no free input slot on '%s' - discarding "
+                        "track\n",
                         trk->sessionId, g_pipe);
             } else {
-                printf("webrtc: [session %u] producing %dx%d\n", trk->sessionId, w, h);
+                printf("webrtc: [session %u] producing %dx%d on '%s'\n", trk->sessionId, w, h,
+                       slot.c_str());
             }
         }
         trk->stats.onPulled();
-        vkrBuffer buf;
-        if (!trk->client) {
-            // fallthrough: no service; frame discarded (counted as ringdrop)
+        flBuffer buf{};
+        if (!trk->channel) {
+            // fallthrough: nowhere to send it; frame discarded (a ring drop)
             trk->stats.onRingDrop();
-        } else if (vkrDequeueBuffer(trk->client, &buf, 5) != 0) {
+        } else if (flAcquireBuffer(trk->channel, &buf, 5) != FL_OK) {
             trk->stats.onRingDrop(); // ring starved: renderer not consuming
         } else {
-            ComPtr<ID3D11Device> dev = vkrGetDevice(trk->client);
+            ID3D11Device* dev = flChannelD3D11Device(trk->channel);
             ComPtr<ID3D11DeviceContext> ctx;
             dev->GetImmediateContext(&ctx);
+            ID3D11Texture2D* tex = flImageD3D11(buf.image);
             D3D11_TEXTURE2D_DESC td{};
-            buf.texture->GetDesc(&td);
+            tex->GetDesc(&td);
             UINT cw = (UINT)w < td.Width ? (UINT)w : td.Width;
             UINT chh = (UINT)h < td.Height ? (UINT)h : td.Height;
             D3D11_BOX box{0, 0, 0, cw, chh, 1};
-            ctx->UpdateSubresource(buf.texture, 0, &box, map.data, (UINT)w * 4,
-                                   (UINT)w * 4 * chh);
-            vkrQueueBuffer(trk->client, &buf, -1);
+            ctx->UpdateSubresource(tex, 0, &box, map.data, (UINT)w * 4, (UINT)w * 4 * chh);
+            flSubmit(trk->channel, &buf, -1);
             uint64_t n = ++trk->frames;
             if (n % 300 == 1)
                 printf("webrtc: [session %u] %llu frames into the scene\n", trk->sessionId,
@@ -163,14 +171,15 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     return trk;
 }
 
-// whip_room callback: presenter left, branch already reaped - close their
-// producer connection (the renderer frees that stream's slots).
+// whip_room callback: presenter left, branch already reaped - detach from
+// their input slot so the next presenter can take it.
 void onTrackClosed(void* handle, unsigned sessionId, void*) {
     Track* trk = static_cast<Track*>(handle);
     if (!trk) return;
     printf("webrtc: [session %u] closed after %llu frames\n", sessionId,
            (unsigned long long)trk->frames.load());
-    if (trk->client) vkrDisconnect(trk->client);
+    // The channel is the renderer's and outlives us; only our attachment ends.
+    if (trk->channel) flClose(trk->channel);
     delete trk;
 }
 
@@ -191,10 +200,17 @@ int main(int argc, char** argv) {
     // renderer, and a service already holding its 12-client maximum rejects
     // the probe too. Presenter connections are lazy, so once there is room we
     // work.
+    //
+    // M38: the probe asks whether slot 0 exists, and FL_BUSY answers that
+    // without occupying anything - so a full renderer no longer fails the
+    // probe, which is one of the two ways this used to be lost.
     bool serviceUp = false;
+    const std::string slot0 = std::string(g_pipe) + ".in.0";
     for (int attempt = 0; attempt < 30 && !serviceUp; ++attempt) {
-        if (vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64)) {
-            vkrDisconnect(probe);
+        flChannel* probe = nullptr;
+        const flResult r = flOpenProducer(slot0.c_str(), &probe);
+        if (r == FL_OK) flClose(probe);
+        if (r == FL_OK || r == FL_BUSY) {
             serviceUp = true;
             break;
         }
