@@ -108,6 +108,22 @@ framelink's Linux backend, which now exists.
 a C API would be a regression for the ordinary Android integrator. framelink
 becomes the native-code path alongside it, sharing the same ring.
 
+## Latency is a constraint, not an outcome
+
+The migration must not add a frame to the on-screen path. It should not, by
+construction: today a receiver writes into a shared texture the renderer
+samples, and framelink is the same mechanism behind a different handshake -
+shared NT handles or dma-buf, plus a fence. Same number of hops, same absence of
+copies.
+
+The rule that follows: **ingest must never become a process frames flow
+through.** It is a control plane sitting beside the frame path, not in it.
+
+Verification is not optional here. `recv_stats` already reports per-session
+`behind_ms` ingress/sink averages and `stage_ms` (M23), so the check is a
+before/after comparison on the same machine under the 12-presenter load. A
+regression there fails the migration regardless of how much cleaner the code is.
+
 ## Risks
 
 **The 12-presenter fan-in is a proven load and must stay proven.** M22

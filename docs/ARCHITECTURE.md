@@ -91,14 +91,41 @@ socket, versioned, with the frame path untouched. `rtsp_room` already has an
 HTTP control API for adding and removing sources - that is the shape to
 generalise.
 
-### 3. Latency: one hop on screen, and that is the point
+### 3. Latency: the design constraint is ZERO added hops
 
-Keeping the renderer whole means the on-screen path stays **one hop**:
-ingest → renderer → its own swapchains, exactly as today. Only sink outputs
-(camera, recorder) pay a second hop, and they are the paths that can afford it.
+**Requirement: the migration must not add latency to the on-screen path.**
+That is a hard constraint, and it decides the shape of the ingest component.
 
-The two-hop cost was an argument against the compositor/display split, and it
-disappears along with it.
+Today a receiver process writes decoded frames into a shared texture and the
+renderer samples that exact allocation - one hop, no copies. framelink uses the
+same mechanism (shared NT handles or dma-buf, plus a fence), so a receiver
+publishing a framelink channel that the renderer consumes is **the same one hop
+with a different handshake**. The migration is latency-neutral by construction,
+not by luck.
+
+What WOULD add a hop is making ingest a process that frames flow *through*:
+
+```
+  receiver ──► ingest ──► renderer      TWO hops. Do not build this.
+  receiver ─────────────► renderer      one hop, ingest beside it, not in it.
+```
+
+So **ingest is a control plane, not a frame relay**. It owns admission, PINs,
+keys, which sources may connect and which streams are on screen - and it never
+touches a frame. Receivers keep publishing straight to the renderer; ingest
+tells them whether they may, and tells the renderer what to show.
+
+This also keeps the control transport free to be slow and convenient (HTTP, JSON,
+whatever is easiest to script) precisely because it is nowhere near the frame
+path.
+
+**Sinks are the only place a second hop exists** - the camera and any recorder -
+and they are downstream of the screen, so they cannot delay it.
+
+**To be measured, not assumed.** `recv_stats` already reports `behind_ms`
+ingress/sink averages and `stage_ms` per session (M23, docs/PROFILING.md). The
+migration is not done until those numbers are re-measured against the pre-
+migration baseline on the same machine, with the 12-presenter load.
 
 ## Naming
 
