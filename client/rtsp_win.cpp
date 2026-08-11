@@ -38,11 +38,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
+#include "fl_slot.h"
+#include "framelink.h"
+#include "framelink_d3d11.h"
 #include "recv_stats.h"
 #include "rtsp_room.h"
-#include "vkrender_client.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -50,12 +53,12 @@ namespace {
 
 const char* g_pipe = "vkrender";
 
-// One source's frame path: its producer connection + frame counter. The
-// connection is made on the FIRST decoded frame so the ring matches the
-// camera's actual resolution (a fixed-size ring would letterbox a 4:3 camera
-// into a corner of its tile).
+// One source's frame path: its input slot + frame counter. The slot is taken
+// on the FIRST decoded frame, so flRequestGeometry can ask for the camera's
+// actual resolution (a fixed-size ring would letterbox a 4:3 camera into a
+// corner of its tile).
 struct Stream {
-    vkrClient* client = nullptr;
+    flChannel* channel = nullptr;
     unsigned sourceId = 0;
     bool connectFailed = false;
     std::atomic<uint64_t> frames{0};
@@ -77,36 +80,41 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
     GstBuffer* buffer = gst_sample_get_buffer(sample);
     GstMapInfo map;
     if (w > 0 && h > 0 && buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
-        if (!st->client && !st->connectFailed) {
-            st->client = vkrConnect(g_pipe, nullptr, w, h);
-            if (!st->client) {
-                st->connectFailed = true; // service gone; drop frames quietly
+        if (!st->channel && !st->connectFailed) {
+            // No wait: a camera frame is in hand and an appsink callback is not
+            // the place to block. If every slot is occupied this source has
+            // nowhere to go, which is the same answer the old 12-client limit
+            // gave.
+            std::string slot;
+            st->channel = vkr::flSlotAttach(g_pipe, (uint32_t)w, (uint32_t)h, 12, 0, &slot);
+            if (!st->channel) {
+                st->connectFailed = true; // no free slot; drop frames quietly
                 fprintf(stderr,
-                        "rtsp: [source %u] cannot reach vkrenderer service on pipe "
-                        "'%s' - discarding stream\n",
+                        "rtsp: [source %u] no free input slot on '%s' - discarding stream\n",
                         st->sourceId, g_pipe);
             } else {
-                printf("rtsp: [source %u] producing %dx%d\n", st->sourceId, w, h);
+                printf("rtsp: [source %u] producing %dx%d on '%s'\n", st->sourceId, w, h,
+                       slot.c_str());
             }
         }
         st->stats.onPulled();
-        vkrBuffer buf;
-        if (!st->client) {
-            st->stats.onRingDrop(); // no service; frame discarded
-        } else if (vkrDequeueBuffer(st->client, &buf, 5) != 0) {
+        flBuffer buf{};
+        if (!st->channel) {
+            st->stats.onRingDrop(); // nowhere to send it; frame discarded
+        } else if (flAcquireBuffer(st->channel, &buf, 5) != FL_OK) {
             st->stats.onRingDrop(); // ring starved: renderer not consuming
         } else {
-            ComPtr<ID3D11Device> dev = vkrGetDevice(st->client);
+            ID3D11Device* dev = flChannelD3D11Device(st->channel);
             ComPtr<ID3D11DeviceContext> ctx;
             dev->GetImmediateContext(&ctx);
+            ID3D11Texture2D* tex = flImageD3D11(buf.image);
             D3D11_TEXTURE2D_DESC td{};
-            buf.texture->GetDesc(&td);
+            tex->GetDesc(&td);
             UINT cw = (UINT)w < td.Width ? (UINT)w : td.Width;
             UINT chh = (UINT)h < td.Height ? (UINT)h : td.Height;
             D3D11_BOX box{0, 0, 0, cw, chh, 1};
-            ctx->UpdateSubresource(buf.texture, 0, &box, map.data, (UINT)w * 4,
-                                   (UINT)w * 4 * chh);
-            vkrQueueBuffer(st->client, &buf, -1);
+            ctx->UpdateSubresource(tex, 0, &box, map.data, (UINT)w * 4, (UINT)w * 4 * chh);
+            flSubmit(st->channel, &buf, -1);
             uint64_t n = ++st->frames;
             if (n % 300 == 1)
                 printf("rtsp: [source %u] %llu frames into the scene\n", st->sourceId,
@@ -185,7 +193,9 @@ void onStreamClosed(void* handle, unsigned sourceId, void*) {
     if (!st) return;
     printf("rtsp: [source %u] closed after %llu frames\n", sourceId,
            (unsigned long long)st->frames.load());
-    if (st->client) vkrDisconnect(st->client);
+    // Detaching frees the slot for the next source. The channel itself is the
+    // renderer's and outlives us.
+    if (st->channel) flClose(st->channel);
     delete st;
 }
 
@@ -219,10 +229,19 @@ int main(int argc, char** argv) {
     // the probe too (observed: killed WHIP presenters keep their slots until
     // the WebRTC timeout, and vkr_rtsp launched into that window died for
     // good). Per-source connections are lazy, so once there is room we work.
+    //
+    // M38: the probe is now "does slot 0 exist", and FL_BUSY answers that
+    // without occupying anything - an occupied slot proves the renderer is up
+    // just as well as a free one does. The old probe took a real client
+    // connection, which is exactly why it could fail against a full service and
+    // kill this receiver for good.
     bool serviceUp = false;
+    const std::string slot0 = std::string(g_pipe) + ".in.0";
     for (int attempt = 0; attempt < 30 && !serviceUp; ++attempt) {
-        if (vkrClient* probe = vkrConnect(g_pipe, nullptr, 64, 64)) {
-            vkrDisconnect(probe);
+        flChannel* probe = nullptr;
+        const flResult r = flOpenProducer(slot0.c_str(), &probe);
+        if (r == FL_OK) flClose(probe);
+        if (r == FL_OK || r == FL_BUSY) {
             serviceUp = true;
             break;
         }

@@ -231,7 +231,7 @@ if(WIN32)
     # out to cameras/encoders); the shared rtsp_room core also drives the
     # Linux and Android receivers. gio for the room's HTTP control API.
     add_executable(vkr_rtsp client/rtsp_win.cpp client/rtsp_room.cpp)
-    target_link_libraries(vkr_rtsp PRIVATE vkrender_client GStreamer::win
+    target_link_libraries(vkr_rtsp PRIVATE framelink GStreamer::win
         gio-2.0.lib d3d11 dxgi)
     target_compile_options(vkr_rtsp PRIVATE /EHsc)
 
