@@ -1,14 +1,19 @@
-// M22: WebRTC (WHIP) multi-presenter receiver -> Wayland compositor (Linux).
+// M22: WebRTC (WHIP) multi-presenter receiver -> framelink producer (Linux).
 //
 // The shared client/whip_room.cpp core runs the WHIP ingest (own HTTP
 // listener, one webrtcbin per presenter - replacing the single-producer
 // whipserversrc); this file supplies the Linux sink: each presenter's video
-// track is decoded into its OWN waylandsink. Every waylandsink opens its own
-// connection to the M13 compositor (WAYLAND_DISPLAY, e.g. vkrender-0), and
-// each compositor client surface is already its own scene stream - so every
-// presenter lands on their own cube face with zero compositor changes.
+// track is decoded to BGRA and written into its OWN framelink input slot
+// (client/fl_sink_posix.h). The compositor keys one scene stream per slot, so
+// every presenter lands on their own cube face with zero compositor changes.
 //
-//   vkr_webrtc [port] [maxPresenters]     (WAYLAND_DISPLAY selects the scene)
+// M39: framelink, not waylandsink. The Wayland socket stays as the front door
+// for arbitrary Wayland clients; the receivers now speak the same transport as
+// their Windows twins, which is the entire point of the migration
+// (docs/MIGRATION.md).
+//
+//   vkr_webrtc [port] [maxPresenters]     (WAYLAND_DISPLAY selects the scene:
+//                                          slots are <WAYLAND_DISPLAY>.in.N)
 //
 // mDNS advertisement is avahi's job on Linux - run via
 // scripts/webrtc_receiver_linux.sh which pairs this binary with
@@ -21,25 +26,37 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "recv_stats.h"
+#include "fl_sink_posix.h"
 #include "whip_room.h"
 
 namespace {
 
 // whip_room callback: a presenter's video track appeared. decodebin handles
-// whatever codec they negotiated; waylandsink hands the frames to the
-// compositor as this presenter's own surface.
+// whatever codec they negotiated; the BGRA appsink feeds this presenter's
+// framelink slot.
 void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement** elements,
               int maxElements, void*) {
     GstElement* decode = gst_element_factory_make("decodebin", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
-    GstElement* sink = gst_element_factory_make("waylandsink", nullptr);
+    GstElement* sink = gst_element_factory_make("appsink", nullptr);
     if (!decode || !convert || !sink) {
         fprintf(stderr, "webrtc: [session %u] missing elements (decodebin/videoconvert/"
-                        "waylandsink)\n", sessionId);
+                        "appsink)\n", sessionId);
         return nullptr;
     }
-    g_object_set(sink, "sync", FALSE, nullptr);
+    auto* fs = new vkr::FlSink();
+    fs->id = sessionId;
+    fs->tag = "webrtc";
+    fs->stats.init(pipeline, sessionId);
+    fs->stats.attachProbe(pad, vkr::kStageIngress); // post-jitterbuffer
+
+    GstCaps* bgra = gst_caps_from_string("video/x-raw,format=BGRA");
+    g_object_set(sink, "caps", bgra, "emit-signals", TRUE, "max-buffers", 4, "drop", TRUE,
+                 "sync", FALSE, nullptr);
+    gst_caps_unref(bgra);
+    GstAppSinkCallbacks cbs{};
+    cbs.new_sample = vkr::flSinkNewSample;
+    gst_app_sink_set_callbacks(GST_APP_SINK(sink), &cbs, fs, nullptr);
 
     gst_bin_add_many(GST_BIN(pipeline), decode, convert, sink, nullptr);
     gst_element_sync_state_with_parent(decode);
@@ -57,26 +74,22 @@ void* onTrack(GstElement* pipeline, GstPad* pad, unsigned sessionId, GstElement*
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
 
-    // M23: behind-live latency probes - RTP ingress (post-jitterbuffer) and
-    // the decoded frame handoff into waylandsink.
-    auto* stats = new vkr::RecvStats();
-    stats->init(pipeline, sessionId);
-    stats->attachProbe(pad, vkr::kStageIngress);
+    // Decoded+converted frames, just before the appsink queue.
     GstPad* statPad = gst_element_get_static_pad(sink, "sink");
-    stats->attachProbe(statPad, vkr::kStageSink);
+    fs->stats.attachProbe(statPad, vkr::kStageSink);
     gst_object_unref(statPad);
 
-    printf("webrtc: [session %u] video track -> compositor surface\n", sessionId);
+    printf("webrtc: [session %u] video track -> framelink slot\n", sessionId);
     if (maxElements > 2) {
         elements[0] = decode;
         elements[1] = convert;
         elements[2] = sink;
     }
-    return stats;
+    return fs;
 }
 
 void onTrackClosed(void* handle, unsigned sessionId, void*) {
-    delete static_cast<vkr::RecvStats*>(handle);
+    vkr::flSinkClose(static_cast<vkr::FlSink*>(handle));
     printf("webrtc: [session %u] closed\n", sessionId);
 }
 
@@ -98,8 +111,8 @@ int main(int argc, char** argv) {
     WhipRoom* room = whip_room_new(pipeline, port, maxPresenters, &cbs, nullptr);
     if (!room) return 1;
     printf("webrtc: WHIP room on http://0.0.0.0:%d - space for %d presenters "
-           "(WAYLAND_DISPLAY=%s)\n",
-           port, maxPresenters, getenv("WAYLAND_DISPLAY") ? getenv("WAYLAND_DISPLAY") : "?");
+           "(slots on '%s')\n",
+           port, maxPresenters, vkr::flSlotPrefix().c_str());
 
     // Pump the bus (per-presenter decode errors are logged, not fatal) and
     // reap departed presenters.

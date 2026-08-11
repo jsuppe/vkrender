@@ -1,15 +1,18 @@
-// M27: RTSP multi-source receiver -> Wayland compositor (Linux).
+// M27: RTSP multi-source receiver -> framelink producer (Linux).
 //
 // The shared client/rtsp_room.cpp core owns the ingest (one private pipeline
 // per RTSP URL, HTTP control API, backoff reconnect); this file supplies the
-// Linux sink: each source's decoded video goes to its OWN waylandsink. Every
-// waylandsink opens its own connection to the M13 compositor
-// (WAYLAND_DISPLAY, e.g. vkrender-0), and each compositor client surface is
-// already its own scene stream - so every camera lands on its own tile with
-// zero compositor changes, exactly like a WHIP presenter.
+// Linux sink: each source's decoded video is written into its OWN framelink
+// input slot (client/fl_sink_posix.h). The compositor keys one scene stream
+// per slot, so every camera lands on its own tile with zero compositor
+// changes, exactly like a WHIP presenter.
+//
+// M39: framelink, not waylandsink - one transport, shared with the Windows
+// twin (docs/MIGRATION.md). A side benefit: this receiver no longer needs a
+// Wayland connection at all, so it runs headless with no fakesink workaround.
 //
 //   vkr_rtsp [--port 8890] [--max 8] [--url rtsp://...]...
-//     (WAYLAND_DISPLAY selects the scene)
+//     (WAYLAND_DISPLAY selects the scene: slots are <WAYLAND_DISPLAY>.in.N)
 //
 // Unlike the WHIP receiver this one is a CLIENT: it dials out to cameras and
 // encoders, so there is no PIN and nothing to advertise over mDNS.
@@ -24,7 +27,7 @@
 #include <cstring>
 #include <vector>
 
-#include "recv_stats.h"
+#include "fl_sink_posix.h"
 #include "rtsp_room.h"
 
 namespace {
@@ -32,30 +35,36 @@ namespace {
 // rtsp_room callback: a source's video pad appeared (rtspsrc's encoded RTP
 // pad - the same contract as whip_room's onTrack, so this is the WHIP sink
 // with the leaky queue added). decodebin handles depay + decode for whatever
-// the camera negotiated; waylandsink hands frames to the compositor as this
-// source's own surface.
+// the camera negotiated; the BGRA appsink feeds this source's framelink slot.
 void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement**, int,
                void*) {
     GstElement* decode = gst_element_factory_make("decodebin", nullptr);
-    // leaky queue: a camera that outruns the compositor must drop, never stall
+    // leaky queue: a camera that outruns the renderer must drop, never stall
     // the RTSP session (a stalled session eventually drops the connection).
     GstElement* queue = gst_element_factory_make("queue", nullptr);
     GstElement* convert = gst_element_factory_make("videoconvert", nullptr);
-    // waylandsink is the real sink (one compositor surface per source), but a
-    // headless box has no display to open - VKR_RTSP_SINK=fakesink exercises
-    // the whole ingest path over SSH, which is how this file is regression
-    // tested without a compositor.
-    const char* sinkName = getenv("VKR_RTSP_SINK");
-    if (!sinkName || !*sinkName) sinkName = "waylandsink";
-    GstElement* sink = gst_element_factory_make(sinkName, nullptr);
+    GstElement* sink = gst_element_factory_make("appsink", nullptr);
     if (!decode || !queue || !convert || !sink) {
-        fprintf(stderr, "rtsp: [source %u] missing elements (decodebin/queue/videoconvert/%s)\n",
-                sourceId, sinkName);
+        fprintf(stderr,
+                "rtsp: [source %u] missing elements (decodebin/queue/videoconvert/appsink)\n",
+                sourceId);
         return nullptr;
     }
+    auto* fs = new vkr::FlSink();
+    fs->id = sourceId;
+    fs->tag = "rtsp";
+    fs->stats.init(pipeline, sourceId);
+    fs->stats.attachProbe(pad, vkr::kStageIngress); // post-jitterbuffer RTP
+
     g_object_set(queue, "leaky", 2 /* downstream */, "max-size-buffers", 3,
                  "max-size-bytes", 0, "max-size-time", (guint64)0, nullptr);
-    g_object_set(sink, "sync", FALSE, nullptr);
+    GstCaps* bgra = gst_caps_from_string("video/x-raw,format=BGRA");
+    g_object_set(sink, "caps", bgra, "emit-signals", TRUE, "max-buffers", 4, "drop", TRUE,
+                 "sync", FALSE, nullptr);
+    gst_caps_unref(bgra);
+    GstAppSinkCallbacks cbs{};
+    cbs.new_sample = vkr::flSinkNewSample;
+    gst_app_sink_set_callbacks(GST_APP_SINK(sink), &cbs, fs, nullptr);
 
     gst_bin_add_many(GST_BIN(pipeline), decode, queue, convert, sink, nullptr);
     gst_element_sync_state_with_parent(decode);
@@ -75,21 +84,17 @@ void* onStream(GstElement* pipeline, GstPad* pad, unsigned sourceId, GstElement*
     gst_pad_link(pad, sinkpad);
     gst_object_unref(sinkpad);
 
-    // M23: behind-live latency probes - decoded frames off the wire, and the
-    // handoff into waylandsink.
-    auto* stats = new vkr::RecvStats();
-    stats->init(pipeline, sourceId);
-    stats->attachProbe(pad, vkr::kStageIngress);
+    // Decoded+converted frames, just before the appsink queue.
     GstPad* statPad = gst_element_get_static_pad(sink, "sink");
-    stats->attachProbe(statPad, vkr::kStageSink);
+    fs->stats.attachProbe(statPad, vkr::kStageSink);
     gst_object_unref(statPad);
 
-    printf("rtsp: [source %u] video -> %s\n", sourceId, sinkName);
-    return stats;
+    printf("rtsp: [source %u] video -> framelink slot\n", sourceId);
+    return fs;
 }
 
 void onStreamClosed(void* handle, unsigned sourceId, void*) {
-    delete static_cast<vkr::RecvStats*>(handle);
+    vkr::flSinkClose(static_cast<vkr::FlSink*>(handle));
     printf("rtsp: [source %u] closed\n", sourceId);
 }
 
@@ -120,8 +125,8 @@ int main(int argc, char** argv) {
     RtspRoom* room = rtsp_room_new(port, maxSources, &cbs, nullptr);
     if (!room) return 1;
     printf("rtsp: control API on http://0.0.0.0:%d/sources - room for %d sources "
-           "(WAYLAND_DISPLAY=%s)\n",
-           port, maxSources, getenv("WAYLAND_DISPLAY") ? getenv("WAYLAND_DISPLAY") : "?");
+           "(slots on '%s')\n",
+           port, maxSources, vkr::flSlotPrefix().c_str());
 
     for (const char* u : urls) rtsp_room_add(room, u);
 

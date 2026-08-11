@@ -786,11 +786,6 @@ struct FlSlotIn {
     uint32_t width = 0, height = 0;
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
-    // The frame the scene is currently sampling. Held (not released) until a
-    // newer one replaces it: releasing on adopt would tell the producer the
-    // buffer is free while the GPU still reads it every frame.
-    flFrame held{};
-    bool hasHeld = false;
     int64_t currentSlot = -1;
     bool departing = false;
     int64_t departedNs = 0;
@@ -804,7 +799,6 @@ void flDropRing(Ctx& ctx, FlSlotIn& s) {
         ctx.slotsToRemove.push_back(s.keys[i]);
         s.imported[i] = false;
     }
-    s.hasHeld = false; // its image belongs to the ring that just died
     s.currentSlot = -1;
 }
 
@@ -885,12 +879,19 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
             s.keys[f.slot] = desc.slotKey;
         }
 
-        // Release the PREVIOUS frame - the scene samples the new one from now
-        // on. Same slot re-announced (latest-wins skipping) releases nothing:
-        // that would free the very buffer we are adopting.
-        if (s.hasHeld && s.held.slot != f.slot) flRelease(s.channel, &s.held);
-        s.held = f;
-        s.hasHeld = true;
+        // Release everything BEFORE this frame - the Windows consumed-fence
+        // rule, on every adoption including the FIRST. Recycling is monotonic
+        // (value V frees all submits <= V), so this also frees the frames
+        // latest-wins skipped. Releasing only a previously-held frame - the
+        // first cut of this code - deadlocks when a decoder's startup burst
+        // fills the ring before the second adoption: the consumer holds one
+        // frame, has released nothing, and the producer has no free slot to
+        // ever announce a newer one.
+        if (f._readyValue > 1) {
+            flFrame prev = f;
+            prev._readyValue = f._readyValue - 1;
+            flRelease(s.channel, &prev);
+        }
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
         ++ctx.adoptions;
@@ -1043,8 +1044,6 @@ int runWaylandCompositor(const WaylandOptions& options) {
             const bool expired =
                 s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
             if (s.departing && (expired || !host.retainsStream(s.uid))) {
-                if (s.hasHeld) flRelease(s.channel, &s.held);
-                s.hasHeld = false;
                 s.currentSlot = -1;
                 s.departing = false;
                 continue;

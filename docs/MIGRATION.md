@@ -108,10 +108,29 @@ the M24 consumer protocol and `vkr_consumer_demo` (dead since M35) are deleted,
 along with the client-ring machinery in `win_service.cpp` — and with it the
 service's own D3D11 device, which existed only to allocate those rings.
 
-**Phase 3 — Linux.** Receivers there do not use `vkrender_client` at all
-(sharing happens inside the renderer), so this is a net *simplification*: they
-gain a real client library instead of bespoke internal plumbing. Needs
-framelink's Linux backend, which now exists.
+**Phase 3 — Linux. DONE.** The compositor (`vkrenderer --wayland vkr-0`)
+pre-creates `vkr-0.in.0 .. .in.11` beside the Wayland socket, and both Linux
+receivers write into them through one shared sink (`client/fl_sink_posix.h`) -
+the Wayland socket stays as the front door for arbitrary Wayland clients.
+Measured on melchior: two RTSP cameras (1280x720 + 480x640) and three WHIP
+presenters simultaneously, five slots, 740 adoptions/5s, zero drops anywhere.
+Hop avg ~8.3 ms / max ~16.3 ms - dominated by the headless loop's 16 ms sleep
+(adoption granularity), not the transport.
+
+Getting there surfaced two Linux-backend defects that Windows' fences had
+masked, both now fixed and both now tested:
+
+- **FL_BUSY did not exist in practice.** The listener closed after one accept,
+  so "taken" read as "no such channel". One listener per channel now, refusing
+  extras with an explicit Busy message.
+- **Per-slot release leaks under latest-wins.** A skipped frame's slot was
+  released by nobody; a decoder's startup burst kills the ring in under a
+  second (observed: one camera at 100% ring-drop while its sibling ran clean).
+  Recycling is monotonic now - the Windows consumed-fence rule, as a message.
+  And the consumer must release `value-1` on EVERY adoption including the
+  first; releasing only a previously-held frame deadlocks on the same burst.
+
+FL_VERSION is 3: the release message's meaning changed.
 
 **Phase 4 — Android.** Keep the AIDL `Surface` API for apps: replacing it with
 a C API would be a regression for the ordinary Android integrator. framelink
@@ -194,14 +213,11 @@ Also verified, because a latency number alone would not have caught them:
 first producer replaces it with `flRequestGeometry`, so the idle cost is small
 and the initial size barely matters.
 
-**Sync on Linux is weaker.** framelink's Linux backend has no shared fence, so
-`FL_GPU_SYNC` is a no-op there and a GPU producer must flush before `flSubmit`.
-The current Linux receivers hand over VAAPI/dma-buf surfaces with their own sync
-assumptions; that needs checking before Phase 3, not during. This is now the
-single largest open question in the migration.
-
-**FL_BUSY is still unexercised on Linux.** A closed listener there makes "taken"
-look like "absent", so slot walking has only been proven on Windows.
+**Sync on Linux is weaker, and that is now a measured fact rather than a
+worry.** The backend has no shared fence; a frame is trusted to be finished
+when `flSubmit` said so. That is correct for every current receiver (they are
+CPU writers through `flImageMap`), and a GPU producer must flush first. The
+explicit-sync piece (sync_file fds) remains future work.
 
 ## What this does not change
 
