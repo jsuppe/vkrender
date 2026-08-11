@@ -198,8 +198,12 @@ if(WIN32)
     endif()
     vkr_colocate(framecam softcam vkrender_vcam_source)
 
+    # M38: a framelink producer now, not a vkrender_client one. It keeps the
+    # client/ include dir for fl_slot.h, which is the shared slot-walking
+    # helper every receiver uses.
     add_executable(vkr_client_demo test/win_client_demo.cpp)
-    target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)
+    target_include_directories(vkr_client_demo PRIVATE client)
+    target_link_libraries(vkr_client_demo PRIVATE framelink d3d11)
 
     # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
     # cppwinrt projection headers and WindowsApp.lib).

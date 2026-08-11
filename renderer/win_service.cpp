@@ -97,6 +97,36 @@ struct SceneOut {
     int64_t nextRetryNs = 0;                         // the consumer may not exist yet
 };
 
+// M38: an INPUT channel - the receiver side of the migration
+// (docs/MIGRATION.md). The renderer pre-creates kInSlots of these and
+// receivers attach as framelink producers, walking the list on FL_BUSY. A
+// producer cannot create a channel, deliberately, so somebody has to have
+// created them first; slot channels are how, and it is the model the Android
+// service already ships (acquireInputSurfaceSlot).
+//
+// FL_GPU_SYNC because we composite with Vulkan: blocking the render thread on
+// a ready fence twelve times a frame is precisely the latency this migration
+// is not allowed to add. We wait and signal both fences inside our own submit
+// instead, exactly as the client rings do.
+struct SlotIn {
+    flChannel* channel = nullptr;
+    std::string name;
+    uint32_t uid = 0;        // scene stream id; stable for the slot's lifetime
+    uint64_t generation = 0; // which ring we imported - see flChannelInfo
+    uint32_t width = 0, height = 0;
+    VkSemaphore readySem = VK_NULL_HANDLE, consumedSem = VK_NULL_HANDLE;
+    bool imported[proto::kMaxPoolSize] = {}; // ring slot -> already in the pool
+    int64_t currentSlot = -1;                // pool key, or -1
+    uint64_t currentReady = 0;
+    uint64_t lastConsumedSignal = 0;
+    uint64_t pendingConsumed = 0; // 0 = nothing to signal this frame
+    bool departing = false;
+    int64_t departedNs = 0;
+};
+
+// Twelve, because that is the fan-in M22 proved and the scene supports.
+constexpr uint32_t kInSlots = 12;
+
 struct PendingConnection {
     IpcChannel channel;
     proto::ClientHelloMsg hello;
@@ -338,6 +368,81 @@ int runWinService(const WinServeOptions& options) {
         return c;
     };
 
+    // ---- M38: framelink input slots -------------------------------------
+    //
+    // Created up front so a receiver has something to attach to. They are
+    // cheap while idle: the ring is allocated at a placeholder size and the
+    // first producer replaces it with flRequestGeometry, which is the only
+    // reason the placeholder can be small.
+    std::vector<SlotIn> inSlots(kInSlots);
+    const uint32_t kInDefaultW = 640, kInDefaultH = 360, kInPool = 4;
+
+    auto ensurePool = [&]() -> bool {
+        if (pool.valid()) return true;
+        proto::PoolDescMsg header{};
+        header.width = kInDefaultW;
+        header.height = kInDefaultH;
+        header.format = proto::SharedFormat::BGRA8;
+        header.matrix = proto::Matrix::BT709;
+        header.range = proto::Range::Full;
+        header.poolSize = 0; // dynamic slots
+        header.planeCount = 1;
+        if (!pool.create(vk, header)) return false;
+        passNeedsBind = true;
+        return true;
+    };
+
+    // Drop everything imported from this slot's current ring. Called when the
+    // generation moves, which on Windows means either a reallocation or a new
+    // producer - both hand out new shared handles AND a new fence pair.
+    auto dropRing = [&](SlotIn& s) {
+        if (!s.readySem && s.currentSlot < 0 && s.generation == 0) return;
+        vkDeviceWaitIdle(vk.device);
+        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+            if (!s.imported[i]) continue;
+            const uint32_t key = (s.uid << 4) | i;
+            pass.removeSlot(vk, key);
+            pool.removeSlot(vk, key);
+            s.imported[i] = false;
+        }
+        if (s.readySem) vkDestroySemaphore(vk.device, s.readySem, nullptr);
+        if (s.consumedSem) vkDestroySemaphore(vk.device, s.consumedSem, nullptr);
+        s.readySem = s.consumedSem = VK_NULL_HANDLE;
+        s.currentSlot = -1;
+        s.currentReady = 0;
+        s.lastConsumedSignal = 0;
+        s.pendingConsumed = 0;
+    };
+
+    // Import the ring's fence pair as timeline semaphores. Both of them: under
+    // FL_GPU_SYNC framelink signals nothing itself, so the consumed fence is
+    // ours to advance once our reads have actually completed.
+    auto importSync = [&](SlotIn& s) -> bool {
+        void* ready = nullptr;
+        void* consumed = nullptr;
+        if (flSharedReadyFence(s.channel, &ready) != FL_OK ||
+            flSharedConsumedFence(s.channel, &consumed) != FL_OK)
+            return false;
+        return importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)ready, &s.readySem) &&
+               importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)consumed, &s.consumedSem);
+    };
+
+    for (uint32_t i = 0; i < kInSlots; ++i) {
+        SlotIn& s = inSlots[i];
+        s.name = options.pipeName + ".in." + std::to_string(i);
+        // Ids come from the same counter the legacy clients use, and are taken
+        // first, so the two transports can never collide on a scene stream id
+        // while both are alive.
+        s.uid = nextClientId++;
+        if (flCreateChannelEx(s.name.c_str(), kInDefaultW, kInDefaultH, FL_FORMAT_BGRA8,
+                              kInPool, FL_GPU_SYNC, &s.channel) != FL_OK) {
+            VKR_ERR("service: input channel '%s' creation failed", s.name.c_str());
+            s.channel = nullptr;
+        }
+    }
+    VKR_LOG("service: %u framelink input slots ready ('%s.in.0' .. '%s.in.%u')", kInSlots,
+            options.pipeName.c_str(), options.pipeName.c_str(), kInSlots - 1);
+
     // M35: attach to a framelink channel that a CONSUMER created. Retried,
     // because the consumer owns the channel and may start after us - the
     // inverse of the old model, where we allocated the ring and the consumer
@@ -466,8 +571,127 @@ int runWinService(const WinServeOptions& options) {
             }
         }
 
+        // M38: poll the framelink input slots. Non-blocking (timeout 0): a
+        // slot with nothing new must cost the render thread nothing, and the
+        // ready fence is waited on by the GPU, not here.
+        for (SlotIn& s : inSlots) {
+            if (!s.channel) continue;
+
+            flChannelInfo info{};
+            flQuery(s.channel, &info);
+            if (info.generation != s.generation) {
+                // Everything we imported from the old ring is gone - textures
+                // and the fence pair both. Re-import lazily as frames arrive.
+                dropRing(s);
+                s.generation = info.generation;
+                s.width = info.width;
+                s.height = info.height;
+                if (!importSync(s)) {
+                    VKR_ERR("service: '%s' fence import failed", s.name.c_str());
+                    s.generation = 0; // try again next frame
+                    continue;
+                }
+            }
+
+            flFrame f{};
+            const flResult r = flAcquireFrame(s.channel, &f, 0);
+            if (r == FL_DISCONNECTED) {
+                // M31 again: hold the ring so the scene's exit animation has
+                // something to sample. The slot itself stays; the next
+                // producer bumps the generation and we re-import then.
+                if (!s.departing && s.currentSlot >= 0) {
+                    s.departing = true;
+                    s.departedNs = nowNs();
+                }
+                continue;
+            }
+            if (r != FL_OK) continue;
+
+            // A reallocation between the flQuery above and here would leave us
+            // holding a frame from a ring we have not imported. Drop it; the
+            // next iteration re-imports and the producer resends.
+            flChannelInfo now{};
+            flQuery(s.channel, &now);
+            if (now.generation != s.generation) {
+                flRelease(s.channel, &f);
+                continue;
+            }
+
+            if (!ensurePool()) {
+                flRelease(s.channel, &f);
+                continue;
+            }
+            const uint32_t key = (s.uid << 4) | f.slot;
+            if (!s.imported[f.slot]) {
+                void* h = flImageSharedHandle(f.image);
+                if (!pool.addSurfaceWin32(vk, key, (uint64_t)(uintptr_t)h, s.width, s.height)) {
+                    VKR_ERR("service: '%s' slot %u import failed", s.name.c_str(), f.slot);
+                    flRelease(s.channel, &f);
+                    continue;
+                }
+                if (passNeedsBind) {
+                    passBound = pass.bindPool(vk, pool);
+                    passNeedsBind = false;
+                } else if (!pass.addSlot(vk, pool, key)) {
+                    VKR_ERR("service: '%s' slot %u bind failed", s.name.c_str(), f.slot);
+                    flRelease(s.channel, &f);
+                    continue;
+                }
+                s.imported[f.slot] = true;
+            }
+
+            s.departing = false;
+            s.currentSlot = (int64_t)key;
+            s.currentReady = f._readyValue;
+            // Release the PREVIOUS frame, not this one: the scene keeps
+            // sampling this texture until a newer frame replaces it, so
+            // telling the producer it is free would let it be overwritten
+            // mid-draw. The client rings do exactly the same.
+            if (f._readyValue > 1 && f._readyValue - 1 > s.lastConsumedSignal)
+                s.pendingConsumed = f._readyValue - 1;
+            ++adoptions;
+            ++videoFramesSeen;
+            if (f.ptsNs > 0) {
+                const int64_t d = nowNs() - f.ptsNs;
+                if (d >= 0 && d < 1000000000ll) {
+                    const uint64_t us = (uint64_t)(d / 1000);
+                    ++hopSamples;
+                    hopTotalUs += us;
+                    if (us > hopMaxUs) hopMaxUs = us;
+                }
+            }
+            // Bookkeeping only under FL_GPU_SYNC - it signals nothing. The
+            // real release is the consumed-fence signal in our submit below.
+            flRelease(s.channel, &f);
+        }
+
         std::vector<SceneHost::StreamRef> streams;
         SceneHost::Extras extras;
+        for (SlotIn& s : inSlots) {
+            if (s.currentSlot < 0) continue;
+            // Same rule as a departing client: withhold the stream so the
+            // motion layer animates it out, but keep the ring alive for it.
+            const bool expired =
+                s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
+            if (s.departing && (expired || !host.retainsStream((uint64_t)s.uid))) {
+                dropRing(s);
+                s.departing = false;
+                s.generation = 0; // force a re-import when someone attaches
+                continue;
+            }
+            if (s.departing) continue;
+            streams.push_back({(uint64_t)s.uid, s.currentSlot});
+            if (s.readySem) {
+                extras.waitSems.push_back(s.readySem);
+                extras.waitValues.push_back(s.currentReady);
+            }
+            if (s.pendingConsumed && s.consumedSem) {
+                extras.signalSems.push_back(s.consumedSem);
+                extras.signalValues.push_back(s.pendingConsumed);
+                s.lastConsumedSignal = s.pendingConsumed;
+                s.pendingConsumed = 0;
+            }
+        }
         for (auto& cp : clients) {
             Client& c = *cp;
             // A departing client is deliberately NOT offered as a stream: that
@@ -505,6 +729,12 @@ int runWinService(const WinServeOptions& options) {
                 presenting = true;
                 break;
             }
+        if (!presenting)
+            for (SlotIn& s : inSlots)
+                if (s.currentSlot >= 0 && !s.departing) {
+                    presenting = true;
+                    break;
+                }
 
         // M28: keep the display awake while a presentation is live.
         //
@@ -594,15 +824,18 @@ int runWinService(const WinServeOptions& options) {
         }
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
+            size_t live = clients.size();
+            for (SlotIn& s : inSlots)
+                if (s.currentSlot >= 0) ++live;
             if (hopSamples) {
-                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients) "
+                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu producers) "
                         "hop avg %.2f ms max %.2f ms over %llu",
-                        (unsigned long long)adoptions, pool.slots.size(), clients.size(),
+                        (unsigned long long)adoptions, pool.slots.size(), live,
                         (double)hopTotalUs / (double)hopSamples / 1000.0,
                         (double)hopMaxUs / 1000.0, (unsigned long long)hopSamples);
             } else {
-                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu clients)",
-                        (unsigned long long)adoptions, pool.slots.size(), clients.size());
+                VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu producers)",
+                        (unsigned long long)adoptions, pool.slots.size(), live);
             }
             adoptions = 0;
             hopSamples = hopTotalUs = hopMaxUs = 0;
@@ -616,6 +849,11 @@ int runWinService(const WinServeOptions& options) {
 
     for (auto& c : clients) teardownClient(*c);
     clients.clear();
+    for (SlotIn& s : inSlots) {
+        dropRing(s);
+        if (s.channel) flClose(s.channel);
+        s.channel = nullptr;
+    }
     teardownSceneOut(sceneOut);
     host.destroy(vk);
     pass.destroy(vk);
