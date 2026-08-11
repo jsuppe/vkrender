@@ -41,8 +41,8 @@
 #include <string>
 #include <vector>
 
-#include "fl_slot.h"
 #include "framelink.h"
+#include "framelink_slots.h"
 #include "framelink_d3d11.h"
 #include "recv_stats.h"
 #include "rtsp_room.h"
@@ -85,16 +85,18 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
             // the place to block. If every slot is occupied this source has
             // nowhere to go, which is the same answer the old 12-client limit
             // gave.
-            std::string slot;
-            st->channel = vkr::flSlotAttach(g_pipe, (uint32_t)w, (uint32_t)h, 12, 0, &slot);
+            uint32_t slot = 0;
+            const std::string prefix = std::string(g_pipe) + ".in";
+            flOpenProducerSlot(prefix.c_str(), 12, (uint32_t)w, (uint32_t)h,
+                               FL_FORMAT_BGRA8, 0, &st->channel, &slot);
             if (!st->channel) {
                 st->connectFailed = true; // no free slot; drop frames quietly
                 fprintf(stderr,
                         "rtsp: [source %u] no free input slot on '%s' - discarding stream\n",
                         st->sourceId, g_pipe);
             } else {
-                printf("rtsp: [source %u] producing %dx%d on '%s'\n", st->sourceId, w, h,
-                       slot.c_str());
+                printf("rtsp: [source %u] producing %dx%d on '%s.in.%u'\n", st->sourceId, w, h,
+                       g_pipe, slot);
             }
         }
         st->stats.onPulled();

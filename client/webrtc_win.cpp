@@ -34,8 +34,8 @@
 #include <cstring>
 #include <string>
 
-#include "fl_slot.h"
 #include "framelink.h"
+#include "framelink_slots.h"
 #include "framelink_d3d11.h"
 #include "recv_stats.h"
 #include "whip_mdns_win.h"
@@ -78,8 +78,10 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
             // No wait: a decoded frame is in hand and an appsink callback is
             // not the place to block. All slots occupied means this presenter
             // has nowhere to go, which is what the 12-client limit used to say.
-            std::string slot;
-            trk->channel = vkr::flSlotAttach(g_pipe, (uint32_t)w, (uint32_t)h, 12, 0, &slot);
+            uint32_t slot = 0;
+            const std::string prefix = std::string(g_pipe) + ".in";
+            flOpenProducerSlot(prefix.c_str(), 12, (uint32_t)w, (uint32_t)h,
+                               FL_FORMAT_BGRA8, 0, &trk->channel, &slot);
             if (!trk->channel) {
                 trk->connectFailed = true; // no free slot; drop frames quietly
                 fprintf(stderr,
@@ -87,8 +89,8 @@ GstFlowReturn onNewSample(GstAppSink* sink, gpointer user) {
                         "track\n",
                         trk->sessionId, g_pipe);
             } else {
-                printf("webrtc: [session %u] producing %dx%d on '%s'\n", trk->sessionId, w, h,
-                       slot.c_str());
+                printf("webrtc: [session %u] producing %dx%d on '%s.in.%u'\n", trk->sessionId, w,
+                       h, g_pipe, slot);
             }
         }
         trk->stats.onPulled();

@@ -45,8 +45,8 @@
 #include <string>
 #include <thread>
 
-#include "fl_slot.h"
 #include "framelink.h"
+#include "framelink_slots.h"
 #include "framelink_d3d11.h"
 #include "pin_overlay.h"
 
@@ -107,13 +107,15 @@ int main(int argc, char** argv) {
     // source, so 1280x720 is the request and the ring reallocates if a real
     // sender needs otherwise.
     CastState state;
-    std::string slot;
-    state.channel = vkr::flSlotAttach(pipe, 1280, 720, 12, 30000, &slot);
+    uint32_t slot = 0;
+    const std::string prefix = std::string(pipe) + ".in";
+    const flResult sr = flOpenProducerSlot(prefix.c_str(), 12, 1280, 720, FL_FORMAT_BGRA8,
+                                           30000, &state.channel, &slot);
     if (!state.channel) {
-        fprintf(stderr, "miracast: no free input slot on '%s'\n", pipe);
+        fprintf(stderr, "miracast: no input slot on '%s' - %s\n", pipe, flResultString(sr));
         return 1;
     }
-    printf("miracast: attached to '%s'\n", slot.c_str());
+    printf("miracast: attached to '%s.in.%u'\n", pipe, slot);
 
     MiracastReceiver receiver;
     auto status = receiver.GetStatus();

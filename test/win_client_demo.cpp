@@ -28,8 +28,8 @@
 #include <string>
 #include <thread>
 
-#include "fl_slot.h"
 #include "framelink.h"
+#include "framelink_slots.h"
 #include "framelink_d3d11.h"
 
 using Microsoft::WRL::ComPtr;
@@ -57,12 +57,18 @@ int main(int argc, char** argv) {
     const unsigned W = argc > 4 ? (unsigned)atoi(argv[4]) : 640;
     const unsigned H = argc > 5 ? (unsigned)atoi(argv[5]) : 360;
 
-    std::string slotName;
-    flChannel* ch = vkr::flSlotAttach(pipe, W, H, 12, 10000, &slotName);
-    if (!ch) return 1;
+    flChannel* ch = nullptr;
+    uint32_t slot = 0;
+    const std::string prefix = std::string(pipe) + ".in";
+    const flResult sr =
+        flOpenProducerSlot(prefix.c_str(), 12, W, H, FL_FORMAT_BGRA8, 10000, &ch, &slot);
+    if (!ch) {
+        fprintf(stderr, "demo: no input slot on '%s' - %s\n", pipe, flResultString(sr));
+        return 1;
+    }
     flChannelInfo info{};
     flQuery(ch, &info);
-    printf("demo: on '%s' %ux%u ring of %u\n", slotName.c_str(), info.width, info.height,
+    printf("demo: on '%s.in.%u' %ux%u ring of %u\n", pipe, slot, info.width, info.height,
            info.poolSize);
 
     // The channel's device, not one of our own: framelink allocated the ring on
