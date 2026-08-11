@@ -20,7 +20,7 @@
 //
 // Platform code supplies one callback: onTrack, invoked when a session's
 // remote video track pad appears; it builds the platform sink branch
-// (Windows: decode -> vkrender_client ring; Linux: decode -> waylandsink;
+// (Windows: decode -> framelink input slot; Linux: decode -> waylandsink;
 // Android: depay -> MediaCodec) and returns the branch elements so the room
 // can reap them when the presenter leaves.
 //

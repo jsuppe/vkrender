@@ -19,7 +19,7 @@ The AirPlay receiver comes from the sibling
 
 | Component | Contents |
 |---|---|
-| Renderer + launcher (always) | `vkrenderer.exe`, `vkr_appliance.exe`, `vkrender_client.dll`, shaders |
+| Renderer + launcher (always) | `vkrenderer.exe`, `vkr_appliance.exe`, `framelink.dll`, shaders |
 | WebRTC / WHIP receiver | `vkr_webrtc.exe` — Flutter sender, browsers, OBS |
 | Miracast receiver | `vkr_miracast.exe` — Windows / Android senders |
 | AirPlay receiver | `vkr_airplay.exe` — Apple senders (GPLv3) |

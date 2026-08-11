@@ -24,7 +24,7 @@
 //
 // Platform code supplies one callback: onStream, invoked when a source's
 // decoded video pad appears; it builds the platform sink branch (Windows:
-// -> vkrender_client ring; Linux: -> waylandsink; Android: -> MediaCodec /
+// -> framelink input slot; Linux: -> waylandsink; Android: -> MediaCodec /
 // renderer Surface) exactly as the WHIP receivers do, so the two ingest paths
 // share their sink code shape.
 //

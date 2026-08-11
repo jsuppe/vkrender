@@ -55,28 +55,6 @@ int64_t nowNs() {
         .count();
 }
 
-struct Client {
-    IpcChannel channel;
-    uint32_t id = 0;
-    uint32_t width = 0, height = 0, poolSize = 0;
-    std::vector<uint32_t> keys;
-    ComPtr<ID3D11Texture2D> textures[proto::kMaxPoolSize];
-    HANDLE localTexHandle[proto::kMaxPoolSize] = {};
-    ComPtr<ID3D11Fence> readyFence, consumedFence;
-    HANDLE localFenceHandle[2] = {};
-    VkSemaphore readySem = VK_NULL_HANDLE, consumedSem = VK_NULL_HANDLE;
-    int64_t currentSlot = -1; // pool key
-    uint64_t currentReady = 0;
-    uint64_t lastConsumedSignal = 0;
-    uint64_t pendingConsumed = 0; // 0 = none this frame
-    // M31: the pipe has closed but the scene is still drawing this stream's
-    // last frame while it animates off. The ring stays imported until the
-    // scene says it is done (SceneHost::retainsStream), so the exit animation
-    // has something to sample instead of popping.
-    bool departing = false;
-    int64_t departedNs = 0;
-};
-
 // M35: the scene view, published over framelink. Was `Consumer`: the renderer
 // allocated the ring and handed it out, which is backwards from every other
 // platform - Android's Surface belongs to whoever consumes it. Now the camera
@@ -127,44 +105,6 @@ struct SlotIn {
 // Twelve, because that is the fan-in M22 proved and the scene supports.
 constexpr uint32_t kInSlots = 12;
 
-struct PendingConnection {
-    IpcChannel channel;
-    proto::ClientHelloMsg hello;
-};
-
-std::mutex g_acceptMutex;
-std::vector<std::unique_ptr<PendingConnection>> g_pending;
-
-void acceptLoop(std::string pipeName) {
-    for (;;) {
-        IpcChannel ch = IpcChannel::listen(pipeName);
-        if (!ch.connected()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            continue;
-        }
-        auto msg = ch.recv();
-        if (!msg) continue;
-        if (msg->type == proto::MsgType::ClientHello) {
-            const auto* hello = msg->as<proto::ClientHelloMsg>();
-            if (!hello) continue;
-            auto pending = std::make_unique<PendingConnection>();
-            pending->channel = std::move(ch);
-            pending->hello = *hello;
-            std::lock_guard<std::mutex> lock(g_acceptMutex);
-            g_pending.push_back(std::move(pending));
-        }
-    }
-}
-
-bool duplicateForClient(HANDLE local, HANDLE clientProcess, uint64_t* out) {
-    HANDLE dup = nullptr;
-    if (!DuplicateHandle(GetCurrentProcess(), local, clientProcess, &dup, 0, FALSE,
-                         DUPLICATE_SAME_ACCESS))
-        return false;
-    *out = (uint64_t)(uintptr_t)dup;
-    return true;
-}
-
 } // namespace
 
 int runWinService(const WinServeOptions& options) {
@@ -182,47 +122,11 @@ int runWinService(const WinServeOptions& options) {
     SceneHost host;
     if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
-    // D3D11 allocator device on the same adapter as the Vulkan device.
-    ComPtr<ID3D11Device5> d3d;
-    ComPtr<ID3D11DeviceContext4> d3dCtx;
-    {
-        ComPtr<IDXGIFactory1> factory;
-        CreateDXGIFactory1(IID_PPV_ARGS(&factory));
-        ComPtr<IDXGIAdapter1> adapter, pick;
-        for (UINT i = 0; factory->EnumAdapters1(i, &adapter) == S_OK; ++i) {
-            DXGI_ADAPTER_DESC1 desc;
-            adapter->GetDesc1(&desc);
-            if (!vk.luidValid || memcmp(&desc.AdapterLuid, vk.deviceLUID, 8) == 0) {
-                pick = adapter;
-                break;
-            }
-        }
-        ComPtr<ID3D11Device> dev;
-        ComPtr<ID3D11DeviceContext> ctx;
-        D3D_FEATURE_LEVEL fl = D3D_FEATURE_LEVEL_11_1;
-        if (FAILED(D3D11CreateDevice(pick.Get(), pick ? D3D_DRIVER_TYPE_UNKNOWN
-                                                      : D3D_DRIVER_TYPE_HARDWARE,
-                                     nullptr, 0, &fl, 1, D3D11_SDK_VERSION, &dev, nullptr,
-                                     &ctx))) {
-            VKR_ERR("service: D3D11 allocator device creation failed");
-            return 1;
-        }
-        dev.As(&d3d);
-        ctx.As(&d3dCtx);
-        ComPtr<ID3D10Multithread> mt;
-        if (SUCCEEDED(dev.As(&mt))) mt->SetMultithreadProtected(TRUE);
-        if (!d3d || !d3dCtx) {
-            VKR_ERR("service: D3D11.4 interfaces unavailable");
-            return 1;
-        }
-    }
+    // M38: no D3D11 device here any more. The service used to keep one to
+    // allocate every client's ring; framelink owns that now, and it allocates
+    // on the adapter we name below.
 
-    std::thread(acceptLoop, options.pipeName).detach();
-    VKR_LOG("service: listening on pipe '%s' (producer clients welcome)",
-            options.pipeName.c_str());
-
-    std::vector<std::unique_ptr<Client>> clients;
-    uint32_t nextClientId = 1;
+    uint32_t nextStreamId = 1;
     bool passBound = false;
     bool passNeedsBind = false;
     uint64_t adoptions = 0;
@@ -236,137 +140,6 @@ int runWinService(const WinServeOptions& options) {
     int64_t rateWindowStart = nowNs();
     const int64_t headlessDeadline = nowNs() + 60ll * 1000000000ll;
     int exitCode = 0;
-
-    auto teardownClient = [&](Client& c) {
-        vkDeviceWaitIdle(vk.device);
-        for (uint32_t key : c.keys) {
-            pass.removeSlot(vk, key);
-            pool.removeSlot(vk, key);
-        }
-        if (c.readySem) vkDestroySemaphore(vk.device, c.readySem, nullptr);
-        if (c.consumedSem) vkDestroySemaphore(vk.device, c.consumedSem, nullptr);
-        for (HANDLE h : c.localTexHandle)
-            if (h) CloseHandle(h);
-        for (HANDLE h : c.localFenceHandle)
-            if (h) CloseHandle(h);
-        VKR_LOG("service: client %u gone (%zu slots freed)", c.id, c.keys.size());
-    };
-
-    auto integrateClient = [&](PendingConnection& pc) -> std::unique_ptr<Client> {
-        auto c = std::make_unique<Client>();
-        c->channel = std::move(pc.channel);
-        c->id = nextClientId++;
-        c->width = pc.hello.width ? pc.hello.width : 640;
-        c->height = pc.hello.height ? pc.hello.height : 360;
-        c->poolSize = pc.hello.poolSize ? pc.hello.poolSize : 4;
-        if (c->poolSize > proto::kMaxPoolSize) c->poolSize = proto::kMaxPoolSize;
-        if (pc.hello.format != proto::SharedFormat::BGRA8) {
-            VKR_ERR("service: client %u requested unsupported format", c->id);
-            return nullptr;
-        }
-
-        if (!pool.valid()) {
-            proto::PoolDescMsg header{};
-            header.width = c->width;
-            header.height = c->height;
-            header.format = proto::SharedFormat::BGRA8;
-            header.matrix = proto::Matrix::BT709;
-            header.range = proto::Range::Full;
-            header.poolSize = 0; // dynamic slots
-            header.planeCount = 1;
-            if (!pool.create(vk, header)) return nullptr;
-            passNeedsBind = true;
-        }
-
-        HANDLE clientProcess = OpenProcess(PROCESS_DUP_HANDLE, FALSE, pc.hello.clientPid);
-        if (!clientProcess) {
-            VKR_ERR("service: OpenProcess(%u) failed", pc.hello.clientPid);
-            return nullptr;
-        }
-
-        proto::PoolDescMsg desc{};
-        desc.width = c->width;
-        desc.height = c->height;
-        desc.format = proto::SharedFormat::BGRA8;
-        desc.matrix = proto::Matrix::BT709;
-        desc.range = proto::Range::Full;
-        desc.poolSize = c->poolSize;
-        desc.planeCount = 1;
-
-        bool ok = true;
-        for (uint32_t i = 0; i < c->poolSize && ok; ++i) {
-            D3D11_TEXTURE2D_DESC td{};
-            td.Width = c->width;
-            td.Height = c->height;
-            td.MipLevels = 1;
-            td.ArraySize = 1;
-            td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-            td.SampleDesc.Count = 1;
-            td.Usage = D3D11_USAGE_DEFAULT;
-            td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-            td.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
-            ok = SUCCEEDED(d3d->CreateTexture2D(&td, nullptr, &c->textures[i]));
-            ComPtr<IDXGIResource1> res;
-            if (ok) ok = SUCCEEDED(c->textures[i].As(&res));
-            if (ok)
-                ok = SUCCEEDED(res->CreateSharedHandle(
-                    nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr,
-                    &c->localTexHandle[i]));
-            if (ok) {
-                uint32_t key = (c->id << 4) | i;
-                ok = pool.addSurfaceWin32(vk, key, (uint64_t)(uintptr_t)c->localTexHandle[i],
-                                          c->width, c->height);
-                if (ok) c->keys.push_back(key);
-            }
-            if (ok) ok = duplicateForClient(c->localTexHandle[i], clientProcess,
-                                            &desc.textureHandle[i]);
-        }
-        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
-                                                IID_PPV_ARGS(&c->readyFence)));
-        if (ok) ok = SUCCEEDED(d3d->CreateFence(0, D3D11_FENCE_FLAG_SHARED,
-                                                IID_PPV_ARGS(&c->consumedFence)));
-        if (ok)
-            ok = SUCCEEDED(c->readyFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
-                                                             &c->localFenceHandle[0])) &&
-                 SUCCEEDED(c->consumedFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr,
-                                                                &c->localFenceHandle[1]));
-        if (ok)
-            ok = importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)c->localFenceHandle[0],
-                                              &c->readySem) &&
-                 importTimelineSemaphoreWin32(vk, (uint64_t)(uintptr_t)c->localFenceHandle[1],
-                                              &c->consumedSem);
-        if (ok)
-            ok = duplicateForClient(c->localFenceHandle[0], clientProcess,
-                                    &desc.readyFenceHandle) &&
-                 duplicateForClient(c->localFenceHandle[1], clientProcess,
-                                    &desc.consumedFenceHandle);
-
-        if (ok) {
-            proto::HelloMsg hello{};
-            hello.rendererPid = GetCurrentProcessId();
-            hello.luidValid = vk.luidValid ? 1 : 0;
-            memcpy(hello.deviceLUID, vk.deviceLUID, sizeof(hello.deviceLUID));
-            ok = c->channel.send(proto::MsgType::Hello, hello) &&
-                 c->channel.send(proto::MsgType::PoolDesc, desc);
-        }
-        CloseHandle(clientProcess);
-        if (!ok) {
-            VKR_ERR("service: client %u setup failed", c->id);
-            teardownClient(*c);
-            return nullptr;
-        }
-        if (passNeedsBind) {
-            passBound = pass.bindPool(vk, pool);
-            passNeedsBind = false;
-            if (!passBound) return nullptr;
-        } else {
-            for (uint32_t key : c->keys)
-                if (!pass.addSlot(vk, pool, key)) return nullptr;
-        }
-        VKR_LOG("service: client %u connected (%ux%u ring of %u)", c->id, c->width, c->height,
-                c->poolSize);
-        return c;
-    };
 
     // ---- M38: framelink input slots -------------------------------------
     //
@@ -430,12 +203,15 @@ int runWinService(const WinServeOptions& options) {
     for (uint32_t i = 0; i < kInSlots; ++i) {
         SlotIn& s = inSlots[i];
         s.name = options.pipeName + ".in." + std::to_string(i);
-        // Ids come from the same counter the legacy clients use, and are taken
-        // first, so the two transports can never collide on a scene stream id
-        // while both are alive.
-        s.uid = nextClientId++;
-        if (flCreateChannelEx(s.name.c_str(), kInDefaultW, kInDefaultH, FL_FORMAT_BGRA8,
-                              kInPool, FL_GPU_SYNC, &s.channel) != FL_OK) {
+        s.uid = nextStreamId++;
+        // On OUR adapter, explicitly. framelink would otherwise take the first
+        // one DXGI enumerates, which on a laptop with an integrated and a
+        // discrete GPU is not the one our Vulkan device is on - and then every
+        // import of these buffers fails.
+        if (flCreateChannelOnAdapter(s.name.c_str(), kInDefaultW, kInDefaultH,
+                                     FL_FORMAT_BGRA8, kInPool, FL_GPU_SYNC,
+                                     vk.luidValid ? vk.deviceLUID : nullptr,
+                                     &s.channel) != FL_OK) {
             VKR_ERR("service: input channel '%s' creation failed", s.name.c_str());
             s.channel = nullptr;
         }
@@ -506,70 +282,7 @@ int runWinService(const WinServeOptions& options) {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
-        {
-            std::vector<std::unique_ptr<PendingConnection>> pending;
-            {
-                std::lock_guard<std::mutex> lock(g_acceptMutex);
-                pending.swap(g_pending);
-            }
-            for (auto& pc : pending) {
-                if (clients.size() >= 12) {
-                    VKR_WARN("service: rejecting client (12 streams occupied)");
-                    continue;
-                }
-                if (auto c = integrateClient(*pc)) clients.push_back(std::move(c));
-            }
-        }
         attachSceneOut(sceneOut);
-
-        for (auto it = clients.begin(); it != clients.end();) {
-            Client& c = **it;
-            while (auto msg = c.channel.tryRecv()) {
-                if (msg->type == proto::MsgType::FrameReady) {
-                    if (const auto* fr = msg->as<proto::FrameReadyMsg>()) {
-                        c.currentSlot = (int64_t)((c.id << 4) | fr->slot);
-                        c.currentReady = fr->readyValue;
-                        if (fr->readyValue > 0 && fr->readyValue - 1 > c.lastConsumedSignal)
-                            c.pendingConsumed = fr->readyValue - 1;
-                        ++adoptions;
-                        ++videoFramesSeen;
-                        if (fr->ptsNs > 0) {
-                            const int64_t d = nowNs() - fr->ptsNs;
-                            // Reject nonsense rather than poison the average:
-                            // producers that stamp presentation time (not a
-                            // clock) land far outside this window.
-                            if (d >= 0 && d < 1000000000ll) {
-                                const uint64_t us = (uint64_t)(d / 1000);
-                                ++hopSamples;
-                                hopTotalUs += us;
-                                if (us > hopMaxUs) hopMaxUs = us;
-                            }
-                        }
-                    }
-                } else if (msg->type == proto::MsgType::Bye) {
-                    c.channel = IpcChannel();
-                }
-            }
-            // M31: do not free on disconnect. Mark departing and hold the ring
-            // so the exit animation still has a texture; the scene reports
-            // when it has finished with the stream. The timeout is a backstop
-            // - a bug in the motion layer must not pin a ring forever.
-            if (!c.channel.connected() && !c.departing) {
-                c.departing = true;
-                c.departedNs = nowNs();
-            }
-            const bool expired =
-                c.departing && (nowNs() - c.departedNs) > 3000000000ll; // 3 s
-            if (c.departing && (expired || !host.retainsStream((uint64_t)c.id))) {
-                if (expired)
-                    VKR_WARN("service: client %u ring held 3 s after disconnect, forcing",
-                             c.id);
-                teardownClient(c);
-                it = clients.erase(it);
-            } else {
-                ++it;
-            }
-        }
 
         // M38: poll the framelink input slots. Non-blocking (timeout 0): a
         // slot with nothing new must cost the render thread nothing, and the
@@ -692,49 +405,19 @@ int runWinService(const WinServeOptions& options) {
                 s.pendingConsumed = 0;
             }
         }
-        for (auto& cp : clients) {
-            Client& c = *cp;
-            // A departing client is deliberately NOT offered as a stream: that
-            // absence is exactly how the scene's motion layer learns it is
-            // leaving and starts animating it out. Its ring is still alive
-            // (teardown is deferred above), so the tile keeps its texture.
-            // No fence waits either - the producer is gone, and its last frame
-            // was already waited on when it was delivered.
-            if (c.departing) continue;
-            streams.push_back({(uint64_t)c.id, c.currentSlot});
-            if (c.currentSlot >= 0 && c.readySem) {
-                extras.waitSems.push_back(c.readySem);
-                extras.waitValues.push_back(c.currentReady);
-            }
-            if (c.pendingConsumed && c.consumedSem) {
-                extras.signalSems.push_back(c.consumedSem);
-                extras.signalValues.push_back(c.pendingConsumed);
-                c.lastConsumedSignal = c.pendingConsumed;
-                c.pendingConsumed = 0;
-            }
-        }
-
-        // M24: deliver consumer views. Pick a reusable ring slot (the consumer
-        // has finished reading it: consumedFence >= the value we signaled for
-        // it), record the blit + this frame's readyFence signal.
-        // M25: only while a presentation is ACTIVE. A connected client is not
-        // enough: receivers (Miracast/AirPlay) dial in and hold an idle ring
-        // long before anyone casts, so gate on a client actually having
-        // delivered a frame (currentSlot >= 0) - otherwise the virtual camera
-        // would broadcast an empty scene, which is what the first appliance
-        // smoke test showed.
+        // M24/M35: publish the scene view for sinks (the camera). Pick a
+        // reusable ring slot and record the blit + this frame's ready signal.
+        // M25: only while a presentation is ACTIVE. An ATTACHED producer is not
+        // enough: receivers (Miracast/AirPlay) take a slot at startup and hold
+        // it idle long before anyone casts, so gate on one having actually
+        // delivered a frame - otherwise the virtual camera broadcasts an empty
+        // scene, which is what the first appliance smoke test showed.
         bool presenting = false;
-        for (auto& cp : clients)
-            if (cp->currentSlot >= 0) {
+        for (SlotIn& s : inSlots)
+            if (s.currentSlot >= 0 && !s.departing) {
                 presenting = true;
                 break;
             }
-        if (!presenting)
-            for (SlotIn& s : inSlots)
-                if (s.currentSlot >= 0 && !s.departing) {
-                    presenting = true;
-                    break;
-                }
 
         // M28: keep the display awake while a presentation is live.
         //
@@ -824,7 +507,7 @@ int runWinService(const WinServeOptions& options) {
         }
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            size_t live = clients.size();
+            size_t live = 0;
             for (SlotIn& s : inSlots)
                 if (s.currentSlot >= 0) ++live;
             if (hopSamples) {
@@ -847,8 +530,6 @@ int runWinService(const WinServeOptions& options) {
     if (headless && exitCode == 0 && videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
-    for (auto& c : clients) teardownClient(*c);
-    clients.clear();
     for (SlotIn& s : inSlots) {
         dropRing(s);
         if (s.channel) flClose(s.channel);

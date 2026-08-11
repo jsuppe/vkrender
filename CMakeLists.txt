@@ -133,13 +133,10 @@ add_executable(vkrenderer
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
 if(WIN32)
-    # M14: producer-facing service mode (--serve) + client library + demo.
+    # M14: producer-facing service mode (--serve). M38 retired the client
+    # library that used to come with it: producers speak framelink now.
     target_sources(vkrenderer PRIVATE renderer/win_service.cpp)
     target_link_libraries(vkrenderer PRIVATE d3d11 dxgi framelink)
-
-    add_library(vkrender_client SHARED client/vkrender_client.cpp)
-    target_include_directories(vkrender_client PUBLIC client)
-    target_link_libraries(vkrender_client PRIVATE vkr_common d3d11 dxgi)
 
     # framelink is its own project now (github: framelink, MIT). vkrender is a
     # CONSUMER of it - the virtual camera owns a channel and the renderer
@@ -176,10 +173,6 @@ if(WIN32)
     add_executable(vkr_appliance client/appliance_win.cpp)
     target_compile_options(vkr_appliance PRIVATE /EHsc)
 
-    # M24: scene-view consumer smoke test (negotiate + acquire + PPM dump).
-    add_executable(vkr_consumer_demo test/win_consumer_demo.cpp)
-    target_link_libraries(vkr_consumer_demo PRIVATE vkrender_client d3d11 dxgi)
-
     # M36: the virtual camera is its own project now (framecam, MIT), because
     # it is a framelink integration rather than a part of this compositor: it
     # creates the camera and hands out buffers, and vkrender's renderer is just
@@ -211,7 +204,7 @@ if(WIN32)
 
     # M19: the Windows AirPlay receiver now lives in its own public repository
     # (github.com/jsuppe/vkrender-airplay - GPLv3, vendored UxPlay core). It
-    # consumes the client-sdk release asset of this repo. The vendored
+    # depends on framelink, not on this repo (M38). The vendored
     # third_party/uxplay + libplist trees stay HERE for the Android AirPlay
     # APK (android/airplay), which shares the same core.
 

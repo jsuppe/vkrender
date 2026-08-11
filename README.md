@@ -108,12 +108,13 @@ renderer into a minimal Wayland compositor — any Wayland client (GStreamer
 client on the two-cube scene. See [ROADMAP.md](ROADMAP.md#m13) and
 docs/LINUX.md.
 
-**Windows service mode (M14)**: `vkrenderer --serve [pipe]` +
-[client/vkrender_client.h](client/vkrender_client.h) — a four-call C API
-(`vkrConnect` / `vkrDequeueBuffer` / `vkrQueueBuffer` / `vkrDisconnect`)
-gives any D3D11 app a renderer-owned shared-texture ring with GPU-side
-fencing; each client is one stream on the scene. Demo:
-`vkr_client_demo.exe`.
+**Windows service mode (M14/M38)**: `vkrenderer --serve [pipe]` pre-creates
+twelve [framelink](https://github.com/jsuppe/framelink) input channels
+(`<pipe>.in.0` … `.in.11`). Any D3D11 app takes a free one with
+`flOpenProducerSlot` and gets a shared-texture ring with GPU-side fencing;
+each occupied slot is one stream on the scene. Demo: `vkr_client_demo.exe`.
+The bespoke `vkrender_client` API this used to ship was retired in M38 —
+one transport, and a published one.
 
 **AirPlay receiver on Android (M18)**: a third APK
 (`dev.vkrender.airplay`, install alongside the renderer app) makes the
@@ -129,9 +130,8 @@ scene stream. (`apt install uxplay`; avahi must be running.)
 
 **AirPlay receiver (M19, Windows)**: now its own public repository —
 [jsuppe/vkrender-airplay](https://github.com/jsuppe/vkrender-airplay)
-(GPLv3, standalone `vkr_airplay.exe`). It consumes this repo's
-[client-sdk release](https://github.com/jsuppe/vkrender/releases/tag/client-sdk)
-and talks to `vkrenderer --serve` like any other producer. Live-cast
+(GPLv3, standalone `vkr_airplay.exe`). It depends on framelink rather than
+on this repo, and takes an input slot like any other producer. Live-cast
 verified from a macOS 26.5 sender.
 
 **Miracast receiver (M16, Windows)**: `vkr_miracast.exe` makes the machine

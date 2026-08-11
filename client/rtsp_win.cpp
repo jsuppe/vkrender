@@ -3,9 +3,9 @@
 // The shared client/rtsp_room.cpp core owns the ingest (one private pipeline
 // per RTSP URL, HTTP control API, backoff reconnect); this file supplies the
 // Windows sink: each source's decoded video is uploaded into its OWN
-// vkrender_client connection. The M14 service keys one scene stream per pipe
-// connection, so every camera lands on its own presentation tile with zero
-// renderer changes - exactly like a WHIP presenter.
+// framelink input slot (M38). The renderer keys one scene stream per slot, so
+// every camera lands on its own presentation tile with zero renderer changes -
+// exactly like a WHIP presenter.
 //
 //   vkr_rtsp [--pipe name] [--port 8890] [--max 8] [--url rtsp://... ]...
 //

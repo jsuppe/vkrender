@@ -82,7 +82,6 @@ Name: "vcam\mf"; Description: "Media Foundation camera - also Windows Camera, ne
 ; --- core ---
 Source: "{#BuildDir}\vkrenderer.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "{#BuildDir}\vkr_appliance.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "{#BuildDir}\vkrender_client.dll"; DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "{#BuildDir}\shaders\*"; DestDir: "{app}\shaders"; Components: core; Flags: ignoreversion recursesubdirs
 ; --- receivers ---
 Source: "{#BuildDir}\vkr_webrtc.exe"; DestDir: "{app}"; Components: webrtc; Flags: ignoreversion

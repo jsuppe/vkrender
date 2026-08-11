@@ -1,30 +1,31 @@
 # Migrating the receivers onto framelink
 
-vkrender currently runs **two transports**. This is the plan to finish the job,
-and the design problem that has to be solved first.
+**Windows is done.** Every Windows receiver is a framelink producer, the
+legacy transport is deleted, and the latency did not move. What follows is the
+design, the measurements, and what is left (Linux, Android).
 
-## Where the line is today
+## Where the line is now
 
 | direction | transport | components |
 |---|---|---|
-| scene → out | **framelink** | `vkrenderer` (producer), `framecam` (consumer) |
-| in → scene | legacy `vkrender_client` | `vkr_miracast`, `vkr_webrtc`, `vkr_rtsp`, `vkr_client_demo` |
+| in -> scene | **framelink** | `vkr_miracast`, `vkr_webrtc`, `vkr_rtsp`, `vkr_client_demo`, `vkr_airplay` |
+| scene -> out | **framelink** | `vkrenderer` (producer), `framecam` (consumer) |
 
-Only the consumer path moved (M35). Every receiver still calls
-`vkrConnect`/`vkrDequeueBuffer`/`vkrQueueBuffer` over `vkr::proto` to
-`win_service.cpp`. Both transports work — they run simultaneously today — but
-the duplication is real and the legacy protocol is the one nobody else can use.
+One transport. `vkrender_client` and the M24 consumer protocol are gone, along
+with the service's own D3D11 device - framelink allocates the rings now, and
+`vkr_consumer_demo`, which had been dead since M35, is deleted rather than
+revived.
 
-## The two obstacles
+## The two obstacles this had to solve
 
-Porting is *not* a rename. Two things the old protocol does have no equivalent
+Porting was *not* a rename. Two things the old protocol did have no equivalent
 in framelink, both consequences of consumer-owned rings.
 
-**1. The producer picks the geometry.** Today a receiver sends
+**1. The producer picks the geometry.** A receiver used to send
 `ClientHelloMsg{width, height, format, poolSize}` and the renderer allocates a
 ring to match. That is exactly backwards from framelink, where the consumer
 chooses and `flQuery` reports. And receivers genuinely differ: a mirroring iPad
-sent 752x1080, a MacBook 1920x1080, an RTSP camera whatever it is. The renderer
+sends 752x1080, a MacBook 1920x1080, an RTSP camera whatever it is. The renderer
 cannot know before the producer arrives.
 
 **2. There is no "a producer wants in" signal.** A producer cannot create a
@@ -71,33 +72,41 @@ FL_API flResult flRequestGeometry(flChannel*, uint32_t width, uint32_t height,
 // FL_NOT_FOUND, so a receiver can walk the slots instead of giving up.
 ```
 
-`FL_BUSY` matters more than it looks: today `flOpenProducer` cannot distinguish
+`FL_BUSY` mattered more than it looked: `flOpenProducer` could not distinguish
 "no such channel" from "taken", and slot-walking needs exactly that
-distinction.
+distinction. Both landed; `flOpenProducerSlot` in framelink now does the walk
+itself.
 
 ## Phases
 
-**Phase 0 — framelink API.** Add `flRequestGeometry` and `FL_BUSY` on both
-backends, with round-trip tests covering reallocation mid-life and a second
-producer being refused. No vkrender changes. This phase must land first,
-because everything after it depends on the shape.
+**Phase 0 — framelink API. DONE.** `flRequestGeometry` and `FL_BUSY` on both
+backends. Five more additions turned up while wiring the real consumer, each
+because something specific broke or would have:
 
-**Phase 1 — Windows receivers, one at a time.** Order chosen by how cheap the
-failure is to diagnose:
+| addition | why it exists |
+|---|---|
+| `FL_GPU_SYNC` + `flSharedConsumedFence` | a Vulkan consumer must not block the CPU on the ready fence, nor release a frame its GPU is still reading |
+| `flChannelInfo::generation` | a reallocation replaces every buffer; without this an importer has no idea its handles died |
+| `resetSync` on producer attach | a second producer's counter restarts at 1 against a fence sitting at 50 — every wait passes instantly |
+| `flOpenProducerSlot` | the walk itself, once, in the library rather than copied into five receivers |
+| `flCreateChannelOnAdapter` | a consumer must allocate on the GPU it draws with; "adapter 0" is not that GPU on a hybrid laptop |
 
-1. `vkr_client_demo` — synthetic, no hardware, fastest signal.
-2. `vkr_rtsp` — a local RTSP source is reproducible on demand.
-3. `vkr_webrtc` — needs a sender, but the synthetic WHIP harness exists.
-4. `vkr_miracast` — needs a real Windows sender; least reproducible.
+Three of those are bug fixes to code that had already passed its tests. The
+round trip now covers a detach/reattach (`roundtrip_reattach`) because that is
+the case a slot channel sees every time a presenter leaves.
 
-`vkr_airplay` lives in its own repo and follows separately, after the four
-above have proven the pattern.
+**Phase 1 — Windows receivers. DONE**, in the planned order (cheapest failure
+to diagnose first): `vkr_client_demo`, `vkr_rtsp`, `vkr_webrtc`,
+`vkr_miracast`, then `vkr_airplay` in its own repository.
 
-**Phase 2 — retire the legacy path.** Delete `vkrender_client`, the M24
-consumer protocol, and the client-ring machinery in `win_service.cpp`. Note
-`vkr_consumer_demo` is **already dead** — it speaks the consumer protocol the
-renderer stopped answering in M35; it builds but cannot connect. It gets
-deleted or reborn as a framelink consumer.
+`vkr_miracast`'s frame path is the one thing **not** verified: `Start()` hangs
+on this machine (docs/MIRACAST.md), which predates the migration. Its slot
+attach works; the first real sender is the test.
+
+**Phase 2 — retire the legacy path. DONE.** `client/vkrender_client.{h,cpp}`,
+the M24 consumer protocol and `vkr_consumer_demo` (dead since M35) are deleted,
+along with the client-ring machinery in `win_service.cpp` — and with it the
+service's own D3D11 device, which existed only to allocate those rings.
 
 **Phase 3 — Linux.** Receivers there do not use `vkrender_client` at all
 (sharing happens inside the renderer), so this is a net *simplification*: they
@@ -110,11 +119,12 @@ becomes the native-code path alongside it, sharing the same ring.
 
 ## Latency is a constraint, not an outcome
 
-The migration must not add a frame to the on-screen path. It should not, by
-construction: today a receiver writes into a shared texture the renderer
-samples, and framelink is the same mechanism behind a different handshake -
-shared NT handles or dma-buf, plus a fence. Same number of hops, same absence of
-copies.
+The migration must not add a frame to the on-screen path, and it did not. That
+was the expectation by construction: a receiver writes into a shared texture the
+renderer samples, and framelink is the same mechanism behind a different
+handshake - shared NT handles or dma-buf, plus a fence. Same number of hops,
+same absence of copies. Expecting it and measuring it are different things,
+which is why the instrument came first.
 
 The rule that follows: **ingest must never become a process frames flow
 through.** It is a control plane sitting beside the frame path, not in it.
@@ -146,29 +156,52 @@ evidence the measurement is real: ~4.2 ms is about a quarter of a 60 Hz frame
 and the max sits near half a frame, consistent with a renderer sampling
 submissions once per frame.
 
-**The migration passes only if the framelink numbers match these**, on this
-machine, at this load. Cleaner code is not a defence against a regression here.
+### The result: same load, same latency
 
-## Risks
+Twelve `vkr_client_demo` instances against `vkrenderer --serve`, on CASPAR,
+after the port and again after the legacy path was deleted:
 
-**The 12-presenter fan-in is a proven load and must stay proven.** M22
-validated 12 simultaneous WHIP presenters; the migration is not done until that
-number is re-measured, not assumed. Twelve slot channels also means twelve
-rings pre-allocated at a default size — memory that today is allocated on
-demand. Sizing the default matters, and `flRequestGeometry` reallocating on
-first connect makes the initial size mostly a placeholder.
+```
+legacy      1773-1776 adoptions/5s   hop avg 4.18-4.22 ms   max 8.43-8.59 ms
+framelink   1772-1776 adoptions/5s   hop avg 4.18-4.29 ms   max 8.40-8.53 ms
+```
+
+**No regression.** The max is marginally lower and the imported surface count
+HALVED - 24 pool slots against 48 - because holding one frame and releasing the
+previous only ever touches two slots of each ring, where the old protocol
+imported all four up front.
+
+Also verified, because a latency number alone would not have caught them:
+
+- **Producer-requested geometry.** A 752x1080 producer (an iPad's mirroring
+  size) and a 1920x1080 one took different slots at their own sizes, and a
+  third reused slot 0 at 1280x800 after the first left - re-imported at the new
+  size, which is the generation check doing its job.
+- **Real ingest.** Two RTSP cameras at 480x640 and 1280x720 landed on separate
+  slots at their own resolutions, both textured live in the headless dump.
+  Portrait matters specifically: it was the M33 stretch bug.
+- **Fan-in and churn.** Ten WHIP presenters on ten slots at ten resolutions; a
+  second wave took in.5..in.9 while the first still held in.0..in.4, and the
+  pool shrank back as the first wave's sessions closed. (Twelve were requested;
+  two failed on the SENDER side in whipclientsink's signaller before the
+  receiver saw them.)
+
+## Risks, as they stand now
+
+**The 12-presenter fan-in stayed proven.** Re-measured, not assumed.
+
+**Twelve rings are pre-allocated.** They start at a 640x360 placeholder and the
+first producer replaces it with `flRequestGeometry`, so the idle cost is small
+and the initial size barely matters.
 
 **Sync on Linux is weaker.** framelink's Linux backend has no shared fence, so
-a GPU producer must flush before `flSubmit`. The current Linux receivers hand
-over VAAPI/dma-buf surfaces with their own sync assumptions; that needs
-checking before Phase 3, not during.
+`FL_GPU_SYNC` is a no-op there and a GPU producer must flush before `flSubmit`.
+The current Linux receivers hand over VAAPI/dma-buf surfaces with their own sync
+assumptions; that needs checking before Phase 3, not during. This is now the
+single largest open question in the migration.
 
-**This trades a working thing for a cleaner thing.** The receivers work today.
-The gain is one transport instead of two, and receivers that any framelink
-consumer can host — not just vkrender. That is worth doing, but it is not
-urgent, and the honest sequencing is to finish the Linux camera first: it
-proves framelink's second platform end to end, which this migration then relies
-on.
+**FL_BUSY is still unexercised on Linux.** A closed listener there makes "taken"
+look like "absent", so slot walking has only been proven on Windows.
 
 ## What this does not change
 

@@ -136,7 +136,7 @@ same split as `whip_room`:
 
 ```
 rtsp_room  (shared)          per-platform sink
-  N sources, one             rtsp_win.cpp    -> vkrender_client ring
+  N sources, one             rtsp_win.cpp    -> framelink input slot
   GstPipeline each     ->    rtsp_linux.cpp  -> waylandsink (M13 compositor)
   + HTTP control API         android/rtsp/   -> MediaCodec -> renderer Surface
   + backoff/watchdogs

@@ -4,9 +4,9 @@
 // WHIP ingest (own HTTP listener, one webrtcbin per presenter - replacing the
 // single-producer whipserversrc), and this file supplies the Windows sink:
 // each presenter's video track is decoded and uploaded into its OWN
-// vkrender_client connection. The M14 service keys one scene stream per pipe
-// connection, so every presenter lands on their own cube face / wall tile
-// with zero renderer changes.
+// framelink input slot (M38). The renderer keys one scene stream per slot, so
+// every presenter lands on their own cube face / wall tile with zero renderer
+// changes.
 //
 //   vkr_webrtc [pipe] [port] [name] [maxPresenters]
 //
