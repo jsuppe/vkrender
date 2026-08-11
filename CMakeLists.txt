@@ -195,6 +195,21 @@ if(WIN32)
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE framelink d3d11)
 
+    # M41: the appliance web front door - serves the browser sender + the
+    # desktop-app downloads over HTTPS (getDisplayMedia needs a secure
+    # context). civetweb is vendored (MIT); TLS and the self-signed cert
+    # bootstrap use the OpenSSL that ships with the GStreamer runtime.
+    # applink.c: OpenSSL FILE* BIOs cross the DLL boundary -> must be compiled
+    # into the exe (the vkrender-airplay repo learned this first).
+    add_executable(vkr_web client/vkr_web.cpp third_party/civetweb/civetweb.c
+        "${GST_ROOT}/include/openssl/applink.c")
+    target_include_directories(vkr_web PRIVATE third_party/civetweb "${GST_ROOT}/include")
+    target_compile_definitions(vkr_web PRIVATE
+        NO_SSL_DL OPENSSL_API_3_0 USE_IPV6 NDEBUG)
+    target_link_directories(vkr_web PRIVATE "${GST_ROOT}/lib")
+    target_link_libraries(vkr_web PRIVATE ssl crypto ws2_32 crypt32)
+    target_compile_options(vkr_web PRIVATE /EHsc)
+
     # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
     # cppwinrt projection headers and WindowsApp.lib).
     add_executable(vkr_miracast client/miracast_receiver.cpp client/pin_overlay.cpp)
