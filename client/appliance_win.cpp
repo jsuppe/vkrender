@@ -7,7 +7,7 @@
 //   vkr_miracast            (Windows + Android senders)
 //   vkr_airplay             (Apple senders; optional, separate GPLv3 exe)
 //   vkr_rtsp                (IP cameras / encoders we DIAL OUT to; opt-in)
-//   vkr_vcam                (the scene as a virtual camera)
+//   framecam                (the scene as a virtual camera; separate repo)
 //
 // Children inherit our environment, so PIN mode (VKR_PIN) and the starting
 // layout (VKR_LAYOUT) propagate to every receiver. Settings come from
@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
         launch("vkr_rtsp.exe", rtspArgs, "rtsp", false);
     }
     if (wantVcam)
-        launch("vkr_vcam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
+        launch("framecam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
                "vcam", false);
 
     printf("appliance: %zu processes up - close this window to stop everything\n",

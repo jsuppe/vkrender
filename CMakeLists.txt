@@ -155,6 +155,21 @@ if(WIN32)
     set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
 
+    # Sub-projects default to their own binary dirs, which would leave
+    # framelink.dll somewhere the appliance cannot load it and the installer
+    # cannot package it. Put every sub-project artefact beside vkrender's.
+    function(vkr_colocate)
+        foreach(_t ${ARGN})
+            if(TARGET ${_t})
+                set_target_properties(${_t} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_BINARY_DIR}/Debug"
+                    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+                    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/RelWithDebInfo")
+            endif()
+        endforeach()
+    endfunction()
+    vkr_colocate(framelink)
+
     # M25: the appliance launcher - starts the renderer + every receiver +
     # the virtual camera as one kill-on-close group, configured by
     # vkrender.ini (what the installer's Start Menu shortcut runs).
@@ -165,61 +180,23 @@ if(WIN32)
     add_executable(vkr_consumer_demo test/win_consumer_demo.cpp)
     target_link_libraries(vkr_consumer_demo PRIVATE vkrender_client d3d11 dxgi)
 
-    # M24: DirectShow virtual camera (vendored MIT softcam: filter + sender
-    # API in one DLL; register once with elevated `regsvr32 softcam.dll`).
-    # vkr_vcam.exe pumps negotiated scene views into it.
-    set(SC ${CMAKE_SOURCE_DIR}/third_party/softcam/src)
-    file(GLOB SC_BASECLASSES ${SC}/baseclasses/*.cpp)
-    add_library(softcam SHARED
-        ${SC_BASECLASSES}
-        ${SC}/softcamcore/DShowSoftcam.cpp ${SC}/softcamcore/FrameBuffer.cpp
-        ${SC}/softcamcore/Misc.cpp ${SC}/softcamcore/SenderAPI.cpp
-        ${SC}/softcamcore/Watchdog.cpp
-        ${SC}/softcam/softcam.cpp ${SC}/softcam/softcam.def)
-    target_include_directories(softcam PRIVATE ${SC}/baseclasses ${SC})
-    target_compile_definitions(softcam PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
-    # 2004-era DirectShow baseclasses predate C++ conformance mode: they
-    # assign string literals to non-const pointers (/Zc:strictStrings-) and
-    # rely on other permissive-mode behaviors.
-    target_compile_options(softcam PRIVATE /EHsc /w /permissive /Zc:strictStrings-)
-    target_link_libraries(softcam PRIVATE
-        strmiids winmm ole32 oleaut32 uuid advapi32 user32 gdi32)
-
-    add_executable(vkr_vcam client/vcam_win.cpp)
-    target_include_directories(vkr_vcam PRIVATE ${SC}/softcam ${CMAKE_SOURCE_DIR}/common)
-    # M35: the camera consumes a framelink channel it owns, not a negotiated
-    # scene view from the renderer.
-    target_link_libraries(vkr_vcam PRIVATE framelink softcam d3d11 dxgi
-        mfplat mfuuid mfsensorgroup)
-    target_compile_options(vkr_vcam PRIVATE /EHsc)
-
-    # M24 v2: Windows 11 MFCreateVirtualCamera media source (vendored MIT
-    # VCamSample, re-identified as the vkrender camera CLSID). Registered
-    # once (elevated regsvr32); loaded by the OS Camera Frame Server, so the
-    # camera is visible to BOTH MF/UWP and DirectShow apps. WIL is a
-    # header-only dependency.
-    include(FetchContent)
-    FetchContent_Declare(wil
-        GIT_REPOSITORY https://github.com/microsoft/wil
-        GIT_TAG v1.0.240803.1
-        GIT_SHALLOW TRUE)
-    set(WIL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(WIL_BUILD_PACKAGING OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(wil)
-    set(VCS ${CMAKE_SOURCE_DIR}/third_party/VCamSample/VCamSampleSource)
-    add_library(vkrender_vcam_source SHARED
-        ${VCS}/Activator.cpp ${VCS}/EnumNames.cpp ${VCS}/FrameGenerator.cpp
-        ${VCS}/MFTools.cpp ${VCS}/MediaSource.cpp ${VCS}/MediaStream.cpp
-        ${VCS}/Tools.cpp ${VCS}/WinTrace.cpp ${VCS}/dllmain.cpp ${VCS}/pch.cpp
-        ${VCS}/VCamSampleSource.def)
-    target_include_directories(vkrender_vcam_source PRIVATE
-        ${VCS} ${wil_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/common)
-    target_compile_features(vkrender_vcam_source PRIVATE cxx_std_20)
-    target_compile_definitions(vkrender_vcam_source PRIVATE UNICODE _UNICODE)
-    target_compile_options(vkrender_vcam_source PRIVATE /EHsc /w /await:strict)
-    target_link_libraries(vkrender_vcam_source PRIVATE
-        mfplat mfuuid mfsensorgroup d2d1 dwrite windowscodecs
-        runtimeobject ole32 oleaut32 advapi32 user32 shlwapi propsys)
+    # M36: the virtual camera is its own project now (framecam, MIT), because
+    # it is a framelink integration rather than a part of this compositor: it
+    # creates the camera and hands out buffers, and vkrender's renderer is just
+    # the first application to render into them.
+    #
+    # Optional, unlike framelink: vkrender does not LINK the camera, it only
+    # launches it. A checkout beside vkrender gets built so the appliance and
+    # installer keep working; without one, everything else still builds.
+    set(FRAMECAM_DIR "${CMAKE_SOURCE_DIR}/../framecam" CACHE PATH
+        "Path to the framecam checkout (optional)")
+    if(EXISTS "${FRAMECAM_DIR}/CMakeLists.txt")
+        add_subdirectory("${FRAMECAM_DIR}" "${CMAKE_BINARY_DIR}/framecam")
+    else()
+        message(STATUS "framecam not found at '${FRAMECAM_DIR}' - skipping the "
+                       "virtual camera. Clone it beside vkrender to build it.")
+    endif()
+    vkr_colocate(framecam softcam vkrender_vcam_source)
 
     add_executable(vkr_client_demo test/win_client_demo.cpp)
     target_link_libraries(vkr_client_demo PRIVATE vkrender_client d3d11)

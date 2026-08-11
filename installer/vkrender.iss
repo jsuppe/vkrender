@@ -90,7 +90,12 @@ Source: "{#BuildDir}\vkr_miracast.exe"; DestDir: "{app}"; Components: miracast; 
 Source: "{#AirplayDir}\vkr_airplay.exe"; DestDir: "{app}"; Components: airplay; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#BuildDir}\vkr_rtsp.exe"; DestDir: "{app}"; Components: rtsp; Flags: ignoreversion
 ; --- virtual camera ---
-Source: "{#BuildDir}\vkr_vcam.exe"; DestDir: "{app}"; Components: vcam; Flags: ignoreversion
+; framelink.dll is NOT optional: both vkrenderer.exe and framecam.exe link
+; it, so it ships with the base install whatever components are chosen. It
+; lives in a sibling `framelink` checkout now, but our CMake co-locates it
+; into BuildDir so packaging stays a single directory.
+Source: "{#BuildDir}\framelink.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\framecam.exe"; DestDir: "{app}"; Components: vcam; Flags: ignoreversion
 ; No `regserver` here: that flag makes Inno register in-process, which forces
 ; the WHOLE installer to be elevated. RunPrivilegedSetup does it afterwards in
 ; a single elevated child, only when these components are selected.
@@ -421,7 +426,7 @@ begin
   if WizardIsComponentSelected('vcam\mf') then VcamMode := 'mf' else VcamMode := 'dshow';
 
   // An unregistered camera is a camera that does not work, so do not leave the
-  // launcher starting vkr_vcam into a guaranteed failure. Re-running
+  // launcher starting framecam into a guaranteed failure. Re-running
   // vkr_privileged_setup.ps1 elevated and setting virtual_camera=1 turns it on.
   VcamActive := WizardIsComponentSelected('vcam') and
                 ((not PrivilegedRan) or PrivilegedOK);
@@ -464,7 +469,7 @@ begin
   Lines := '$ErrorActionPreference = ''SilentlyContinue''' + NL();
   if NeedMf then
     Lines := Lines +
-      '& "' + ExpandConstant('{app}\vkr_vcam.exe') + '" --unregister' + NL() +
+      '& "' + ExpandConstant('{app}\framecam.exe') + '" --unregister' + NL() +
       'regsvr32.exe /s /u "' + Shared + '\vkrender_vcam_source.dll"' + NL() +
       'Remove-Item -Recurse -Force "' + Shared + '"' + NL();
   if NeedDshow then

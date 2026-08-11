@@ -24,7 +24,7 @@ The AirPlay receiver comes from the sibling
 | Miracast receiver | `vkr_miracast.exe` — Windows / Android senders |
 | AirPlay receiver | `vkr_airplay.exe` — Apple senders (GPLv3) |
 | RTSP receiver | `vkr_rtsp.exe` — pulls from IP cameras / encoders. Installed by default but **idle until `rtsp=1` and URLs are set** (see [docs/RTSP.md](../docs/RTSP.md)) |
-| Virtual camera | `vkr_vcam.exe` + `softcam.dll` (DirectShow) and/or `vkrender_vcam_source.dll` (Media Foundation) — **both registered by the installer** (`regserver`), no manual `regsvr32` |
+| Virtual camera | `framecam.exe` + `softcam.dll` (DirectShow) and/or `vkrender_vcam_source.dll` (Media Foundation) — **both registered by the installer** (`regserver`), no manual `regsvr32` |
 
 The wizard asks about PIN policy (off / new code per connection / fixed) and
 writes `vkrender.ini` next to the executables.
@@ -55,7 +55,7 @@ the appliance isn't running — required by anything that persists a camera
 choice, such as a Teams Rooms content camera. That needs elevation: run
 unelevated and it falls back to a session-scoped camera that disappears with
 the process (it says which on stdout). The uninstaller runs
-`vkr_vcam --unregister` so no ghost camera is left behind.
+`framecam --unregister` so no ghost camera is left behind.
 
 Details, measured instance paths, and the Teams Rooms analysis:
 [docs/VIRTUAL_CAMERA.md](../docs/VIRTUAL_CAMERA.md).
