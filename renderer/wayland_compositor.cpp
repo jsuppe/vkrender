@@ -36,6 +36,9 @@
 #include "linux-dmabuf-v1-server-protocol.h"
 #include "xdg-shell-server-protocol.h"
 
+#include "framelink.h"
+#include "framelink_dmabuf.h"
+
 #include "background_pass.h"
 #include "dump_util.h"
 #include "external_video_image.h"
@@ -763,6 +766,150 @@ bool hasContentChild(Ctx& ctx, Stream* s) {
     return false;
 }
 
+// ---- M39: framelink input slots ---------------------------------------------
+//
+// The Linux twin of the Windows service's slot channels: <socket>.in.0 .. .11,
+// pre-created so receivers have something to attach to, consumed alongside the
+// Wayland socket. A framelink frame arrives as a dma-buf, which is the exact
+// import path the compositor already runs for Wayland dmabuf clients - the
+// only new plumbing is the walk from flImageDmabuf to a SurfaceDescMsg.
+//
+// Sync is the platform's weak spot, stated rather than hidden: this backend
+// has no shared fence, so a frame is trusted to be finished when flSubmit
+// said so. True for CPU producers (flImageMap writers - all of today's
+// receivers), true for a GPU producer only if it flushed.
+struct FlSlotIn {
+    flChannel* channel = nullptr;
+    std::string name;
+    uint64_t uid = 0;        // scene stream id
+    uint64_t generation = 0; // which ring we imported - see flChannelInfo
+    uint32_t width = 0, height = 0;
+    bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
+    uint32_t keys[8] = {};
+    // The frame the scene is currently sampling. Held (not released) until a
+    // newer one replaces it: releasing on adopt would tell the producer the
+    // buffer is free while the GPU still reads it every frame.
+    flFrame held{};
+    bool hasHeld = false;
+    int64_t currentSlot = -1;
+    bool departing = false;
+    int64_t departedNs = 0;
+};
+
+constexpr uint32_t kFlSlots = 12;
+
+void flDropRing(Ctx& ctx, FlSlotIn& s) {
+    for (uint32_t i = 0; i < 8; ++i) {
+        if (!s.imported[i]) continue;
+        ctx.slotsToRemove.push_back(s.keys[i]);
+        s.imported[i] = false;
+    }
+    s.hasHeld = false; // its image belongs to the ring that just died
+    s.currentSlot = -1;
+}
+
+void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
+                 uint64_t* hopTotalUs, uint64_t* hopMaxUs) {
+    for (FlSlotIn& s : slots) {
+        if (!s.channel) continue;
+
+        flChannelInfo info{};
+        flQuery(s.channel, &info);
+        if (info.generation != s.generation) {
+            // The ring was reallocated (flRequestGeometry): every buffer we
+            // imported is a different allocation now. The dup'd fds kept the
+            // old memory alive for any in-flight GPU reads; the deferred
+            // teardown drops them.
+            flDropRing(ctx, s);
+            s.generation = info.generation;
+            s.width = info.width;
+            s.height = info.height;
+        }
+
+        flFrame f{};
+        const flResult r = flAcquireFrame(s.channel, &f, 0);
+        if (r == FL_DISCONNECTED) {
+            if (!s.departing && s.currentSlot >= 0) {
+                s.departing = true;
+                s.departedNs = nowNs();
+            }
+            continue;
+        }
+        if (r != FL_OK) continue;
+
+        // A reallocation between the flQuery above and here would hand us a
+        // frame from a ring we have not imported. Drop it; the producer
+        // resends and the next iteration re-imports.
+        flChannelInfo now{};
+        flQuery(s.channel, &now);
+        if (now.generation != s.generation || f.slot >= 8) {
+            flRelease(s.channel, &f);
+            continue;
+        }
+
+        if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
+            flRelease(s.channel, &f);
+            continue;
+        }
+        if (!s.imported[f.slot]) {
+            flDmabuf db{};
+            if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < 1) {
+                flRelease(s.channel, &f);
+                continue;
+            }
+            proto::SurfaceDescMsg desc{};
+            desc.slotKey = ctx.nextSlotKey++;
+            desc.numPlanes = 1;
+            desc.numObjects = 1;
+            desc.drmModifier = db.modifier;
+            desc.plane[0].offset = db.offset[0];
+            desc.plane[0].pitch = (uint32_t)db.stride[0];
+            desc.planeObject[0] = 0;
+            const off_t size = lseek(db.fd[0], 0, SEEK_END);
+            desc.objectSize[0] = size > 0 ? (uint64_t)size : 0;
+            // Dup: framelink's fds die with the channel, and Vulkan needs the
+            // buffer to outlive any reallocation that races an in-flight frame.
+            int dupFd = fcntl(db.fd[0], F_DUPFD_CLOEXEC, 0);
+            const bool ok = dupFd >= 0 &&
+                            ctx.pool->addSurface(*ctx.vk, desc, &dupFd, 1) &&
+                            bindSlot(ctx, desc.slotKey);
+            if (!ok) {
+                VKR_ERR("compositor: framelink dmabuf import failed ('%s' slot %u, "
+                        "mod 0x%llx)",
+                        s.name.c_str(), f.slot, (unsigned long long)db.modifier);
+                if (dupFd >= 0) close(dupFd);
+                flRelease(s.channel, &f);
+                continue;
+            }
+            s.imported[f.slot] = true;
+            s.keys[f.slot] = desc.slotKey;
+        }
+
+        // Release the PREVIOUS frame - the scene samples the new one from now
+        // on. Same slot re-announced (latest-wins skipping) releases nothing:
+        // that would free the very buffer we are adopting.
+        if (s.hasHeld && s.held.slot != f.slot) flRelease(s.channel, &s.held);
+        s.held = f;
+        s.hasHeld = true;
+        s.departing = false;
+        s.currentSlot = (int64_t)s.keys[f.slot];
+        ++ctx.adoptions;
+        ++ctx.videoFramesSeen;
+        if (f.ptsNs > 0) {
+            const int64_t d = nowNs() - f.ptsNs;
+            // steady_clock is CLOCK_MONOTONIC on Linux - one epoch for every
+            // process, so producer-submit -> adopt is measurable exactly as on
+            // Windows. Reject nonsense rather than poison the average.
+            if (d >= 0 && d < 1000000000ll) {
+                const uint64_t us = (uint64_t)(d / 1000);
+                ++*hopSamples;
+                *hopTotalUs += us;
+                if (us > *hopMaxUs) *hopMaxUs = us;
+            }
+        }
+    }
+}
+
 } // namespace
 
 // ---- the compositor loop ----------------------------------------------------
@@ -802,6 +949,27 @@ int runWaylandCompositor(const WaylandOptions& options) {
     ctx.argbMods = queryModifiers(vk.phys, VK_FORMAT_B8G8R8A8_UNORM);
     VKR_LOG("compositor: advertising %zu NV12 modifiers, %zu ARGB modifiers",
             ctx.nv12Mods.size(), ctx.argbMods.size());
+
+    // M39: framelink input slots beside the Wayland socket. FL_MAP_CPU because
+    // every current receiver writes decoded BGRA with the CPU (flImageMap) -
+    // the exact analogue of the Windows receivers' UpdateSubresource - and a
+    // buffer that cannot be mapped would shut them all out. On NVIDIA that
+    // forces LINEAR (RENDERING|LINEAR together is refused, measured), which
+    // Vulkan imports fine.
+    std::vector<FlSlotIn> flSlots(kFlSlots);
+    uint64_t hopSamples = 0, hopTotalUs = 0, hopMaxUs = 0;
+    for (uint32_t i = 0; i < kFlSlots; ++i) {
+        FlSlotIn& s = flSlots[i];
+        s.name = options.socketName + ".in." + std::to_string(i);
+        s.uid = 0x46500000ull + i; // distinct from Stream* ids ('FL' + index)
+        if (flCreateChannelEx(s.name.c_str(), 640, 360, FL_FORMAT_BGRA8, 4, FL_MAP_CPU,
+                              &s.channel) != FL_OK) {
+            VKR_ERR("compositor: input channel '%s' creation failed", s.name.c_str());
+            s.channel = nullptr;
+        }
+    }
+    VKR_LOG("compositor: %u framelink input slots ready ('%s.in.0' .. '%s.in.%u')", kFlSlots,
+            options.socketName.c_str(), options.socketName.c_str(), kFlSlots - 1);
 
     ctx.display = wl_display_create();
     ctx.loop = wl_display_get_event_loop(ctx.display);
@@ -861,12 +1029,29 @@ int runWaylandCompositor(const WaylandOptions& options) {
         }
 
         adoptStreams(ctx);
+        flPollSlots(ctx, flSlots, &hopSamples, &hopTotalUs, &hopMaxUs);
 
         // Leaf content streams -> SceneHost (it applies layout + enable set).
         std::vector<SceneHost::StreamRef> streams;
         for (Stream* s : ctx.streams)
             if (s->currentSlot >= 0 && !hasContentChild(ctx, s))
                 streams.push_back({(uint64_t)(uintptr_t)s, s->currentSlot});
+        for (FlSlotIn& s : flSlots) {
+            if (s.currentSlot < 0) continue;
+            // Withheld while departing, so the motion layer animates the tile
+            // out; the ring is ours (consumer-owned) and stays sampleable.
+            const bool expired =
+                s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
+            if (s.departing && (expired || !host.retainsStream(s.uid))) {
+                if (s.hasHeld) flRelease(s.channel, &s.held);
+                s.hasHeld = false;
+                s.currentSlot = -1;
+                s.departing = false;
+                continue;
+            }
+            if (s.departing) continue;
+            streams.push_back({s.uid, s.currentSlot});
+        }
 
         SceneHost::Extras extras; // wayland sync is CPU-side (sync-file polls)
         if (!host.frame(vk, pool, pass, ctx.passBound, streams, extras, &quit)) {
@@ -898,9 +1083,24 @@ int runWaylandCompositor(const WaylandOptions& options) {
         wl_display_flush_clients(ctx.display);
 
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("compositor: %llu adoptions in 5s (pool %zu slots, %zu streams)",
-                    (unsigned long long)ctx.adoptions, pool.slots.size(), ctx.streams.size());
+            size_t flLive = 0;
+            for (FlSlotIn& s : flSlots)
+                if (s.currentSlot >= 0) ++flLive;
+            if (hopSamples) {
+                VKR_LOG("compositor: %llu adoptions in 5s (pool %zu slots, %zu wayland + "
+                        "%zu framelink) hop avg %.2f ms max %.2f ms over %llu",
+                        (unsigned long long)ctx.adoptions, pool.slots.size(),
+                        ctx.streams.size(), flLive,
+                        (double)hopTotalUs / (double)hopSamples / 1000.0,
+                        (double)hopMaxUs / 1000.0, (unsigned long long)hopSamples);
+            } else {
+                VKR_LOG("compositor: %llu adoptions in 5s (pool %zu slots, %zu wayland + "
+                        "%zu framelink)",
+                        (unsigned long long)ctx.adoptions, pool.slots.size(),
+                        ctx.streams.size(), flLive);
+            }
             ctx.adoptions = 0;
+            hopSamples = hopTotalUs = hopMaxUs = 0;
             rateWindowStart = nowNs();
         }
     }
@@ -909,6 +1109,10 @@ int runWaylandCompositor(const WaylandOptions& options) {
     if (finite && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
+    for (FlSlotIn& s : flSlots) {
+        if (s.channel) flClose(s.channel);
+        s.channel = nullptr;
+    }
     for (auto& e : ctx.retiring) releaseBuffer(e.second);
     ctx.retiring.clear();
     wl_display_destroy_clients(ctx.display);

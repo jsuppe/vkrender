@@ -232,6 +232,21 @@ endif()
 # (gstreamer waylandsink, mpv, ...) are zero-copy producers. Protocol glue is
 # generated from the vendored XMLs by wayland-scanner.
 if(NOT WIN32)
+    # M39: framelink input slots on Linux too - the compositor consumes them
+    # alongside the Wayland socket, and the receivers produce into them.
+    set(FRAMELINK_DIR "${CMAKE_SOURCE_DIR}/../framelink" CACHE PATH
+        "Path to the framelink checkout")
+    if(NOT EXISTS "${FRAMELINK_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "framelink not found at '${FRAMELINK_DIR}'. Clone it beside vkrender "
+            "or pass -DFRAMELINK_DIR=<path>.")
+    endif()
+    if(NOT TARGET framelink)
+        set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
+    endif()
+    target_link_libraries(vkrenderer PRIVATE framelink)
+
     pkg_check_modules(WLSERVER REQUIRED IMPORTED_TARGET wayland-server>=1.20)
     find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
     set(VKR_WL_PROTOCOLS
@@ -281,7 +296,7 @@ if(NOT WIN32)
         gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gio-2.0)
     if(GSTRTC_FOUND)
         add_executable(vkr_webrtc client/webrtc_linux.cpp client/whip_room.cpp)
-        target_link_libraries(vkr_webrtc PRIVATE PkgConfig::GST PkgConfig::GSTRTC)
+        target_link_libraries(vkr_webrtc PRIVATE PkgConfig::GST PkgConfig::GSTRTC framelink)
     else()
         message(STATUS "gstreamer-webrtc-1.0 not found - skipping vkr_webrtc (M22)")
     endif()
@@ -291,7 +306,7 @@ if(NOT WIN32)
     pkg_check_modules(GIO IMPORTED_TARGET gio-2.0)
     if(GIO_FOUND)
         add_executable(vkr_rtsp client/rtsp_linux.cpp client/rtsp_room.cpp)
-        target_link_libraries(vkr_rtsp PRIVATE PkgConfig::GST PkgConfig::GIO)
+        target_link_libraries(vkr_rtsp PRIVATE PkgConfig::GST PkgConfig::GIO framelink)
     else()
         message(STATUS "gio-2.0 not found - skipping vkr_rtsp (M27)")
     endif()
