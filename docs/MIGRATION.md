@@ -132,9 +132,30 @@ masked, both now fixed and both now tested:
 
 FL_VERSION is 3: the release message's meaning changed.
 
-**Phase 4 — Android.** Keep the AIDL `Surface` API for apps: replacing it with
-a C API would be a regression for the ordinary Android integrator. framelink
-becomes the native-code path alongside it, sharing the same ring.
+**Phase 4 — Android. DONE**, and the platform confirmed the plan's premise in
+the most direct way possible. The renderer pre-creates `vkrender.in.0 ..
+.in.11` (RGBA8 - AHardwareBuffer has no BGRA format) beside the AIDL Surface
+API, and a native producer in another process attaches, reallocates to its own
+size, and lands on the cubes: verified on the API-36 emulator at ~28 fps with
+hop avg 8.7 ms / max 18 ms (vsync-paced adoption at 60 Hz).
+
+The confirmed premise: **SELinux MLS categories confine abstract unix sockets
+to processes of the same application**, so framelink on Android connects an
+app's own processes - a capture thread, a decoder process, a plugin the app
+hosts - while Binder remains the only path BETWEEN apps. That is exactly why
+the AIDL `Surface` API stays: it is not legacy, it is the cross-app interface
+the platform mandates. The two feed the same scene side by side. (The denial
+is observable: `avc: denied { connectto } ... scontext=u:r:shell:s0
+tcontext=u:r:untrusted_app:s0` when a shell producer tries an app's slot.)
+
+The on-device smoke test is honest about this: `FlTestService` runs in its own
+`:fltest` process of the renderer APK - a real second process over the real
+socket, inside the boundary the platform draws.
+
+One stated limitation: the pool's sampler conversion comes from the first
+imported buffer, so a session mixing MediaCodec NV12 (AIDL) with RGBA
+framelink streams gets whichever came first right - the same
+single-format-per-session rule as the desktop compositor.
 
 ## Latency is a constraint, not an outcome
 
@@ -221,7 +242,10 @@ explicit-sync piece (sync_file fds) remains future work.
 
 ## What this does not change
 
-The renderer stays the thing that composites. Receivers become ordinary
-framelink producers, and the scene becomes a framelink consumer of twelve
-channels — at which point vkrender is, structurally, an application built on
-the two libraries rather than a codebase that happens to contain them.
+The renderer stays the thing that composites. Receivers became ordinary
+framelink producers, and the scene became a framelink consumer of twelve
+channels on every platform - at which point vkrender is, structurally, an
+application built on the two libraries rather than a codebase that happens to
+contain them. The migration is complete on Windows, Linux and Android; what
+remains is refinement (Linux explicit sync, receiver re-attach after a
+renderer restart), not migration.

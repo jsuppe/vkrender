@@ -32,6 +32,9 @@
 
 #include <volk.h>
 
+#include "framelink.h"
+#include "framelink_ahb.h"
+
 #include "background_pass.h"
 #include "external_video_image.h"
 #include "log.h"
@@ -118,6 +121,33 @@ struct RendererState {
     bool windowReady = false;
     bool destroyed = false;
 };
+
+// ---- M40: framelink input slots ---------------------------------------------
+//
+// The Android twin of the desktop slot channels: vkrender.in.0 .. .in.11,
+// pre-created so a native producer has something to attach to, consumed on the
+// render thread beside the AIDL streams. The AIDL Surface API STAYS - it is
+// the right interface for an ordinary Android app - framelink is the
+// native-code path alongside it, and both feed the same scene.
+//
+// RGBA8 because AHardwareBuffer has no BGRA format; FL_MAP_CPU because a
+// native CPU producer is the first integrator this serves.
+//
+// LIMITATION, stated: the pool's sampler conversion is created from the FIRST
+// imported buffer. A session mixing MediaCodec NV12 streams (AIDL) with RGBA
+// framelink streams gets whichever came first right and the other wrong -
+// same single-format-per-session rule as the desktop compositor.
+struct FlSlotIn {
+    flChannel* channel = nullptr;
+    std::string name;
+    uint64_t generation = 0;
+    uint32_t width = 0, height = 0;
+    bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
+    uint32_t keys[8] = {};
+    int64_t currentSlot = -1;
+};
+
+constexpr uint32_t kFlSlots = 12;
 
 void onAppCmd(android_app* app, int32_t cmd) {
     auto* state = (RendererState*)app->userData;
@@ -252,6 +282,120 @@ void android_main(android_app* app) {
         return (uint32_t)(v ^ (v >> 32));
     };
 
+    // M40: the framelink input slots, created before the loop so a native
+    // producer can attach whenever it likes. Hop instrumentation matches the
+    // other platforms: producers stamp CLOCK_MONOTONIC into ptsNs.
+    std::vector<FlSlotIn> flSlots(kFlSlots);
+    uint64_t hopSamples = 0, hopTotalUs = 0, hopMaxUs = 0;
+    for (uint32_t i = 0; i < kFlSlots; ++i) {
+        FlSlotIn& s = flSlots[i];
+        s.name = std::string("vkrender.in.") + std::to_string(i);
+        if (flCreateChannelEx(s.name.c_str(), 640, 360, FL_FORMAT_RGBA8, 4, FL_MAP_CPU,
+                              &s.channel) != FL_OK) {
+            VKR_ERR("renderer: framelink channel '%s' creation failed", s.name.c_str());
+            s.channel = nullptr;
+        }
+    }
+    VKR_LOG("renderer: %u framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.%u')",
+            kFlSlots, kFlSlots - 1);
+
+    // Poll the slots on the render thread. Import-once per (generation, ring
+    // slot); release value-1 on every adoption so latest-wins skips free their
+    // slots (the monotonic rule; see the framelink Linux backend's history for
+    // why anything less deadlocks on a bursty producer).
+    auto flPoll = [&](int64_t* faceActive, size_t* nActive) {
+        for (FlSlotIn& s : flSlots) {
+            if (!s.channel) continue;
+            flChannelInfo info{};
+            flQuery(s.channel, &info);
+            if (info.generation != s.generation) {
+                bool any = false;
+                for (uint32_t i = 0; i < 8; ++i) any = any || s.imported[i];
+                if (any) {
+                    vkDeviceWaitIdle(vk.device);
+                    for (uint32_t i = 0; i < 8; ++i) {
+                        if (!s.imported[i]) continue;
+                        pass.removeSlot(vk, s.keys[i]);
+                        pool.removeSlot(vk, s.keys[i]);
+                        s.imported[i] = false;
+                    }
+                }
+                s.currentSlot = -1;
+                s.generation = info.generation;
+                s.width = info.width;
+                s.height = info.height;
+            }
+            flFrame fr{};
+            const flResult r = flAcquireFrame(s.channel, &fr, 0);
+            if (r == FL_DISCONNECTED) {
+                s.currentSlot = -1; // no exit animation on Android; tile pops
+                continue;
+            }
+            if (r != FL_OK) continue;
+            flChannelInfo now{};
+            flQuery(s.channel, &now);
+            if (now.generation != s.generation || fr.slot >= 8) {
+                flRelease(s.channel, &fr);
+                continue;
+            }
+            AHardwareBuffer* ahb = flImageAHardwareBuffer(fr.image);
+            if (!ahb) {
+                flRelease(s.channel, &fr);
+                continue;
+            }
+            if (!pool.headerValid) {
+                vkr::proto::PoolDescMsg header{};
+                header.width = s.width & ~1u;
+                header.height = s.height & ~1u;
+                header.format = vkr::proto::SharedFormat::BGRA8;
+                header.matrix = vkr::proto::Matrix::BT709;
+                header.range = vkr::proto::Range::Full;
+                header.planeCount = 1;
+                if (!pool.create(vk, header)) {
+                    flRelease(s.channel, &fr);
+                    continue;
+                }
+            }
+            if (!s.imported[fr.slot]) {
+                const uint32_t key = keyForBuffer(ahb);
+                bool ok = pool.addSurfaceAHB(vk, key, ahb);
+                if (ok && !passBound) {
+                    ok = pass.bindPool(vk, pool);
+                    passBound = ok;
+                } else if (ok) {
+                    ok = pass.addSlot(vk, pool, key);
+                }
+                if (!ok) {
+                    VKR_ERR("renderer: framelink AHB import failed ('%s' slot %u)",
+                            s.name.c_str(), fr.slot);
+                    flRelease(s.channel, &fr);
+                    continue;
+                }
+                s.imported[fr.slot] = true;
+                s.keys[fr.slot] = key;
+            }
+            // The monotonic release: everything BEFORE this frame is free.
+            if (fr._readyValue > 1) {
+                flFrame prev = fr;
+                prev._readyValue = fr._readyValue - 1;
+                flRelease(s.channel, &prev);
+            }
+            s.currentSlot = (int64_t)s.keys[fr.slot];
+            ++adoptions;
+            if (fr.ptsNs > 0) {
+                const int64_t d = nowNs() - fr.ptsNs;
+                if (d >= 0 && d < 1000000000ll) {
+                    const uint64_t us = (uint64_t)(d / 1000);
+                    ++hopSamples;
+                    hopTotalUs += us;
+                    if (us > hopMaxUs) hopMaxUs = us;
+                }
+            }
+        }
+        for (FlSlotIn& s : flSlots)
+            if (s.currentSlot >= 0 && *nActive < 12) faceActive[(*nActive)++] = s.currentSlot;
+    };
+
     AChoreographer* choreographer = AChoreographer_getInstance();
     bool frameDue = false;
 
@@ -370,13 +514,17 @@ void android_main(android_app* app) {
 
             // Face assignment: streams with content cycle across the twelve
             // faces (two cubes) in registry order (1 stream = everywhere,
-            // 12 = one per face).
-            std::vector<int64_t> active;
+            // 12 = one per face). M40: framelink slots join the same rotation.
+            int64_t active[24];
+            size_t nActive = 0;
             for (auto& sp : g_streams)
-                if (sp->currentSlot >= 0) active.push_back(sp->currentSlot);
-            if (!active.empty())
-                for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % active.size()];
+                if (sp->currentSlot >= 0 && nActive < 12) active[nActive++] = sp->currentSlot;
+            flPoll(active, &nActive);
+            if (nActive)
+                for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % nActive];
             streamCount = g_streams.size();
+            for (FlSlotIn& fs : flSlots)
+                if (fs.currentSlot >= 0) ++streamCount;
         }
 
         FrameSync& f = frames[frameIndex % kFramesInFlight];
@@ -461,11 +609,21 @@ void android_main(android_app* app) {
 
         ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers, "
-                    "%zu streams)",
-                    (unsigned long long)adoptions, (unsigned long long)renders,
-                    pool.slots.size(), streamCount);
+            if (hopSamples) {
+                VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers, "
+                        "%zu streams) hop avg %.2f ms max %.2f ms over %llu",
+                        (unsigned long long)adoptions, (unsigned long long)renders,
+                        pool.slots.size(), streamCount,
+                        (double)hopTotalUs / (double)hopSamples / 1000.0,
+                        (double)hopMaxUs / 1000.0, (unsigned long long)hopSamples);
+            } else {
+                VKR_LOG("renderer: %llu adoptions / %llu presents in 5s (pool %zu buffers, "
+                        "%zu streams)",
+                        (unsigned long long)adoptions, (unsigned long long)renders,
+                        pool.slots.size(), streamCount);
+            }
             adoptions = renders = 0;
+            hopSamples = hopTotalUs = hopMaxUs = 0;
             rateWindowStart = nowNs();
         }
     }
@@ -482,6 +640,10 @@ void android_main(android_app* app) {
         vkDestroyFence(vk.device, f.inFlight, nullptr);
     }
     vkDestroyCommandPool(vk.device, cmdPool, nullptr);
+    for (FlSlotIn& s : flSlots) {
+        if (s.channel) flClose(s.channel);
+        s.channel = nullptr;
+    }
     background.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);

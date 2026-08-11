@@ -30,5 +30,13 @@
             android:name=".RendererService"
             android:exported="true"
             android:permission="dev.vkrender.permission.BIND_RENDERER" />
+
+        <!-- M40: framelink test producer, in its own process. SELinux confines
+             abstract sockets to one app's processes, so the smoke test lives
+             inside this APK; see FlTestService for the whole story. -->
+        <service
+            android:name=".FlTestService"
+            android:process=":fltest"
+            android:exported="true" />
     </application>
 </manifest>

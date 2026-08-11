@@ -19,6 +19,15 @@ FetchContent_MakeAvailable(vulkan_headers volk)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_ANDROID_KHR)
 
+# M40: framelink - the renderer consumes vkrender.in.0..11 slot channels
+# beside the AIDL Surface API. Sibling checkout, like the desktop builds.
+set(FRAMELINK_DIR "${REPO}/../framelink" CACHE PATH "Path to the framelink checkout")
+if(NOT EXISTS "${FRAMELINK_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "framelink not found at '${FRAMELINK_DIR}'")
+endif()
+set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
+
 # The renderer app has NO GStreamer/decode dependency at all: its input is the
 # AImageReader Surface it exports over Binder (see the decoder app).
 add_library(vkrender_renderer SHARED
@@ -28,6 +37,7 @@ add_library(vkrender_renderer SHARED
     ${REPO}/renderer/background_pass.cpp
     ${REPO}/renderer/android_main.cpp
     renderer_jni.cpp
+    fltest_producer.cpp
     ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 
 target_include_directories(vkrender_renderer PRIVATE
@@ -35,7 +45,7 @@ target_include_directories(vkrender_renderer PRIVATE
     ${ANDROID_NDK}/sources/android/native_app_glue)
 
 target_link_libraries(vkrender_renderer PRIVATE
-    volk
+    volk framelink
     android log mediandk nativewindow)
 
 # Keep the NativeActivity entry point alive despite static linking.
