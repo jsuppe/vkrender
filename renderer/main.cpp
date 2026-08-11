@@ -31,6 +31,8 @@
 #endif
 
 // vkrenderer [--pipe vkrender] [--pacing latest|pts] [--headless N [--dump out.ppm]]
+//   --headless -1 with --serve: ENDLESS windowless service - the appliance's
+//   vcam-only mode, where the composite exists only for the virtual camera.
 //
 // Process 2 of the zero-copy pipeline: imports the decoder's shared GPU
 // surfaces and renders the video. Never copies pixel data - it samples the

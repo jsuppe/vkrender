@@ -108,7 +108,12 @@ constexpr uint32_t kInSlots = 12;
 } // namespace
 
 int runWinService(const WinServeOptions& options) {
-    const bool headless = options.headlessFrames > 0;
+    // N > 0: finite verification (wait for N frames, dump, exit; 60 s
+    // deadline). N < 0: ENDLESS headless service - the appliance's vcam-only
+    // mode, where the scene exists solely as the composite the virtual camera
+    // broadcasts and no window is ever created.
+    const bool headless = options.headlessFrames != 0;
+    const bool finite = options.headlessFrames > 0;
 
     VkContext vk;
     uint32_t initW = options.windows.empty() ? 1280 : (uint32_t)options.windows[0].width;
@@ -272,13 +277,14 @@ int runWinService(const WinServeOptions& options) {
     bool quit = false;
     while (!quit) {
         if (headless) {
-            if (videoFramesSeen >= options.headlessFrames) break;
-            if (nowNs() > headlessDeadline) {
+            if (finite && videoFramesSeen >= options.headlessFrames) break;
+            if (finite && nowNs() > headlessDeadline) {
                 VKR_ERR("service headless: no %d frames within 60 s (saw %d)",
                         options.headlessFrames, videoFramesSeen);
                 exitCode = 2;
                 break;
             }
+            // No vsync without a swapchain; this sleep IS the frame pacing.
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
@@ -432,11 +438,17 @@ int runWinService(const WinServeOptions& options) {
         //
         // Held only while presenting, so an idle room display is still allowed
         // to sleep.
+        // Headless (vcam-only) needs the SYSTEM held awake while presenting -
+        // the camera must keep pumping into the meeting - but has no display
+        // to wake and no swapchain for a sleeping panel to starve, so the
+        // panel is left alone entirely.
         static bool displayHeld = false;
         if (presenting != displayHeld) {
-            SetThreadExecutionState(presenting ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
-                                                  ES_DISPLAY_REQUIRED)
-                                               : ES_CONTINUOUS);
+            SetThreadExecutionState(presenting
+                                        ? (headless ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+                                                    : (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                                                       ES_DISPLAY_REQUIRED))
+                                        : ES_CONTINUOUS);
             // ES_DISPLAY_REQUIRED only PREVENTS sleep - it will not wake a
             // display that is already off, which is exactly the state a room
             // appliance is in when someone starts casting. Waking needs input,
@@ -445,7 +457,7 @@ int runWinService(const WinServeOptions& options) {
             // VKR_NO_DISPLAY_WAKE=1 opts out (useful on a dev box, where a
             // receiver stealing the display is just rude).
             static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
-            if (presenting && wakeAllowed) {
+            if (presenting && wakeAllowed && !headless) {
                 INPUT in{};
                 in.type = INPUT_MOUSE;
                 in.mi.dwFlags = MOUSEEVENTF_MOVE;
@@ -454,7 +466,8 @@ int runWinService(const WinServeOptions& options) {
                 SendInput(1, &in, sizeof(in));
             }
             displayHeld = presenting;
-            VKR_LOG("service: display wake %s (presentation %s)",
+            VKR_LOG("service: %s %s (presentation %s)",
+                    headless ? "system wake" : "display wake",
                     presenting ? "held" : "released", presenting ? "active" : "idle");
         }
         sceneOut.pendingSlot = -1;
@@ -527,7 +540,7 @@ int runWinService(const WinServeOptions& options) {
     }
 
     vkDeviceWaitIdle(vk.device);
-    if (headless && exitCode == 0 && videoFramesSeen >= options.headlessFrames)
+    if (finite && exitCode == 0 && videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
     for (SlotIn& s : inSlots) {
