@@ -259,9 +259,30 @@ int main(int argc, char** argv) {
         }
         launch("vkr_rtsp.exe", rtspArgs, "rtsp", false);
     }
-    if (wantVcam)
-        launch("framecam.exe", (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30",
-               "vcam", false);
+    if (wantVcam) {
+        // M41.1: the idle card - the camera starts showing an animated join
+        // screen with the PIN instead of dead air, and switches to the
+        // composite the moment someone presents. A per-connection PIN
+        // (pin=auto) is minted by each receiver and cannot be known here, so
+        // the card shows a hint instead - one more reason a fixed PIN is the
+        // right setting for a headless appliance.
+        std::string vcamArgs = (vcamMode == "mf" ? "--mf " : "") + name + " 1280 720 30";
+        vcamArgs += " --idle-title \"Cast to " + name + "\"";
+        const bool fixedPin = pin != "off" && pin != "auto" && !pin.empty();
+        if (fixedPin) vcamArgs += " --idle-code \"" + pin + "\"";
+        std::string hint;
+        if (pin == "auto") hint = "PIN shown on the room display - ";
+        hint += "AirPlay";
+        if (wantMiracast) hint += " - Miracast";
+        if (wantWeb) {
+            char host[256] = "";
+            DWORD hn = sizeof(host);
+            GetComputerNameExA(ComputerNameDnsHostname, host, &hn);
+            hint += std::string(" - https://") + host + ":8443";
+        }
+        vcamArgs += " --idle-hint \"" + hint + "\"";
+        launch("framecam.exe", vcamArgs, "vcam", false);
+    }
     if (wantWeb)
         launch("vkr_web.exe", "--ports " + webPorts + " --name " + name, "web", false);
 
