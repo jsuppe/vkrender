@@ -48,6 +48,26 @@ control_port=8875
 | **Carousel rotation** | more presenters than seats → the overflow rotates through the spare seats every `rotate_seconds`, pinned ones stay; transitions use the presentation layout's own enter/exit animation |
 | Pause / resume | freezes the scene clock |
 | Moderator auth | Bearer token (`admin_pin`), enforced at the web tier |
+| **Camera toggle** (M43) | gates the vcam feed; the meeting sees framecam's idle card, never a frozen frame |
+| **Display outputs** (M43) | every monitor listed with geometry + primary badge; Present/Stop attaches a borderless window at runtime |
+| **Multi-display spanning** (M43) | active monitors' desktop rects form a union; the canvas aspect-fits inside it, so a wall spans one scene and each panel renders its slice (off-center frusta - the M15 math) |
+| **Per-display previews** (M43) | each display card crops the composite preview to that display's canvas rect - which IS what the panel shows; inactive displays show the composite dimmed ("what it would show") |
+
+### M43 display mechanics, honestly
+
+- The headless appliance now initializes the window system at startup (no
+  window is created); if there is no display session at all, `displaysAvailable`
+  is false and the panel hides. `VkContext::canDisplay` is the gate.
+- A display wider than the 16:9 canvas (one 32:9 panel, say) gets canvas
+  coordinates beyond [0,1]; the off-center frustum renders that as MORE
+  SCENE - the vaporwave backdrop extends - never a crop or a stretch. The
+  web preview approximates those side regions as black.
+- With a display attached, FIFO present paces the render loop at the panel's
+  refresh (the 16 ms headless sleep steps aside), and the display-awake hold
+  + wake nudge apply while presenting - a sleeping panel would drag the whole
+  scene to ~7 fps (the M28 measurement).
+- Closing a display window at the desk (alt-F4) detaches that display; it
+  never quits the appliance.
 
 Under the hood the selection rule is: spotlight wins outright; otherwise pinned
 presenters take seats first, and the rest carousel through what remains. Hidden
@@ -71,7 +91,7 @@ stall behind a moderation decision they cannot see.
 - **Kick-with-ban** (kick today is transport-level; the presenter's app may
   simply reconnect - a ban list needs receiver cooperation).
 
-## Two bugs this feature forced into the open
+## Bugs the features forced into the open
 
 - **framelink (Windows): `flClose` hung when the producer was still live.**
   The close-poke only unblocks an accept thread waiting in ConnectNamedPipe; a
@@ -84,3 +104,8 @@ stall behind a moderation decision they cannot see.
   body (the preview JPEG) recycles that buffer. Status text and header
   pointers must be copied BEFORE the body read; crashing intermittently under
   the console's polling is exactly how it announced itself.
+- **vkr_web (M43): the OPENSSL_APPLINK abort in `generatePem`.** Passing a
+  `FILE*` from the exe's CRT into the OpenSSL DLL (`PEM_write_X509`) killed
+  the process silently, leaving a 0-byte pem. Fixed by writing through
+  `BIO_new_file`, which opens the file inside OpenSSL's own CRT - no applink
+  shim involved.

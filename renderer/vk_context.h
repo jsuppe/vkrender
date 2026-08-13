@@ -27,6 +27,10 @@ public:
 #endif
 
     bool headless = false;
+    // M43: true when the window system is up and the device can present -
+    // always in window mode, and in headless mode when a display session
+    // exists. Gates runtime display-output windows (SceneHost::setDisplayActive).
+    bool canDisplay = false;
     // Prefer vsync-throttled FIFO over MAILBOX (M15 scene windows: an
     // unthrottled scene loop just burns GPU). Set before init/recreate.
     bool preferFifo = false;

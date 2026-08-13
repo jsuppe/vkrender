@@ -297,6 +297,10 @@ int runWinService(const WinServeOptions& options) {
     ControlApi control;
     const bool controlUp = options.controlPort > 0 && control.start(options.controlPort);
     Moderation mod;
+    // M43: the moderator's camera gate. Off = the scene stops publishing to
+    // the vcam channel; framecam times out and shows its idle card, so the
+    // meeting sees "room camera idle", not a frozen frame.
+    bool cameraOn = true;
     int64_t slotLastFrameNs[kInSlots] = {};
     uint32_t slotFrameCount[kInSlots] = {};
     float slotFps[kInSlots] = {};
@@ -385,7 +389,10 @@ int runWinService(const WinServeOptions& options) {
                 break;
             }
             // No vsync without a swapchain; this sleep IS the frame pacing.
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            // M43: unless a display output is attached - then its FIFO
+            // present paces the loop at the panel's refresh instead.
+            if (host.activeDisplayCount() == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
         attachSceneOut(sceneOut);
@@ -510,6 +517,15 @@ int runWinService(const WinServeOptions& options) {
                 case T::Spotlight: mod.spotlight = (int)sl; break;
                 case T::Unspotlight: mod.spotlight = -1; break;
                 case T::Front: mod.toFront(sl); break;
+                case T::Camera:
+                    cameraOn = c.i != 0;
+                    VKR_LOG("service: camera %s by moderator", cameraOn ? "on" : "off");
+                    break;
+                case T::Display:
+                    // c.slot is the monitor id here. Runs on the render thread
+                    // - the one place swapchains may be built and torn down.
+                    host.setDisplayActive(vk, c.slot, c.i != 0);
+                    break;
             }
         }
 
@@ -585,13 +601,19 @@ int runWinService(const WinServeOptions& options) {
         // the camera must keep pumping into the meeting - but has no display
         // to wake and no swapchain for a sleeping panel to starve, so the
         // panel is left alone entirely.
-        static bool displayHeld = false;
-        if (presenting != displayHeld) {
-            SetThreadExecutionState(presenting
-                                        ? (headless ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
-                                                    : (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
-                                                       ES_DISPLAY_REQUIRED))
-                                        : ES_CONTINUOUS);
+        // M43: a headless appliance WITH attached display outputs is back in
+        // the "sleeping panel starves the swapchain" regime above, so the
+        // display hold (and the wake nudge) applies whenever displays are out.
+        const bool displaysOut = host.activeDisplayCount() > 0;
+        static int powerHeld = 0; // 0 = none, 1 = system, 2 = system+display
+        const int powerWant = !presenting ? 0 : (headless && !displaysOut) ? 1 : 2;
+        if (powerWant != powerHeld) {
+            SetThreadExecutionState(powerWant == 0
+                                        ? ES_CONTINUOUS
+                                        : powerWant == 1
+                                              ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+                                              : (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                                                 ES_DISPLAY_REQUIRED));
             // ES_DISPLAY_REQUIRED only PREVENTS sleep - it will not wake a
             // display that is already off, which is exactly the state a room
             // appliance is in when someone starts casting. Waking needs input,
@@ -600,7 +622,7 @@ int runWinService(const WinServeOptions& options) {
             // VKR_NO_DISPLAY_WAKE=1 opts out (useful on a dev box, where a
             // receiver stealing the display is just rude).
             static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
-            if (presenting && wakeAllowed && !headless) {
+            if (powerWant == 2 && wakeAllowed) {
                 INPUT in{};
                 in.type = INPUT_MOUSE;
                 in.mi.dwFlags = MOUSEEVENTF_MOVE;
@@ -608,13 +630,13 @@ int runWinService(const WinServeOptions& options) {
                 in.mi.dy = 0;
                 SendInput(1, &in, sizeof(in));
             }
-            displayHeld = presenting;
+            powerHeld = powerWant;
             VKR_LOG("service: %s %s (presentation %s)",
-                    headless ? "system wake" : "display wake",
-                    presenting ? "held" : "released", presenting ? "active" : "idle");
+                    powerWant == 1 ? "system wake" : "display wake",
+                    powerWant ? "held" : "released", presenting ? "active" : "idle");
         }
         sceneOut.pendingSlot = -1;
-        if (sceneOut.channel && presenting) {
+        if (sceneOut.channel && presenting && cameraOn) {
             flBuffer buf{};
             // Non-blocking: if the consumer is behind, skip this frame rather
             // than stall the scene. framelink's ring is the back-pressure.
@@ -678,6 +700,24 @@ int runWinService(const WinServeOptions& options) {
             snap.maxVisible = mod.maxVisible;
             snap.rotateSeconds = mod.rotateSeconds;
             snap.spotlightSlot = mod.spotlight;
+            snap.cameraOn = cameraOn;
+            snap.displaysAvailable = vk.canDisplay;
+            for (const auto& d : host.listDisplays()) {
+                ControlDisplayInfo cd;
+                cd.id = d.id;
+                cd.name = d.name;
+                cd.x = d.x;
+                cd.y = d.y;
+                cd.width = d.width;
+                cd.height = d.height;
+                cd.primary = d.primary;
+                cd.active = d.active;
+                cd.u0 = d.u0;
+                cd.v0 = d.v0;
+                cd.u1 = d.u1;
+                cd.v1 = d.v1;
+                snap.displays.push_back(std::move(cd));
+            }
             for (uint32_t i = 0; i < kInSlots; ++i) {
                 SlotIn& sl = inSlots[i];
                 if (sl.currentSlot < 0 && !sl.channel) continue;

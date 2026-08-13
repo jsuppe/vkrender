@@ -91,10 +91,14 @@ bool generatePem(const std::string& path, const std::string& name) {
 
     bool ok = X509_sign(x509, pkey, EVP_sha256()) > 0;
     if (ok) {
-        FILE* f = fopen(path.c_str(), "wb");
-        ok = f && PEM_write_X509(f, x509) && PEM_write_PrivateKey(f, pkey, nullptr, nullptr,
-                                                                  0, nullptr, nullptr);
-        if (f) fclose(f);
+        // BIO, never FILE*: a FILE* from this exe's CRT crossing into the
+        // OpenSSL DLL trips the OPENSSL_APPLINK abort (observed: the process
+        // dies right after fopen leaves a 0-byte pem). BIO_new_file opens the
+        // file inside OpenSSL's own CRT, so no applink shim is involved.
+        BIO* bio = BIO_new_file(path.c_str(), "wb");
+        ok = bio && PEM_write_bio_X509(bio, x509) &&
+             PEM_write_bio_PrivateKey(bio, pkey, nullptr, nullptr, 0, nullptr, nullptr);
+        if (bio) BIO_free(bio);
     }
     X509_free(x509);
     EVP_PKEY_free(pkey);

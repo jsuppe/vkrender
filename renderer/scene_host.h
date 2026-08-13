@@ -116,6 +116,25 @@ public:
     void setPaused(bool p) { paused_ = p; }
     bool paused() const { return paused_; }
 
+    // M43: runtime display outputs (headless appliance mode). The offscreen
+    // canvas stays the master - the camera always sees the whole scene - and
+    // each activated monitor gets a borderless window showing an
+    // aspect-correct subregion: the union of the active monitors' desktop
+    // rects is aspect-fit into the canvas, and each monitor renders its slice
+    // of that union (the same math the multi-window wall uses). Render thread
+    // only - the moderator's commands arrive through the control queue.
+    struct DisplayInfo {
+        int id = 0; // index into glfwGetMonitors at enumeration time
+        std::string name;
+        int x = 0, y = 0, width = 0, height = 0; // desktop rect
+        bool primary = false;
+        bool active = false;
+        float u0 = 0, v0 = 0, u1 = 0, v1 = 0; // canvas region when active
+    };
+    std::vector<DisplayInfo> listDisplays() const;
+    bool setDisplayActive(VkContext& vk, int id, bool on);
+    size_t activeDisplayCount() const { return displayOuts_.size(); }
+
     // An extra (non-primary) window with its own surface + swapchain (index 0
     // is the VkContext-owned primary window).
     struct Window {
@@ -134,9 +153,19 @@ private:
     };
 
     bool recreateWindow(VkContext& vk, size_t index);
+    // M43 internals: displayOuts_ parallels extra_ in headless mode.
+    struct DisplayOut {
+        int monitorId = 0;
+        std::string name;
+        int x = 0, y = 0, width = 0, height = 0;
+    };
+    void recomputeDisplayRects();
+    bool resizeFrameSync(VkContext& vk);
 
     std::vector<WindowSpec> specs_;
     std::vector<Window> extra_;
+    std::vector<DisplayOut> displayOuts_; // headless only, parallel to extra_
+    bool canDisplay_ = false;             // copied from vk.canDisplay at init
     std::vector<WindowRects> rects_; // per window incl. primary
     float canvasAspect_ = 16.0f / 9.0f;
     BackgroundPass background_;

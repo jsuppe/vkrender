@@ -159,8 +159,10 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
                      std::vector<WindowSpec> specs) {
     if (specs.empty()) specs.push_back({});
     specs_ = std::move(specs);
+    canDisplay_ = vk.canDisplay;
     if (vk.headless && specs_.size() > 1) {
-        VKR_WARN("scene: headless mode uses a single offscreen canvas; extra --window ignored");
+        VKR_WARN("scene: headless mode uses a single offscreen canvas; extra --window ignored"
+                 " (displays attach at runtime via the moderator)");
         specs_.resize(1);
     }
 
@@ -322,6 +324,190 @@ bool SceneHost::recreateWindow(VkContext& vk, size_t index) {
     return createWindowSwapchain(vk, extra_[index - 1]);
 }
 
+// ---- M43: runtime display outputs (headless appliance) ---------------------
+
+std::vector<SceneHost::DisplayInfo> SceneHost::listDisplays() const {
+    std::vector<DisplayInfo> out;
+    if (!canDisplay_) return out;
+    int count = 0;
+    GLFWmonitor** mons = glfwGetMonitors(&count);
+    GLFWmonitor* prim = glfwGetPrimaryMonitor();
+    for (int i = 0; i < count; ++i) {
+        DisplayInfo d;
+        d.id = i;
+        const char* n = glfwGetMonitorName(mons[i]);
+        d.name = n ? n : "display";
+        glfwGetMonitorPos(mons[i], &d.x, &d.y);
+        if (const GLFWvidmode* vm = glfwGetVideoMode(mons[i])) {
+            d.width = vm->width;
+            d.height = vm->height;
+        }
+        d.primary = mons[i] == prim;
+        for (size_t j = 0; j < displayOuts_.size(); ++j) {
+            if (displayOuts_[j].monitorId != i) continue;
+            d.active = true;
+            if (1 + j < rects_.size()) {
+                d.u0 = rects_[1 + j].u0;
+                d.v0 = rects_[1 + j].v0;
+                d.u1 = rects_[1 + j].u1;
+                d.v1 = rects_[1 + j].v1;
+            }
+        }
+        out.push_back(std::move(d));
+    }
+    return out;
+}
+
+void SceneHost::recomputeDisplayRects() {
+    // The offscreen canvas (window 0) always shows everything - it is what
+    // the camera broadcasts. The CANVAS is aspect-fit inside the union of the
+    // active monitors' desktop rects: every display always sees the whole
+    // composite along the fitted axis, and a display wider than the canvas
+    // (e.g. one 32:9 panel) gets canvas coordinates beyond [0,1] - which the
+    // off-center frustum renders as MORE SCENE (the backdrop extends), not a
+    // crop. A lone 16:9 monitor mirrors the camera exactly.
+    rects_.assign(1, {0.f, 0.f, 1.f, 1.f});
+    if (displayOuts_.empty()) return;
+    int minX = displayOuts_[0].x, minY = displayOuts_[0].y;
+    int maxX = minX + displayOuts_[0].width, maxY = minY + displayOuts_[0].height;
+    for (const auto& d : displayOuts_) {
+        minX = std::min(minX, d.x);
+        minY = std::min(minY, d.y);
+        maxX = std::max(maxX, d.x + d.width);
+        maxY = std::max(maxY, d.y + d.height);
+    }
+    const float uw = (float)(maxX - minX), uh = (float)(maxY - minY);
+    const float ua = uh > 0 ? uw / uh : 1.0f;
+    // The canvas's rect in desktop pixels, centered in the union.
+    float cw, chh, cx, cy;
+    if (ua >= canvasAspect_) {
+        chh = uh;
+        cw = uh * canvasAspect_;
+        cx = (float)minX + (uw - cw) * 0.5f;
+        cy = (float)minY;
+    } else {
+        cw = uw;
+        chh = uw / canvasAspect_;
+        cx = (float)minX;
+        cy = (float)minY + (uh - chh) * 0.5f;
+    }
+    for (const auto& d : displayOuts_) {
+        WindowRects r;
+        r.u0 = ((float)d.x - cx) / cw;
+        r.v0 = ((float)d.y - cy) / chh;
+        r.u1 = ((float)(d.x + d.width) - cx) / cw;
+        r.v1 = ((float)(d.y + d.height) - cy) / chh;
+        rects_.push_back(r);
+    }
+}
+
+bool SceneHost::resizeFrameSync(VkContext& vk) {
+    vkDeviceWaitIdle(vk.device);
+    const size_t windowCount = 1 + extra_.size();
+    for (auto& f : frames_) {
+        for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
+        for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
+        f.acquireSems.assign(windowCount, VK_NULL_HANDLE);
+        f.renderDoneSems.assign(windowCount, VK_NULL_HANDLE);
+        for (size_t w = 0; w < windowCount; ++w) {
+            VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+            if (vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSems[w]) != VK_SUCCESS ||
+                vkCreateSemaphore(vk.device, &sci, nullptr, &f.renderDoneSems[w]) != VK_SUCCESS)
+                return false;
+        }
+    }
+    lastImageIndex_.assign(windowCount, 0);
+    return true;
+}
+
+bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
+    if (!vk.headless) {
+        VKR_WARN("scene: display toggles are for the headless appliance; windows are"
+                 " configured with --window");
+        return false;
+    }
+    if (!canDisplay_) {
+        VKR_ERR("scene: no window system available - cannot attach display %d", id);
+        return false;
+    }
+    int have = -1;
+    for (size_t j = 0; j < displayOuts_.size(); ++j)
+        if (displayOuts_[j].monitorId == id) have = (int)j;
+    if (on == (have >= 0)) return true; // already in the requested state
+
+    if (on) {
+        int count = 0;
+        GLFWmonitor** mons = glfwGetMonitors(&count);
+        if (id < 0 || id >= count) {
+            VKR_ERR("scene: no display %d (%d present)", id, count);
+            return false;
+        }
+        GLFWmonitor* m = mons[id];
+        int mx = 0, my = 0;
+        glfwGetMonitorPos(m, &mx, &my);
+        const GLFWvidmode* vm = glfwGetVideoMode(m);
+        if (!vm) return false;
+        // Borderless window covering the monitor - no exclusive fullscreen, no
+        // mode switch, and focus is NOT stolen from whoever is at the desk.
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+        glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
+        glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        Window w;
+        w.glfw = glfwCreateWindow(vm->width, vm->height, "vkrender", nullptr, nullptr);
+        glfwDefaultWindowHints();
+        if (!w.glfw) {
+            VKR_ERR("scene: display %d window creation failed", id);
+            return false;
+        }
+        glfwSetWindowPos(w.glfw, mx, my);
+        bool ok = glfwCreateWindowSurface(vk.instance, w.glfw, nullptr, &w.surface) ==
+                  VK_SUCCESS;
+        if (ok) {
+            VkBool32 present = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(vk.phys, vk.queueFamily, w.surface,
+                                                 &present);
+            ok = present == VK_TRUE && createWindowSwapchain(vk, w);
+        }
+        if (!ok) {
+            VKR_ERR("scene: cannot present to display %d", id);
+            vkDeviceWaitIdle(vk.device);
+            for (VkImageView v : w.views) vkDestroyImageView(vk.device, v, nullptr);
+            if (w.swapchain) vkDestroySwapchainKHR(vk.device, w.swapchain, nullptr);
+            if (w.surface) vkDestroySurfaceKHR(vk.instance, w.surface, nullptr);
+            glfwDestroyWindow(w.glfw);
+            return false;
+        }
+        extra_.push_back(w);
+        DisplayOut d;
+        d.monitorId = id;
+        const char* n = glfwGetMonitorName(m);
+        d.name = n ? n : "display";
+        d.x = mx;
+        d.y = my;
+        d.width = vm->width;
+        d.height = vm->height;
+        displayOuts_.push_back(std::move(d));
+        VKR_LOG("scene: display %d '%s' attached (%dx%d at %d,%d), %zu active",
+                id, displayOuts_.back().name.c_str(), vm->width, vm->height, mx, my,
+                displayOuts_.size());
+    } else {
+        vkDeviceWaitIdle(vk.device);
+        Window& w = extra_[have];
+        for (VkImageView v : w.views) vkDestroyImageView(vk.device, v, nullptr);
+        if (w.swapchain) vkDestroySwapchainKHR(vk.device, w.swapchain, nullptr);
+        if (w.surface) vkDestroySurfaceKHR(vk.instance, w.surface, nullptr);
+        if (w.glfw) glfwDestroyWindow(w.glfw);
+        extra_.erase(extra_.begin() + have);
+        displayOuts_.erase(displayOuts_.begin() + have);
+        VKR_LOG("scene: display %d detached, %zu active", id, displayOuts_.size());
+    }
+    recomputeDisplayRects();
+    return resizeFrameSync(vk);
+}
+
 bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, bool passBound,
                       const std::vector<StreamRef>& streams, const Extras& extras, bool* quit) {
     *quit = false;
@@ -332,6 +518,14 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             if (glfwWindowShouldClose(w.glfw)) *quit = true;
         if (glfwGetKey(vk.window, GLFW_KEY_ESCAPE) == GLFW_PRESS) *quit = true;
         if (*quit) return true;
+    } else if (!extra_.empty()) {
+        // M43: display windows need their message pumps serviced. A closed
+        // display window (someone alt-F4ed it at the desk) detaches that
+        // display rather than quitting the appliance.
+        glfwPollEvents();
+        for (size_t j = extra_.size(); j-- > 0;)
+            if (glfwWindowShouldClose(extra_[j].glfw))
+                setDisplayActive(vk, displayOuts_[j].monitorId, false);
     }
 
     int64_t now = nowNs();
@@ -563,34 +757,34 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
     const int64_t tAfterFence = kTiming ? nowNs() : 0;
 
-    // Acquire every window's image.
-    const size_t windowCount = vk.headless ? 1 : 1 + extra_.size();
+    // Acquire every window's image. Headless: window 0 is the offscreen
+    // canvas (nothing to acquire); M43 display windows still acquire/present.
+    const size_t windowCount = 1 + extra_.size();
+    const size_t firstChain = vk.headless ? 1 : 0; // first window with a swapchain
     std::vector<uint32_t> imageIndex(windowCount, 0);
-    if (!vk.headless) {
-        for (size_t w = 0; w < windowCount; ++w) {
-            VkSwapchainKHR chain = w == 0 ? vk.swapchain : extra_[w - 1].swapchain;
-            VkResult ar = vkAcquireNextImageKHR(vk.device, chain, UINT64_MAX,
-                                                f.acquireSems[w], VK_NULL_HANDLE,
-                                                &imageIndex[w]);
-            if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
-                // Drain any acquire semaphores already signaled this frame so
-                // they can be reused, then rebuild and skip the frame.
-                if (w > 0) {
-                    std::vector<VkPipelineStageFlags> stages(
-                        w, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-                    VkSubmitInfo drain{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-                    drain.waitSemaphoreCount = (uint32_t)w;
-                    drain.pWaitSemaphores = f.acquireSems.data();
-                    drain.pWaitDstStageMask = stages.data();
-                    vkQueueSubmit(vk.queue, 1, &drain, VK_NULL_HANDLE);
-                    vkQueueWaitIdle(vk.queue);
-                }
-                if (!recreateWindow(vk, w)) glfwWaitEventsTimeout(0.1);
-                return true;
-            } else if (ar != VK_SUCCESS) {
-                VKR_ERR("scene: acquire failed on window %zu: %d", w, ar);
-                return false;
+    for (size_t w = firstChain; w < windowCount; ++w) {
+        VkSwapchainKHR chain = w == 0 ? vk.swapchain : extra_[w - 1].swapchain;
+        VkResult ar = vkAcquireNextImageKHR(vk.device, chain, UINT64_MAX,
+                                            f.acquireSems[w], VK_NULL_HANDLE,
+                                            &imageIndex[w]);
+        if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
+            // Drain any acquire semaphores already signaled this frame so
+            // they can be reused, then rebuild and skip the frame.
+            if (w > firstChain) {
+                std::vector<VkPipelineStageFlags> stages(
+                    w - firstChain, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+                VkSubmitInfo drain{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+                drain.waitSemaphoreCount = (uint32_t)(w - firstChain);
+                drain.pWaitSemaphores = f.acquireSems.data() + firstChain;
+                drain.pWaitDstStageMask = stages.data();
+                vkQueueSubmit(vk.queue, 1, &drain, VK_NULL_HANDLE);
+                vkQueueWaitIdle(vk.queue);
             }
+            if (!recreateWindow(vk, w)) glfwWaitEventsTimeout(0.1);
+            return true;
+        } else if (ar != VK_SUCCESS) {
+            VKR_ERR("scene: acquire failed on window %zu: %d", w, ar);
+            return false;
         }
     }
     const int64_t tAfterAcquire = kTiming ? nowNs() : 0;
@@ -631,7 +825,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                          extent, vk.queueFamily,
                          backgroundOn_ && background_.valid() ? &background_ : nullptr, t,
                          canvasAspect_, r.u0, r.v0, r.u1 - r.u0, r.v1 - r.v0,
-                         (uint32_t)specs_[w].bezel);
+                         w < specs_.size() ? (uint32_t)specs_[w].bezel : 0u);
 
         // M24: consumer-view deliveries - blit window 0's rendered scene
         // (scaled) into each consumer's shared ring texture before the final
@@ -704,7 +898,8 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         fin.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         fin.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
         fin.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        fin.newLayout = vk.headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        fin.newLayout = (vk.headless && w == 0) ? VK_IMAGE_LAYOUT_GENERAL
+                                                : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         fin.image = image;
         fin.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         dep.pImageMemoryBarriers = &fin;
@@ -717,12 +912,10 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     std::vector<VkSemaphore> waitSems;
     std::vector<VkPipelineStageFlags> waitStages;
     std::vector<uint64_t> waitValues;
-    if (!vk.headless) {
-        for (size_t w = 0; w < windowCount; ++w) {
-            waitSems.push_back(f.acquireSems[w]);
-            waitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-            waitValues.push_back(0);
-        }
+    for (size_t w = firstChain; w < windowCount; ++w) {
+        waitSems.push_back(f.acquireSems[w]);
+        waitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        waitValues.push_back(0);
     }
     for (size_t i = 0; i < extras.waitSems.size(); ++i) {
         waitSems.push_back(extras.waitSems[i]);
@@ -731,11 +924,9 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
     std::vector<VkSemaphore> signalSems;
     std::vector<uint64_t> signalValues;
-    if (!vk.headless) {
-        for (size_t w = 0; w < windowCount; ++w) {
-            signalSems.push_back(f.renderDoneSems[w]);
-            signalValues.push_back(0);
-        }
+    for (size_t w = firstChain; w < windowCount; ++w) {
+        signalSems.push_back(f.renderDoneSems[w]);
+        signalValues.push_back(0);
     }
     for (size_t i = 0; i < extras.signalSems.size(); ++i) {
         signalSems.push_back(extras.signalSems[i]);
@@ -763,24 +954,25 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
     const int64_t tAfterSubmit = kTiming ? nowNs() : 0;
 
-    if (!vk.headless) {
+    if (windowCount > firstChain) {
         std::vector<VkSwapchainKHR> chains;
-        chains.push_back(vk.swapchain);
+        if (!vk.headless) chains.push_back(vk.swapchain);
         for (auto& w : extra_) chains.push_back(w.swapchain);
         std::vector<VkResult> results(chains.size());
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-        pi.waitSemaphoreCount = (uint32_t)windowCount;
-        pi.pWaitSemaphores = f.renderDoneSems.data();
+        pi.waitSemaphoreCount = (uint32_t)(windowCount - firstChain);
+        pi.pWaitSemaphores = f.renderDoneSems.data() + firstChain;
         pi.swapchainCount = (uint32_t)chains.size();
         pi.pSwapchains = chains.data();
-        pi.pImageIndices = imageIndex.data();
+        pi.pImageIndices = imageIndex.data() + firstChain;
         pi.pResults = results.data();
         vkQueuePresentKHR(vk.queue, &pi);
         for (size_t w = 0; w < results.size(); ++w)
             if (results[w] == VK_ERROR_OUT_OF_DATE_KHR || results[w] == VK_SUBOPTIMAL_KHR)
-                recreateWindow(vk, w);
-
-        lastImageIndex_ = imageIndex;
+                recreateWindow(vk, w + firstChain);
+    }
+    lastImageIndex_ = imageIndex;
+    {
         bool periodic = snapshotEvery_ > 0.0 &&
                         (double)(nowNs() - lastSnapshotNs_) * 1e-9 >= snapshotEvery_;
         if (snapshotRequested_ || periodic) {
@@ -831,7 +1023,10 @@ void SceneHost::snapshot(VkContext& vk) {
         VkExtent2D extent = w == 0 ? vk.swapExtent : extra_[w - 1].extent;
         char path[64];
         snprintf(path, sizeof(path), "scene-w%zu.ppm", w);
-        vkrDumpImage(vk, cmdPool_, image, extent, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, path);
+        vkrDumpImage(vk, cmdPool_, image, extent,
+                     (vk.headless && w == 0) ? VK_IMAGE_LAYOUT_GENERAL
+                                             : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                     path);
     }
 }
 

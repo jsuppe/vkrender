@@ -8,6 +8,7 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -106,23 +107,51 @@ int ControlApi::handleRequest(mg_connection* conn) {
     const std::string uri = ri->local_uri ? ri->local_uri : "";
     const bool post = ri->request_method && !strcmp(ri->request_method, "POST");
 
-    if (uri == "/api/status" || uri == "/api/streams") {
+    if (uri == "/api/status" || uri == "/api/streams" || uri == "/api/displays") {
         ControlSnapshot s;
         {
             std::lock_guard<std::mutex> hold(m_);
             s = snap_;
         }
         std::string j;
-        char buf[256];
+        char buf[384];
         if (uri == "/api/status") {
             snprintf(buf, sizeof(buf),
                      "{\"layout\":\"%s\",\"paused\":%s,\"maxVisible\":%u,"
                      "\"rotateSeconds\":%.1f,\"spotlightSlot\":%d,\"presenting\":%s,"
+                     "\"cameraOn\":%s,\"displaysAvailable\":%s,\"activeDisplays\":%u,"
                      "\"streams\":%u}",
                      s.layout.c_str(), s.paused ? "true" : "false", s.maxVisible,
                      s.rotateSeconds, s.spotlightSlot, s.presenting ? "true" : "false",
+                     s.cameraOn ? "true" : "false",
+                     s.displaysAvailable ? "true" : "false",
+                     [&] {
+                         unsigned n = 0;
+                         for (const auto& d : s.displays) n += d.active ? 1 : 0;
+                         return n;
+                     }(),
                      (unsigned)s.streams.size());
             j = buf;
+        } else if (uri == "/api/displays") {
+            j = "[";
+            for (size_t i = 0; i < s.displays.size(); ++i) {
+                const ControlDisplayInfo& d = s.displays[i];
+                // JSON-safe monitor name: keep it boring (alnum + space).
+                std::string name;
+                for (char ch : d.name)
+                    if (isalnum((unsigned char)ch) || ch == ' ' || ch == '-' || ch == '(' ||
+                        ch == ')')
+                        name += ch;
+                snprintf(buf, sizeof(buf),
+                         "%s{\"id\":%d,\"name\":\"%s\",\"x\":%d,\"y\":%d,\"width\":%d,"
+                         "\"height\":%d,\"primary\":%s,\"active\":%s,"
+                         "\"u0\":%.4f,\"v0\":%.4f,\"u1\":%.4f,\"v1\":%.4f}",
+                         i ? "," : "", d.id, name.c_str(), d.x, d.y, d.width, d.height,
+                         d.primary ? "true" : "false", d.active ? "true" : "false", d.u0,
+                         d.v0, d.u1, d.v1);
+                j += buf;
+            }
+            j += "]";
         } else {
             j = "[";
             for (size_t i = 0; i < s.streams.size(); ++i) {
@@ -215,6 +244,15 @@ int ControlApi::handleRequest(mg_connection* conn) {
         else if (action == "front") c.type = ControlCommand::Type::Front;
         else ok = false;
         if (c.slot < 0 && c.type != ControlCommand::Type::Unspotlight) ok = false;
+    } else if (uri == "/api/camera") {
+        c.type = ControlCommand::Type::Camera;
+        c.i = param(conn, "on") == "1" ? 1 : 0;
+    } else if (uri == "/api/display") {
+        c.type = ControlCommand::Type::Display;
+        const std::string id = param(conn, "id");
+        c.slot = id.empty() ? -1 : atoi(id.c_str());
+        c.i = param(conn, "on") == "1" ? 1 : 0;
+        ok = c.slot >= 0;
     } else {
         mg_send_http_error(conn, 404, "unknown endpoint");
         return 404;

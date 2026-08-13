@@ -18,11 +18,14 @@
 //   GET  /api/status                          appliance + moderation state
 //   GET  /api/streams                         the roster
 //   GET  /api/preview.jpg                     live composite (~2 fps refresh)
+//   GET  /api/displays                        monitors + active state + canvas rects (M43)
 //   POST /api/layout?name=<layout>            presentation|two-cubes|single-cube|wall
 //   POST /api/pause?on=0|1
 //   POST /api/config?max_visible=N&rotate_seconds=S
 //   POST /api/stream?slot=N&action=<action>   hide|show|kick|pin|unpin|
 //                                             spotlight|unspotlight|front
+//   POST /api/camera?on=0|1                   gate the virtual-camera feed (M43)
+//   POST /api/display?id=N&on=0|1             attach/detach a monitor (M43)
 #pragma once
 
 #ifdef _WIN32
@@ -49,6 +52,18 @@ struct ControlStreamInfo {
     bool visible = false; // actually on screen this frame
 };
 
+// M43: one monitor as the moderator sees it. The uv rect is the display's
+// canvas region while active - the console crops the composite preview with
+// it, which IS what the display shows (same off-center projection).
+struct ControlDisplayInfo {
+    int id = 0;
+    std::string name;
+    int x = 0, y = 0, width = 0, height = 0;
+    bool primary = false;
+    bool active = false;
+    float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
+};
+
 struct ControlSnapshot {
     std::string layout;
     bool paused = false;
@@ -56,7 +71,10 @@ struct ControlSnapshot {
     double rotateSeconds = 8.0;
     int spotlightSlot = -1;
     bool presenting = false;
+    bool cameraOn = true;         // M43
+    bool displaysAvailable = false; // M43: false = no window system (true server)
     std::vector<ControlStreamInfo> streams;
+    std::vector<ControlDisplayInfo> displays; // M43
 };
 
 struct ControlCommand {
@@ -72,6 +90,8 @@ struct ControlCommand {
         Spotlight,  // slot
         Unspotlight,
         Front,      // slot -> head of the order
+        Camera,     // i = 0/1 - gate the vcam feed (M43)
+        Display,    // slot = display id, i = 0/1 attach/detach (M43)
     };
     Type type;
     int slot = -1;

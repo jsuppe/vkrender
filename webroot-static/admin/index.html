@@ -42,6 +42,18 @@
   .badge.hid  { color:var(--warn); border-color:var(--warn); }
   .badge.spot { color:var(--pink); border-color:var(--pink); }
   .empty { color:var(--dim); padding:18px; text-align:center; }
+  /* M43: display cards. The preview is the composite cropped to the
+     display's canvas rect - which IS what the display shows, because each
+     display window renders exactly its off-center subregion of the canvas. */
+  .disp { display:flex; gap:12px; align-items:center; padding:10px;
+          border:1px solid var(--edge); border-radius:8px; margin-bottom:8px; }
+  .dprev { width:180px; min-width:180px; border-radius:6px; background:#000
+           center/cover no-repeat; border:1px solid var(--edge);
+           position:relative; overflow:hidden; }
+  .dprev.off { filter:grayscale(.8) brightness(.45); }
+  .dprev .tag { position:absolute; left:6px; bottom:4px; font-size:11px;
+                color:var(--txt); background:rgba(20,4,31,.75);
+                padding:1px 7px; border-radius:99px; }
   #login { max-width:360px; margin:80px auto; text-align:center; }
   #login input { width:100%; margin:10px 0; padding:10px; }
   .note { color:var(--dim); font-size:12px; margin-top:10px; }
@@ -72,6 +84,7 @@
           <option value="wall">wall</option>
         </select>
         <button id="pauseBtn" onclick="togglePause()">Pause</button>
+        <button id="camBtn" onclick="toggleCamera()">Camera</button>
       </div>
       <div class="row">
         <label>Max tiles</label>
@@ -91,6 +104,14 @@
       presenter on screen through the rotation; Spotlight makes them the only
       tile. Audio controls will appear here once the pipeline carries audio -
       today it is video-only by design.</p>
+    </div>
+    <div class="panel" id="dispPanel" style="grid-column:1/-1" hidden>
+      <h2>Displays</h2>
+      <div id="displays"></div>
+      <p class="note">Present puts the scene on that monitor as a borderless
+      window. With several monitors presenting, the scene spans them as one
+      canvas (aspect-fit); each card previews exactly that display's slice.
+      The camera keeps broadcasting the full composite either way.</p>
     </div>
   </div>
 </div>
@@ -122,8 +143,9 @@ async function doLogin() {
   refresh(); tickPreview();
 }
 
-let paused = false;
+let paused = false, cameraOn = true;
 function togglePause(){ post('/api/pause?on=' + (paused ? 0 : 1)); }
+function toggleCamera(){ post('/api/camera?on=' + (cameraOn ? 0 : 1)); }
 
 function btn(label, url, cls) {
   return `<button class="${cls||''}" onclick="post('${url}')">${label}</button>`;
@@ -131,14 +153,20 @@ function btn(label, url, cls) {
 
 async function refresh() {
   try {
-    const [st, ls] = await Promise.all([
+    const [st, ls, ds] = await Promise.all([
       fetch('/api/status',  { headers:H() }).then(r => { if(r.status===401) throw 401; return r.json(); }),
       fetch('/api/streams', { headers:H() }).then(r => r.json()),
+      fetch('/api/displays',{ headers:H() }).then(r => r.json()),
     ]);
     paused = st.paused;
+    cameraOn = st.cameraOn !== false;
     document.getElementById('layout').value = st.layout;
     document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
     document.getElementById('pauseBtn').className = paused ? 'on' : '';
+    const cam = document.getElementById('camBtn');
+    cam.textContent = cameraOn ? 'Camera on' : 'Camera off';
+    cam.className = cameraOn ? 'on' : '';
+    renderDisplays(st, ds);
     if (document.activeElement.id !== 'maxv')
       document.getElementById('maxv').value = st.maxVisible;
     if (document.activeElement.id !== 'rots')
@@ -170,6 +198,62 @@ async function refresh() {
   } catch (e) { if (e === 401) logout(); }
 }
 
+// M43: the displays panel. Active display preview = the composite cropped to
+// that display's canvas rect via background-size/position; a display that is
+// off shows the whole composite dimmed - what it WOULD show if presented.
+let dispCache = [];
+function renderDisplays(st, ds) {
+  dispCache = ds || [];
+  const panel = document.getElementById('dispPanel');
+  panel.hidden = !st.displaysAvailable;
+  if (panel.hidden) return;
+  const el = document.getElementById('displays');
+  if (!dispCache.length) {
+    el.innerHTML = '<div class="empty">No monitors detected.</div>';
+    return;
+  }
+  el.innerHTML = dispCache.map(d => `<div class="disp">
+      <div class="dprev ${d.active ? '' : 'off'}" id="dprev${d.id}"
+           style="aspect-ratio:${d.width||16}/${d.height||9}">
+        <span class="tag">${d.active ? 'presenting' : 'off'}</span>
+      </div>
+      <div class="meta" style="flex:1">
+        <div style="font-weight:600">${d.name}
+          ${d.primary ? '<span class="badge">primary</span>' : ''}
+          ${d.active ? '<span class="badge live">presenting</span>' : ''}
+        </div>
+        <div class="note">${d.width}x${d.height} at ${d.x},${d.y}</div>
+      </div>
+      ${d.active ? btn('Stop', `/api/display?id=${d.id}&on=0`, 'on')
+                 : btn('Present', `/api/display?id=${d.id}&on=1`)}
+    </div>`).join('');
+  applyDispPreviews();
+}
+let previewUrl = '';
+function applyDispPreviews() {
+  if (!previewUrl) return;
+  for (const d of dispCache) {
+    const el = document.getElementById('dprev' + d.id);
+    if (!el) continue;
+    el.style.backgroundImage = `url(${previewUrl})`;
+    const du = d.u1 - d.u0, dv = d.v1 - d.v0;
+    if (d.active && du > 0.001 && dv > 0.001) {
+      // Percentage background-position: p% aligns image point p% with
+      // container point p%; solving for the crop gives p = u0/(1-du). Works
+      // for rects wider than the canvas too (du>1 = the display shows the
+      // whole composite with extended backdrop; the sides preview as black).
+      const px = Math.abs(1-du) < 0.001 ? 0 : d.u0/(1-du)*100;
+      const py = Math.abs(1-dv) < 0.001 ? 0 : d.v0/(1-dv)*100;
+      el.style.backgroundSize = `${100/du}% ${100/dv}%`;
+      el.style.backgroundRepeat = 'no-repeat';
+      el.style.backgroundPosition = `${px}% ${py}%`;
+    } else {
+      el.style.backgroundSize = 'contain';
+      el.style.backgroundPosition = 'center';
+    }
+  }
+}
+
 function tickPreview() {
   const img = document.getElementById('preview');
   const load = async () => {
@@ -178,7 +262,8 @@ function tickPreview() {
       if (r.ok) {
         const b = await r.blob();
         const old = img.dataset.url;
-        img.src = img.dataset.url = URL.createObjectURL(b);
+        img.src = img.dataset.url = previewUrl = URL.createObjectURL(b);
+        applyDispPreviews();
         if (old) URL.revokeObjectURL(old);
       }
     } catch (e) {}

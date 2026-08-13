@@ -70,6 +70,18 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
             VKR_ERR("glfwCreateWindow failed");
             return false;
         }
+        canDisplay = true;
+    } else {
+        // M43: headless still initializes the window system (no window is
+        // created) so the appliance can attach real displays at RUNTIME - the
+        // moderator toggles a monitor on and a borderless window appears. If
+        // there is no display session at all (a true server), this fails
+        // quietly and the service runs exactly as before.
+        if (glfwInit() && glfwVulkanSupported()) {
+            canDisplay = true;
+        } else {
+            VKR_LOG("renderer: headless without a window system - display outputs unavailable");
+        }
     }
 #endif
 
@@ -91,13 +103,14 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
 #endif
 
     std::vector<const char*> instExts;
-    if (!headless) {
+    if (!headless || canDisplay) {
 #ifdef __ANDROID__
-        instExts = {VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_android_surface"};
+        if (!headless) instExts = {VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_android_surface"};
 #else
         uint32_t glfwExtCount = 0;
         const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
-        instExts.assign(glfwExts, glfwExts + glfwExtCount);
+        if (glfwExts) instExts.assign(glfwExts, glfwExts + glfwExtCount);
+        else canDisplay = false; // loader has no surface support after all
 #endif
     }
 
@@ -162,6 +175,15 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
                 vkGetPhysicalDeviceSurfaceSupportKHR(d, i, surface, &present);
                 if (!present) continue;
             }
+#ifndef __ANDROID__
+            // M43: headless-with-displays prefers a present-capable family but
+            // never rejects a device over it (the box may have no monitors).
+            else if (canDisplay &&
+                     !glfwGetPhysicalDevicePresentationSupport(instance, d, i)) {
+                if (family < 0) family = (int)i; // usable, just not for display
+                continue;
+            }
+#endif
             family = (int)i;
             break;
         }
@@ -207,9 +229,20 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
     VkPhysicalDeviceFeatures2 feat2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     feat2.pNext = &feat11;
 
+#ifndef __ANDROID__
+    // M43: the chosen device must actually be able to present AND offer
+    // VK_KHR_swapchain for runtime display windows; otherwise stay headless.
+    if (headless && canDisplay &&
+        (!glfwGetPhysicalDevicePresentationSupport(instance, phys, queueFamily) ||
+         !hasAllExtensions(phys, true))) {
+        VKR_LOG("renderer: device cannot present - display outputs unavailable");
+        canDisplay = false;
+    }
+#endif
+
     std::vector<const char*> devExts(kDeviceExtensions,
                                      kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(char*));
-    if (!headless) devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if (!headless || canDisplay) devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 #ifdef __ANDROID__
     // Optional: scheduled presents for exact video cadence.
     {
@@ -450,7 +483,7 @@ void VkContext::destroy() {
     if (instance) vkDestroyInstance(instance, nullptr);
 #ifndef __ANDROID__
     if (window) glfwDestroyWindow(window);
-    if (!headless) glfwTerminate();
+    if (!headless || canDisplay) glfwTerminate();
 #endif
 }
 
