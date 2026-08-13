@@ -24,6 +24,8 @@ struct WinServeOptions {
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;
     std::vector<WindowSpec> windows; // M15: canvas-spanning windows
+    // M42: the moderation API's localhost port; 0 disables it.
+    int controlPort = 8875;
 };
 
 int runWinService(const WinServeOptions& options);

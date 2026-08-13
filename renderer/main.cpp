@@ -90,12 +90,15 @@ int main(int argc, char** argv) {
     bool ptsPacing = false;
     bool waylandMode = false;
     bool serveMode = false;
+    int controlPort = 8875; // M42 moderation API (0 = off)
     std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
     std::vector<vkr::WindowSpec> windowSpecs; // M15: --window WxH+X+Y (repeatable)
     int defaultBezel = 0;                     // M29: --bezel applies to all panels
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
+        else if (!strcmp(argv[i], "--control-port") && i + 1 < argc)
+            controlPort = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dumpPath = argv[++i];
         else if (!strcmp(argv[i], "--headless") && i + 1 < argc) headlessFrames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--wayland")) {
@@ -151,6 +154,7 @@ int main(int argc, char** argv) {
         vkr::WinServeOptions sopts;
         sopts.pipeName = pipe;
         sopts.headlessFrames = headlessFrames;
+        sopts.controlPort = controlPort;
         sopts.dumpPath = dumpPath;
         sopts.shaderDir = exeDir() + "/shaders";
         sopts.windows = windowSpecs;

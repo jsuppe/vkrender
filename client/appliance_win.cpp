@@ -204,6 +204,10 @@ int main(int argc, char** argv) {
     // M41: the web front door - the browser sender app + desktop downloads.
     const bool wantWeb = iniGet("web", "1") != "0";
     const std::string webPorts = iniGet("web_ports", "8080,8443s");
+    // M42: the moderator console. admin_pin gates /api/* at the web tier; the
+    // renderer's control API itself never leaves localhost.
+    const std::string adminPin = iniGet("admin_pin", "");
+    const std::string controlPort = iniGet("control_port", "8875");
 
     // Propagate policy to every child through the environment.
     SetEnvironmentVariableA("VKR_PIN", pin == "off" ? nullptr : pin.c_str());
@@ -225,7 +229,7 @@ int main(int argc, char** argv) {
 
     printf("vkrender appliance: PIN=%s layout=%s\n", pin.c_str(), layout.c_str());
 
-    std::string rendererArgs = "--serve " + name;
+    std::string rendererArgs = "--serve " + name + " --control-port " + controlPort;
     if (!window.empty()) {
         // "1280x720+0+0;1280x720+1280+0" -> repeated --window flags
         size_t start = 0;
@@ -283,8 +287,12 @@ int main(int argc, char** argv) {
         vcamArgs += " --idle-hint \"" + hint + "\"";
         launch("framecam.exe", vcamArgs, "vcam", false);
     }
-    if (wantWeb)
-        launch("vkr_web.exe", "--ports " + webPorts + " --name " + name, "web", false);
+    if (wantWeb) {
+        std::string webArgs = "--ports " + webPorts + " --name " + name +
+                              " --control-port " + controlPort;
+        if (!adminPin.empty()) webArgs += " --admin-pin " + adminPin;
+        launch("vkr_web.exe", webArgs, "web", false);
+    }
 
     if (window == "none")
         printf("appliance: HEADLESS - the composite exists only in the virtual camera\n");

@@ -463,6 +463,10 @@ begin
   // M41: the web front door (browser sender + downloads).
   SetIniString('appliance', 'web', BoolToStr2(WizardIsComponentSelected('web')), Ini);
   SetIniString('appliance', 'web_ports', '8080,8443s', Ini);
+  // M42: the moderator console (https://host:8443/admin/). Empty pin =
+  // console disabled; set one here or later in the ini to enable it.
+  SetIniString('appliance', 'admin_pin', '', Ini);
+  SetIniString('appliance', 'control_port', '8875', Ini);
 end;
 
 // Uninstall is unelevated too, so the machine-wide bits need the same

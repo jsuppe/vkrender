@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<!-- M42: the vkrender moderator console. One hand-written page, zero
+     frameworks: it polls /api/streams + /api/status once a second, refreshes
+     /api/preview.jpg at ~1.5s, and POSTs moderation commands. vkr_web
+     reverse-proxies /api/* to the renderer's localhost control port behind
+     the Bearer token this page asks for once and keeps in sessionStorage. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vkrender moderator</title>
+<style>
+  :root { --bg:#14041f; --panel:#1f0a33; --edge:#3a1a5c; --txt:#efe6ff;
+          --dim:#a68fc9; --pink:#ff5fa2; --cyan:#4fd8ff; --warn:#ffb84f; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt);
+         font:15px/1.45 "Segoe UI",system-ui,sans-serif; padding:18px; }
+  h1 { font-size:20px; margin-bottom:12px; }
+  h1 span { color:var(--pink); }
+  .grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--edge);
+           border-radius:10px; padding:14px; }
+  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+              color:var(--dim); margin-bottom:10px; }
+  #preview { width:100%; border-radius:6px; background:#000; aspect-ratio:16/9;
+             object-fit:contain; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0; }
+  button, select, input[type=number] {
+    background:#2b1246; color:var(--txt); border:1px solid var(--edge);
+    border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--pink); }
+  button.on { background:var(--pink); color:#1a0426; border-color:var(--pink); }
+  button.danger:hover { background:#7a1030; border-color:#ff4070; }
+  .stream { display:flex; gap:10px; align-items:center; padding:10px;
+            border:1px solid var(--edge); border-radius:8px; margin-bottom:8px; }
+  .stream .name { font-weight:600; min-width:64px; }
+  .stream .meta { color:var(--dim); font-size:13px; flex:1; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:99px;
+           border:1px solid var(--edge); color:var(--dim); }
+  .badge.live { color:var(--cyan); border-color:var(--cyan); }
+  .badge.hid  { color:var(--warn); border-color:var(--warn); }
+  .badge.spot { color:var(--pink); border-color:var(--pink); }
+  .empty { color:var(--dim); padding:18px; text-align:center; }
+  #login { max-width:360px; margin:80px auto; text-align:center; }
+  #login input { width:100%; margin:10px 0; padding:10px; }
+  .note { color:var(--dim); font-size:12px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <h1>vkrender <span>moderator</span></h1>
+  <p>Enter the moderator PIN (admin_pin in vkrender.ini).</p>
+  <input id="pin" type="password" placeholder="moderator PIN"
+         onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">Sign in</button>
+  <p id="loginErr" class="note"></p>
+</div>
+
+<div id="app" hidden>
+  <h1>vkrender <span>moderator</span></h1>
+  <div class="grid">
+    <div class="panel">
+      <h2>Live composite</h2>
+      <img id="preview" alt="scene preview">
+      <div class="row">
+        <label>Layout</label>
+        <select id="layout" onchange="post('/api/layout?name='+this.value)">
+          <option value="presentation">presentation</option>
+          <option value="two-cubes">two cubes</option>
+          <option value="single-cube">single cube</option>
+          <option value="wall">wall</option>
+        </select>
+        <button id="pauseBtn" onclick="togglePause()">Pause</button>
+      </div>
+      <div class="row">
+        <label>Max tiles</label>
+        <input id="maxv" type="number" min="1" max="12" style="width:70px"
+               onchange="post('/api/config?max_visible='+this.value)">
+        <label>Rotate every</label>
+        <input id="rots" type="number" min="1" max="120" style="width:70px"
+               onchange="post('/api/config?rotate_seconds='+this.value)">
+        <span class="note">seconds — extra presenters carousel through the spare tiles</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Presenters</h2>
+      <div id="streams"></div>
+      <p class="note">Hide keeps a presenter connected but off screen. Kick
+      disconnects them at the transport - their app must reconnect. Pin holds a
+      presenter on screen through the rotation; Spotlight makes them the only
+      tile. Audio controls will appear here once the pipeline carries audio -
+      today it is video-only by design.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN = sessionStorage.getItem('vkr_admin') || '';
+const H = () => ({ 'Authorization': 'Bearer ' + TOKEN });
+
+async function post(url) {
+  const r = await fetch(url, { method:'POST', headers:H() });
+  if (r.status === 401) { logout(); return; }
+  refresh();
+}
+function logout(){ sessionStorage.removeItem('vkr_admin'); TOKEN='';
+  document.getElementById('app').hidden = true;
+  document.getElementById('login').hidden = false; }
+
+async function doLogin() {
+  TOKEN = document.getElementById('pin').value.trim();
+  const r = await fetch('/api/status', { headers:H() });
+  if (!r.ok) {
+    document.getElementById('loginErr').textContent =
+      r.status === 401 ? 'Wrong PIN.' : 'Renderer unreachable (' + r.status + ').';
+    return;
+  }
+  sessionStorage.setItem('vkr_admin', TOKEN);
+  document.getElementById('login').hidden = true;
+  document.getElementById('app').hidden = false;
+  refresh(); tickPreview();
+}
+
+let paused = false;
+function togglePause(){ post('/api/pause?on=' + (paused ? 0 : 1)); }
+
+function btn(label, url, cls) {
+  return `<button class="${cls||''}" onclick="post('${url}')">${label}</button>`;
+}
+
+async function refresh() {
+  try {
+    const [st, ls] = await Promise.all([
+      fetch('/api/status',  { headers:H() }).then(r => { if(r.status===401) throw 401; return r.json(); }),
+      fetch('/api/streams', { headers:H() }).then(r => r.json()),
+    ]);
+    paused = st.paused;
+    document.getElementById('layout').value = st.layout;
+    document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+    document.getElementById('pauseBtn').className = paused ? 'on' : '';
+    if (document.activeElement.id !== 'maxv')
+      document.getElementById('maxv').value = st.maxVisible;
+    if (document.activeElement.id !== 'rots')
+      document.getElementById('rots').value = st.rotateSeconds;
+
+    const el = document.getElementById('streams');
+    if (!ls.length) { el.innerHTML = '<div class="empty">No presenters connected.<br>' +
+      'The camera is showing the join card.</div>'; return; }
+    el.innerHTML = ls.map(s => {
+      const badges =
+        (s.visible ? '<span class="badge live">on screen</span>' : '') +
+        (s.hidden  ? '<span class="badge hid">hidden</span>' : '') +
+        (s.spotlit ? '<span class="badge spot">spotlight</span>' : '') +
+        (s.pinned  ? '<span class="badge">pinned</span>' : '');
+      const u = a => `/api/stream?slot=${s.slot}&action=${a}`;
+      return `<div class="stream">
+        <div class="name">in.${s.slot}</div>
+        <div class="meta">${s.width}x${s.height} · ${s.fps.toFixed(0)} fps ·
+          ${s.ageMs < 0 ? 'no frames' : s.ageMs < 1500 ? 'live' : (s.ageMs/1000).toFixed(0)+'s stale'}
+          <br>${badges}</div>
+        ${s.spotlit ? btn('Unspotlight', u('unspotlight'), 'on')
+                    : btn('Spotlight', u('spotlight'))}
+        ${s.pinned ? btn('Unpin', u('unpin'), 'on') : btn('Pin', u('pin'))}
+        ${s.hidden ? btn('Show', u('show'), 'on') : btn('Hide', u('hide'))}
+        ${btn('Front', u('front'))}
+        ${btn('Kick', u('kick'), 'danger')}
+      </div>`;
+    }).join('');
+  } catch (e) { if (e === 401) logout(); }
+}
+
+function tickPreview() {
+  const img = document.getElementById('preview');
+  const load = async () => {
+    try {
+      const r = await fetch('/api/preview.jpg?t=' + Date.now(), { headers:H() });
+      if (r.ok) {
+        const b = await r.blob();
+        const old = img.dataset.url;
+        img.src = img.dataset.url = URL.createObjectURL(b);
+        if (old) URL.revokeObjectURL(old);
+      }
+    } catch (e) {}
+  };
+  load(); setInterval(load, 1500);
+}
+
+if (TOKEN) { doLogin_fromStored(); } else { document.getElementById('login').hidden = false; }
+async function doLogin_fromStored() {
+  const r = await fetch('/api/status', { headers:H() });
+  if (r.ok) {
+    document.getElementById('app').hidden = false;
+    refresh(); tickPreview();
+  } else { logout(); }
+}
+setInterval(() => { if (!document.getElementById('app').hidden) refresh(); }, 1000);
+</script>
+</body>
+</html>

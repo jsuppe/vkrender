@@ -16,6 +16,9 @@
 #include "framelink.h"
 #include "framelink_d3d11.h"
 
+// M42: the moderation API (control_api.h) and the state it drives.
+#include "control_api.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -104,6 +107,71 @@ struct SlotIn {
 
 // Twelve, because that is the fan-in M22 proved and the scene supports.
 constexpr uint32_t kInSlots = 12;
+
+// M42: what the moderator has decided. Owned and applied by the render loop;
+// the control API only queues commands that mutate it.
+//
+// The interesting part is SELECTION: which of the connected, non-hidden
+// streams actually reach the layout each frame. Spotlight wins outright;
+// otherwise pinned streams take their seats first and the remainder rotate
+// through the leftover seats every rotateSeconds - the carousel that lets a
+// room cap the tiles at 4 while every presenter still gets screen time.
+struct Moderation {
+    bool hidden[kInSlots] = {};
+    bool pinned[kInSlots] = {};
+    int spotlight = -1;                  // slot index, -1 = none
+    uint32_t maxVisible = 4;
+    double rotateSeconds = 8.0;
+    std::vector<uint32_t> order;         // slot indices, front = first seated
+
+    void ensureOrdered(uint32_t slot) {
+        for (uint32_t o : order)
+            if (o == slot) return;
+        order.push_back(slot);
+    }
+    void toFront(uint32_t slot) {
+        ensureOrdered(slot);
+        for (size_t i = 0; i < order.size(); ++i)
+            if (order[i] == slot) {
+                order.erase(order.begin() + (ptrdiff_t)i);
+                break;
+            }
+        order.insert(order.begin(), slot);
+    }
+
+    // The seated slots for this frame, in seating order.
+    std::vector<uint32_t> select(const bool live[kInSlots], int64_t nowNsV) const {
+        std::vector<uint32_t> out;
+        if (spotlight >= 0 && spotlight < (int)kInSlots && live[spotlight] &&
+            !hidden[spotlight]) {
+            out.push_back((uint32_t)spotlight);
+            return out;
+        }
+        std::vector<uint32_t> eligible; // ordered, live, not hidden
+        for (uint32_t o : order)
+            if (o < kInSlots && live[o] && !hidden[o]) eligible.push_back(o);
+        // Pinned first, in order.
+        std::vector<uint32_t> rest;
+        for (uint32_t e : eligible) {
+            if (pinned[e] && out.size() < maxVisible) out.push_back(e);
+            else if (!pinned[e]) rest.push_back(e);
+        }
+        const size_t seats = maxVisible > out.size() ? maxVisible - out.size() : 0;
+        if (rest.size() <= seats) {
+            out.insert(out.end(), rest.begin(), rest.end());
+        } else if (seats > 0) {
+            // The carousel: the window over `rest` advances one PAGE per
+            // period, so every presenter gets equal time and the transition
+            // is the presentation layout's own enter/exit animation.
+            const uint64_t page =
+                (uint64_t)((double)nowNsV * 1e-9 / (rotateSeconds > 0.5 ? rotateSeconds : 0.5));
+            const size_t start = (size_t)((page * seats) % rest.size());
+            for (size_t i = 0; i < seats; ++i)
+                out.push_back(rest[(start + i) % rest.size()]);
+        }
+        return out;
+    }
+};
 
 } // namespace
 
@@ -223,6 +291,38 @@ int runWinService(const WinServeOptions& options) {
     }
     VKR_LOG("service: %u framelink input slots ready ('%s.in.0' .. '%s.in.%u')", kInSlots,
             options.pipeName.c_str(), options.pipeName.c_str(), kInSlots - 1);
+
+    // M42: the moderation API + the state it drives. Per-slot adoption
+    // bookkeeping feeds the roster (fps, last-frame age).
+    ControlApi control;
+    const bool controlUp = options.controlPort > 0 && control.start(options.controlPort);
+    Moderation mod;
+    int64_t slotLastFrameNs[kInSlots] = {};
+    uint32_t slotFrameCount[kInSlots] = {};
+    float slotFps[kInSlots] = {};
+    int64_t fpsWindowStart = nowNs();
+
+    // Kick: transport-level and uniform across every receiver type - close the
+    // slot's channel and recreate it. The producer sees FL_DISCONNECTED on its
+    // next call; the fresh channel is empty and waiting.
+    auto kickSlot = [&](uint32_t i) {
+        if (i >= kInSlots || !inSlots[i].channel) return;
+        SlotIn& s = inSlots[i];
+        VKR_LOG("service: moderator kicked '%s'", s.name.c_str());
+        dropRing(s);
+        flClose(s.channel);
+        s.channel = nullptr;
+        s.departing = false;
+        s.generation = 0;
+        s.currentSlot = -1;
+        if (flCreateChannelOnAdapter(s.name.c_str(), kInDefaultW, kInDefaultH, FL_FORMAT_BGRA8,
+                                     kInPool, FL_GPU_SYNC,
+                                     vk.luidValid ? vk.deviceLUID : nullptr,
+                                     &s.channel) != FL_OK) {
+            VKR_ERR("service: could not recreate '%s' after kick", s.name.c_str());
+            s.channel = nullptr;
+        }
+    };
 
     // M35: attach to a framelink channel that a CONSUMER created. Retried,
     // because the consumer owns the channel and may start after us - the
@@ -362,6 +462,8 @@ int runWinService(const WinServeOptions& options) {
             s.departing = false;
             s.currentSlot = (int64_t)key;
             s.currentReady = f._readyValue;
+            slotLastFrameNs[&s - inSlots.data()] = nowNs();
+            ++slotFrameCount[&s - inSlots.data()];
             // Release the PREVIOUS frame, not this one: the scene keeps
             // sampling this texture until a newer frame replaces it, so
             // telling the producer it is free would let it be overwritten
@@ -384,12 +486,43 @@ int runWinService(const WinServeOptions& options) {
             flRelease(s.channel, &f);
         }
 
+        // M42: apply the moderator's commands before deciding what is shown.
+        for (const ControlCommand& c : control.drainCommands()) {
+            using T = ControlCommand::Type;
+            const uint32_t sl = c.slot >= 0 && c.slot < (int)kInSlots ? (uint32_t)c.slot : 0;
+            switch (c.type) {
+                case T::Layout:
+                    if (c.str == "presentation") host.setLayout(SceneLayout::Presentation);
+                    else if (c.str == "two-cubes") host.setLayout(SceneLayout::TwoCubes);
+                    else if (c.str == "single-cube") host.setLayout(SceneLayout::SingleCube);
+                    else if (c.str == "wall") host.setLayout(SceneLayout::Wall);
+                    break;
+                case T::Pause: host.setPaused(c.i != 0); break;
+                case T::Config:
+                    if (c.i >= 1 && c.i <= (int)kInSlots) mod.maxVisible = (uint32_t)c.i;
+                    if (c.d >= 1.0) mod.rotateSeconds = c.d;
+                    break;
+                case T::Hide: mod.hidden[sl] = true; break;
+                case T::Show: mod.hidden[sl] = false; break;
+                case T::Kick: kickSlot(sl); break;
+                case T::Pin: mod.pinned[sl] = true; mod.toFront(sl); break;
+                case T::Unpin: mod.pinned[sl] = false; break;
+                case T::Spotlight: mod.spotlight = (int)sl; break;
+                case T::Unspotlight: mod.spotlight = -1; break;
+                case T::Front: mod.toFront(sl); break;
+            }
+        }
+
         std::vector<SceneHost::StreamRef> streams;
         SceneHost::Extras extras;
+        // Reap departures and record liveness. Consumed-fence signals are
+        // issued for EVERY live slot - hidden or rotated-out producers must
+        // keep flowing, or their rings fill and they stall behind a moderator
+        // decision they cannot see.
+        bool live[kInSlots] = {};
         for (SlotIn& s : inSlots) {
+            const size_t idx = (size_t)(&s - inSlots.data());
             if (s.currentSlot < 0) continue;
-            // Same rule as a departing client: withhold the stream so the
-            // motion layer animates it out, but keep the ring alive for it.
             const bool expired =
                 s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
             if (s.departing && (expired || !host.retainsStream((uint64_t)s.uid))) {
@@ -399,16 +532,26 @@ int runWinService(const WinServeOptions& options) {
                 continue;
             }
             if (s.departing) continue;
-            streams.push_back({(uint64_t)s.uid, s.currentSlot});
-            if (s.readySem) {
-                extras.waitSems.push_back(s.readySem);
-                extras.waitValues.push_back(s.currentReady);
-            }
+            live[idx] = true;
+            mod.ensureOrdered((uint32_t)idx);
             if (s.pendingConsumed && s.consumedSem) {
                 extras.signalSems.push_back(s.consumedSem);
                 extras.signalValues.push_back(s.pendingConsumed);
                 s.lastConsumedSignal = s.pendingConsumed;
                 s.pendingConsumed = 0;
+            }
+        }
+        // Selection: spotlight, then pinned, then the carousel over the rest
+        // (see Moderation::select). Only the SELECTED streams reach the layout
+        // - and only their ready fences are waited on, because only their
+        // textures are sampled this frame.
+        const std::vector<uint32_t> seated = mod.select(live, nowNs());
+        for (uint32_t idx : seated) {
+            SlotIn& s = inSlots[idx];
+            streams.push_back({(uint64_t)s.uid, s.currentSlot});
+            if (s.readySem) {
+                extras.waitSems.push_back(s.readySem);
+                extras.waitValues.push_back(s.currentReady);
             }
         }
         // M24/M35: publish the scene view for sinks (the camera). Pick a
@@ -508,6 +651,56 @@ int runWinService(const WinServeOptions& options) {
             break;
         }
 
+        // M42: publish the moderation snapshot + refresh the live preview when
+        // the console is watching. The readback happens HERE, between frames
+        // on the render thread - the one place it is legal - and only when a
+        // preview was requested in the last few seconds.
+        if (controlUp) {
+            if (control.previewDue()) {
+                std::vector<uint8_t> bgra;
+                if (vkrReadImage(vk, host.commandPool(),
+                                 headless ? vk.swapImages[0] : vk.swapImages[0], vk.swapExtent,
+                                 headless ? VK_IMAGE_LAYOUT_GENERAL
+                                          : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                 bgra))
+                    control.publishPreview(bgra.data(), vk.swapExtent.width,
+                                           vk.swapExtent.height);
+            }
+            ControlSnapshot snap;
+            switch (host.layout()) {
+                case SceneLayout::Presentation: snap.layout = "presentation"; break;
+                case SceneLayout::TwoCubes: snap.layout = "two-cubes"; break;
+                case SceneLayout::SingleCube: snap.layout = "single-cube"; break;
+                case SceneLayout::Wall: snap.layout = "wall"; break;
+                default: snap.layout = "?"; break;
+            }
+            snap.paused = host.paused();
+            snap.maxVisible = mod.maxVisible;
+            snap.rotateSeconds = mod.rotateSeconds;
+            snap.spotlightSlot = mod.spotlight;
+            for (uint32_t i = 0; i < kInSlots; ++i) {
+                SlotIn& sl = inSlots[i];
+                if (sl.currentSlot < 0 && !sl.channel) continue;
+                ControlStreamInfo st;
+                st.slot = i;
+                st.width = sl.width;
+                st.height = sl.height;
+                st.fps = slotFps[i];
+                st.ageMs = slotLastFrameNs[i]
+                               ? (nowNs() - slotLastFrameNs[i]) / 1000000ll
+                               : -1;
+                st.connected = sl.currentSlot >= 0 && !sl.departing;
+                st.hidden = mod.hidden[i];
+                st.pinned = mod.pinned[i];
+                st.spotlit = mod.spotlight == (int)i;
+                for (uint32_t v : seated)
+                    if (v == i) st.visible = true;
+                if (st.connected || st.hidden || st.pinned) snap.streams.push_back(st);
+                snap.presenting = snap.presenting || st.connected;
+            }
+            control.publish(snap);
+        }
+
         // The submit carrying the blit is queued and will signal the value we
         // reserved, so the frame can be published now.
         if (sceneOut.pendingSlot >= 0) {
@@ -519,19 +712,27 @@ int runWinService(const WinServeOptions& options) {
                 teardownSceneOut(sceneOut);
         }
 
+        if (nowNs() - fpsWindowStart > 2000000000ll) {
+            const double secs = (double)(nowNs() - fpsWindowStart) * 1e-9;
+            for (uint32_t i = 0; i < kInSlots; ++i) {
+                slotFps[i] = (float)((double)slotFrameCount[i] / secs);
+                slotFrameCount[i] = 0;
+            }
+            fpsWindowStart = nowNs();
+        }
         if (nowNs() - rateWindowStart > 5000000000ll) {
-            size_t live = 0;
+            size_t liveCount = 0;
             for (SlotIn& s : inSlots)
-                if (s.currentSlot >= 0) ++live;
+                if (s.currentSlot >= 0) ++liveCount;
             if (hopSamples) {
                 VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu producers) "
                         "hop avg %.2f ms max %.2f ms over %llu",
-                        (unsigned long long)adoptions, pool.slots.size(), live,
+                        (unsigned long long)adoptions, pool.slots.size(), liveCount,
                         (double)hopTotalUs / (double)hopSamples / 1000.0,
                         (double)hopMaxUs / 1000.0, (unsigned long long)hopSamples);
             } else {
                 VKR_LOG("service: %llu adoptions in 5s (pool %zu slots, %zu producers)",
-                        (unsigned long long)adoptions, pool.slots.size(), live);
+                        (unsigned long long)adoptions, pool.slots.size(), liveCount);
             }
             adoptions = 0;
             hopSamples = hopTotalUs = hopMaxUs = 0;
@@ -543,6 +744,7 @@ int runWinService(const WinServeOptions& options) {
     if (finite && exitCode == 0 && videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
+    if (controlUp) control.stop();
     for (SlotIn& s : inSlots) {
         dropRing(s);
         if (s.channel) flClose(s.channel);

@@ -135,8 +135,16 @@ add_dependencies(vkrenderer vkr_shaders)
 if(WIN32)
     # M14: producer-facing service mode (--serve). M38 retired the client
     # library that used to come with it: producers speak framelink now.
-    target_sources(vkrenderer PRIVATE renderer/win_service.cpp)
-    target_link_libraries(vkrenderer PRIVATE d3d11 dxgi framelink)
+    # M42: + the moderation API (civetweb compiled NO_SSL - localhost only,
+    # so no TLS and no OpenSSL dependency in the renderer).
+    # Target-level NO_SSL, deliberately NOT set_source_files_properties: source
+    # properties are directory-scoped and would strip TLS from vkr_web's build
+    # of the very same civetweb.c.
+    target_sources(vkrenderer PRIVATE renderer/win_service.cpp
+        renderer/control_api.cpp third_party/civetweb/civetweb.c)
+    target_include_directories(vkrenderer PRIVATE third_party/civetweb third_party/stb)
+    target_compile_definitions(vkrenderer PRIVATE NO_SSL USE_IPV6)
+    target_link_libraries(vkrenderer PRIVATE d3d11 dxgi framelink ws2_32)
 
     # framelink is its own project now (github: framelink, MIT). vkrender is a
     # CONSUMER of it - the virtual camera owns a channel and the renderer
@@ -208,7 +216,8 @@ if(WIN32)
         NO_SSL_DL OPENSSL_API_3_0 USE_IPV6 NDEBUG)
     target_link_directories(vkr_web PRIVATE "${GST_ROOT}/lib")
     target_link_libraries(vkr_web PRIVATE ssl crypto ws2_32 crypt32)
-    target_compile_options(vkr_web PRIVATE /EHsc)
+    target_compile_options(vkr_web PRIVATE /EHsc /Zi)
+    target_link_options(vkr_web PRIVATE /DEBUG /MAP)
 
     # M16: Miracast sink -> producer bridge (C++/WinRT; needs the SDK's
     # cppwinrt projection headers and WindowsApp.lib).

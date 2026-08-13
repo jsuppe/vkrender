@@ -109,6 +109,13 @@ public:
     // Called from the GLFW key callback; public for the C callback trampoline.
     void handleKey(int key);
 
+    // M42: the moderator console does programmatically what the keyboard does
+    // - and in headless mode there is no keyboard, so this is the only way.
+    void setLayout(SceneLayout l) { layout_ = l; }
+    SceneLayout layout() const { return layout_; }
+    void setPaused(bool p) { paused_ = p; }
+    bool paused() const { return paused_; }
+
     // An extra (non-primary) window with its own surface + swapchain (index 0
     // is the VkContext-owned primary window).
     struct Window {

@@ -25,6 +25,8 @@ try {
 if (Test-Path $payload) { Remove-Item -Recurse -Force $payload }
 New-Item -ItemType Directory -Force (Join-Path $payload "downloads") | Out-Null
 Copy-Item -Recurse (Join-Path $sender "build\web\*") $payload
+# M42: static pages that live in the repo (the moderator console).
+Copy-Item -Recurse (Join-Path $repo "webroot-static\*") $payload
 Compress-Archive -Path (Join-Path $sender "build\windows\x64\runner\Release\*") `
     -DestinationPath (Join-Path $payload "downloads\vkrender-sender-windows.zip") -Force
 
