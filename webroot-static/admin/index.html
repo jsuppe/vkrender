@@ -260,6 +260,14 @@ function applyDispPreviews() {
 // single-shot /api/preview.jpg polling if the stream won't open (older
 // renderer, or the stream cap reached).
 let previewRunning = false;
+// A hidden tab must not hold a stream open: Chrome freezes background pages,
+// the reader stops draining, and the server-side handler wedges against the
+// full TCP window holding one of the few stream slots. Abort on hide,
+// reconnect on show.
+let previewAbort = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && previewAbort) previewAbort.abort();
+});
 function showFrame(bytes) {
   const img = document.getElementById('preview');
   const old = img.dataset.url;
@@ -279,9 +287,11 @@ async function tickPreview() {
   previewRunning = true;
   const dec = new TextDecoder();
   while (TOKEN) {
+    if (document.hidden) { await new Promise(res => setTimeout(res, 1000)); continue; }
     let gotFrames = false;
     try {
-      const r = await fetch('/api/preview.mjpg', { headers: H() });
+      previewAbort = new AbortController();
+      const r = await fetch('/api/preview.mjpg', { headers: H(), signal: previewAbort.signal });
       if (r.status === 401) { logout(); break; }
       if (!r.ok || !r.body) throw 0;
       const reader = r.body.getReader();
@@ -305,8 +315,9 @@ async function tickPreview() {
       }
     } catch (e) {}
     // Stream unavailable or dropped: show a snapshot so the page is never
-    // blank, wait, then try the stream again.
-    if (!gotFrames) {
+    // blank, wait, then try the stream again. (Not when hidden - the abort
+    // above lands here, and a frozen tab should touch nothing.)
+    if (!gotFrames && !document.hidden) {
       try {
         const r = await fetch('/api/preview.jpg?t=' + Date.now(), { headers: H() });
         if (r.ok) showFrame(new Uint8Array(await (await r.blob()).arrayBuffer()));

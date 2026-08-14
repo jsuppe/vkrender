@@ -81,7 +81,10 @@ bool ControlApi::start(int port) {
     mg_init_library(0);
     // Each MJPEG stream parks on a worker thread for its whole lifetime;
     // kMaxPreviewStreams of them must still leave workers for commands.
-    const char* options[] = {"listening_ports", ports, "num_threads", "8", nullptr};
+    // request_timeout_ms also bounds a single blocking send to a wedged
+    // client - the stream handler's last line of defence.
+    const char* options[] = {"listening_ports", ports, "num_threads", "8",
+                             "request_timeout_ms", "10000", nullptr};
     ctx_ = mg_start(nullptr, nullptr, options);
     if (!ctx_) {
         VKR_ERR("control: cannot listen on %s", ports);
@@ -251,7 +254,16 @@ int ControlApi::handleRequest(mg_connection* conn) {
                 previewRequestedNs_ = nowNs(); // keep the readback flowing
                 previewCv_.wait_for(hold, std::chrono::milliseconds(500),
                                     [&] { return previewSeq_ != seen || stopping_.load(); });
-                if (previewSeq_ == seen) continue; // timeout: re-arm, check stop
+                if (previewSeq_ == seen) {
+                    // Timeout with no new frame. A client that closed (FIN)
+                    // while we were parked is only discoverable by touching
+                    // the socket - two zombie handlers once filled the
+                    // stream cap exactly this way. A stray CRLF between
+                    // multipart parts is harmless to readers.
+                    hold.unlock();
+                    alive = mg_write(conn, "\r\n", 2) > 0;
+                    continue;
+                }
                 seen = previewSeq_;
                 bgra = previewBgra_;
                 w = previewW_;
@@ -264,9 +276,15 @@ int ControlApi::handleRequest(mg_connection* conn) {
                                     "--vkrframe\r\nContent-Type: image/jpeg\r\n"
                                     "Content-Length: %u\r\n\r\n",
                                     (unsigned)jpg.size());
+            const int64_t t0 = nowNs();
             alive = mg_write(conn, part, (size_t)pn) > 0 &&
                     mg_write(conn, jpg.data(), jpg.size()) > 0 &&
                     mg_write(conn, "\r\n", 2) > 0;
+            // A frozen client (a background tab Chrome stopped scheduling)
+            // trickle-ACKs against a full TCP window: writes "succeed" after
+            // blocking for ages and the handler wedges holding its slot.
+            // Slower than a second per 40 KB frame means nobody is watching.
+            if (alive && nowNs() - t0 > 1000000000ll) alive = false;
         }
         --previewStreamers_;
         return 200;

@@ -272,6 +272,10 @@ int main(int argc, char** argv) {
         "ssl_certificate", pem.c_str(),
         "enable_directory_listing", "yes", // /downloads/ is a plain listing
         "num_threads", "8",
+        // Serve static files with max-age=0: the console page updates with
+        // the appliance, and a cached stale page cost a debugging session
+        // (old JS silently polling a new server).
+        "static_file_max_age", "0",
         nullptr};
     mg_context* ctx = mg_start(nullptr, nullptr, wantTls ? options : options + 0);
     if (!ctx) {
