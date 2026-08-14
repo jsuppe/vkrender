@@ -196,6 +196,7 @@ int proxyHandler(struct mg_connection* conn, void* cbdata) {
     const int scode = rsp->status_code;
     const std::string stext = rsp->status_text ? rsp->status_text : "";
     std::string relayHeaders;
+    bool multipartStream = false;
     for (int i = 0; i < rsp->num_headers; ++i) {
         const char* hn = rsp->http_headers[i].name;
         const char* hv = rsp->http_headers[i].value;
@@ -203,6 +204,22 @@ int proxyHandler(struct mg_connection* conn, void* cbdata) {
         if (!_stricmp(hn, "Content-Type") || !_stricmp(hn, "Location") ||
             !_stricmp(hn, "WWW-Authenticate"))
             relayHeaders += std::string(hn) + ": " + hv + "\r\n";
+        if (!_stricmp(hn, "Content-Type") &&
+            !_strnicmp(hv, "multipart/x-mixed-replace", 25))
+            multipartStream = true;
+    }
+    // The MJPEG preview never ends - it must be RELAYED, not buffered. Chunks
+    // flow through as they arrive until either side closes; everything else
+    // keeps the buffered path (Content-Length known, single write).
+    if (multipartStream) {
+        mg_printf(conn, "HTTP/1.1 %d %s\r\nConnection: close\r\n%s\r\n", scode,
+                  stext.c_str(), relayHeaders.c_str());
+        char buf[16384];
+        int n;
+        while ((n = mg_read(up, buf, sizeof buf)) > 0)
+            if (mg_write(conn, buf, (size_t)n) <= 0) break;
+        mg_close_connection(up);
+        return scode;
     }
     std::string rbody;
     {

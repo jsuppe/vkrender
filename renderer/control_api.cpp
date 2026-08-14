@@ -51,6 +51,26 @@ int trampoline(mg_connection* conn, void* cbdata) {
     return static_cast<ControlApi*>(cbdata)->handleRequest(conn);
 }
 
+// BGRA -> RGB -> JPEG, on the calling (HTTP) thread - encoding must never
+// stall the render loop. Shared by the snapshot and the MJPEG stream.
+std::vector<uint8_t> encodeJpeg(const std::vector<uint8_t>& bgra, uint32_t w, uint32_t h) {
+    std::vector<uint8_t> rgb((size_t)w * h * 3);
+    for (size_t i = 0, n = (size_t)w * h; i < n; ++i) {
+        rgb[i * 3 + 0] = bgra[i * 4 + 2];
+        rgb[i * 3 + 1] = bgra[i * 4 + 1];
+        rgb[i * 3 + 2] = bgra[i * 4 + 0];
+    }
+    std::vector<uint8_t> jpg;
+    jpg.reserve(128 * 1024);
+    stbi_write_jpg_to_func(
+        [](void* ctx, void* data, int size) {
+            auto* v = static_cast<std::vector<uint8_t>*>(ctx);
+            v->insert(v->end(), (uint8_t*)data, (uint8_t*)data + size);
+        },
+        &jpg, (int)w, (int)h, 3, rgb.data(), 70);
+    return jpg;
+}
+
 } // namespace
 
 bool ControlApi::start(int port) {
@@ -59,7 +79,9 @@ bool ControlApi::start(int port) {
     // business, never this server's.
     snprintf(ports, sizeof(ports), "127.0.0.1:%d", port);
     mg_init_library(0);
-    const char* options[] = {"listening_ports", ports, "num_threads", "4", nullptr};
+    // Each MJPEG stream parks on a worker thread for its whole lifetime;
+    // kMaxPreviewStreams of them must still leave workers for commands.
+    const char* options[] = {"listening_ports", ports, "num_threads", "8", nullptr};
     ctx_ = mg_start(nullptr, nullptr, options);
     if (!ctx_) {
         VKR_ERR("control: cannot listen on %s", ports);
@@ -71,6 +93,11 @@ bool ControlApi::start(int port) {
 }
 
 void ControlApi::stop() {
+    // Wake parked stream handlers first: mg_stop waits for every request
+    // handler to return, and a stream sitting in its cv wait would hold the
+    // shutdown for a timeout cycle.
+    stopping_.store(true);
+    previewCv_.notify_all();
     if (ctx_) mg_stop(ctx_);
     ctx_ = nullptr;
 }
@@ -90,16 +117,21 @@ void ControlApi::publish(const ControlSnapshot& snap) {
 bool ControlApi::previewDue() const {
     std::lock_guard<std::mutex> hold(m_);
     const int64_t now = nowNs();
-    return now - previewRequestedNs_ < 3000000000ll &&
-           now - previewRenderedNs_ > 400000000ll;
+    // ~14 fps while someone is streaming, ~2.5 fps for snapshot polling.
+    const int64_t interval = previewStreamers_.load() > 0 ? 70000000ll : 400000000ll;
+    return now - previewRequestedNs_ < 3000000000ll && now - previewRenderedNs_ > interval;
 }
 
 void ControlApi::publishPreview(const uint8_t* bgra, uint32_t w, uint32_t h) {
-    std::lock_guard<std::mutex> hold(m_);
-    previewBgra_.assign(bgra, bgra + (size_t)w * h * 4);
-    previewW_ = w;
-    previewH_ = h;
-    previewRenderedNs_ = nowNs();
+    {
+        std::lock_guard<std::mutex> hold(m_);
+        previewBgra_.assign(bgra, bgra + (size_t)w * h * 4);
+        previewW_ = w;
+        previewH_ = h;
+        previewRenderedNs_ = nowNs();
+        ++previewSeq_;
+    }
+    previewCv_.notify_all();
 }
 
 int ControlApi::handleRequest(mg_connection* conn) {
@@ -186,27 +218,57 @@ int ControlApi::handleRequest(mg_connection* conn) {
             mg_send_http_error(conn, 503, "no preview yet - ask again shortly");
             return 503;
         }
-        // BGRA -> RGB, then JPEG on THIS thread - encoding must never stall
-        // the render loop.
-        std::vector<uint8_t> rgb((size_t)w * h * 3);
-        for (size_t i = 0, n = (size_t)w * h; i < n; ++i) {
-            rgb[i * 3 + 0] = bgra[i * 4 + 2];
-            rgb[i * 3 + 1] = bgra[i * 4 + 1];
-            rgb[i * 3 + 2] = bgra[i * 4 + 0];
-        }
-        std::vector<uint8_t> jpg;
-        jpg.reserve(128 * 1024);
-        stbi_write_jpg_to_func(
-            [](void* ctx, void* data, int size) {
-                auto* v = static_cast<std::vector<uint8_t>*>(ctx);
-                v->insert(v->end(), (uint8_t*)data, (uint8_t*)data + size);
-            },
-            &jpg, (int)w, (int)h, 3, rgb.data(), 70);
+        const std::vector<uint8_t> jpg = encodeJpeg(bgra, w, h);
         mg_printf(conn,
                   "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n"
                   "Cache-Control: no-store\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
                   (unsigned)jpg.size());
         mg_write(conn, jpg.data(), jpg.size());
+        return 200;
+    }
+
+    if (uri == "/api/preview.mjpg") {
+        // The live stream: this handler PARKS on its worker thread, encoding
+        // and writing one part per published frame until the client goes
+        // away. Each part carries Content-Length so a reader never has to
+        // scan for the boundary.
+        if (previewStreamers_.load() >= kMaxPreviewStreams) {
+            mg_send_http_error(conn, 503, "too many preview streams");
+            return 503;
+        }
+        ++previewStreamers_;
+        mg_printf(conn,
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: multipart/x-mixed-replace; boundary=vkrframe\r\n"
+                  "Cache-Control: no-store\r\nConnection: close\r\n\r\n");
+        uint64_t seen = 0;
+        bool alive = true;
+        while (alive && !stopping_.load()) {
+            std::vector<uint8_t> bgra;
+            uint32_t w = 0, h = 0;
+            {
+                std::unique_lock<std::mutex> hold(m_);
+                previewRequestedNs_ = nowNs(); // keep the readback flowing
+                previewCv_.wait_for(hold, std::chrono::milliseconds(500),
+                                    [&] { return previewSeq_ != seen || stopping_.load(); });
+                if (previewSeq_ == seen) continue; // timeout: re-arm, check stop
+                seen = previewSeq_;
+                bgra = previewBgra_;
+                w = previewW_;
+                h = previewH_;
+            }
+            if (bgra.empty()) continue;
+            const std::vector<uint8_t> jpg = encodeJpeg(bgra, w, h);
+            char part[128];
+            const int pn = snprintf(part, sizeof(part),
+                                    "--vkrframe\r\nContent-Type: image/jpeg\r\n"
+                                    "Content-Length: %u\r\n\r\n",
+                                    (unsigned)jpg.size());
+            alive = mg_write(conn, part, (size_t)pn) > 0 &&
+                    mg_write(conn, jpg.data(), jpg.size()) > 0 &&
+                    mg_write(conn, "\r\n", 2) > 0;
+        }
+        --previewStreamers_;
         return 200;
     }
 

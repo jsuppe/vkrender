@@ -254,21 +254,67 @@ function applyDispPreviews() {
   }
 }
 
-function tickPreview() {
+// The live preview is an MJPEG stream read through fetch (an <img src> can't
+// carry the Bearer token). Parts arrive with Content-Length, so parsing is:
+// find the blank line, read the length, slice the JPEG. Falls back to
+// single-shot /api/preview.jpg polling if the stream won't open (older
+// renderer, or the stream cap reached).
+let previewRunning = false;
+function showFrame(bytes) {
   const img = document.getElementById('preview');
-  const load = async () => {
+  const old = img.dataset.url;
+  img.src = img.dataset.url = previewUrl =
+    URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+  applyDispPreviews();
+  if (old) URL.revokeObjectURL(old);
+}
+function findHeaderEnd(buf) { // "\r\n\r\n"
+  for (let i = 0; i + 3 < buf.length && i < 4096; ++i)
+    if (buf[i] === 13 && buf[i+1] === 10 && buf[i+2] === 13 && buf[i+3] === 10)
+      return i;
+  return -1;
+}
+async function tickPreview() {
+  if (previewRunning) return;
+  previewRunning = true;
+  const dec = new TextDecoder();
+  while (TOKEN) {
+    let gotFrames = false;
     try {
-      const r = await fetch('/api/preview.jpg?t=' + Date.now(), { headers:H() });
-      if (r.ok) {
-        const b = await r.blob();
-        const old = img.dataset.url;
-        img.src = img.dataset.url = previewUrl = URL.createObjectURL(b);
-        applyDispPreviews();
-        if (old) URL.revokeObjectURL(old);
+      const r = await fetch('/api/preview.mjpg', { headers: H() });
+      if (r.status === 401) { logout(); break; }
+      if (!r.ok || !r.body) throw 0;
+      const reader = r.body.getReader();
+      let buf = new Uint8Array(0);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const nb = new Uint8Array(buf.length + value.length);
+        nb.set(buf); nb.set(value, buf.length); buf = nb;
+        for (;;) {
+          const he = findHeaderEnd(buf);
+          if (he < 0) break;
+          const m = dec.decode(buf.subarray(0, he)).match(/Content-Length:\s*(\d+)/i);
+          if (!m) { buf = buf.subarray(he + 4); continue; }
+          const len = +m[1];
+          if (buf.length < he + 4 + len) break; // part not complete yet
+          showFrame(buf.slice(he + 4, he + 4 + len));
+          gotFrames = true;
+          buf = buf.subarray(he + 4 + len);
+        }
       }
     } catch (e) {}
-  };
-  load(); setInterval(load, 1500);
+    // Stream unavailable or dropped: show a snapshot so the page is never
+    // blank, wait, then try the stream again.
+    if (!gotFrames) {
+      try {
+        const r = await fetch('/api/preview.jpg?t=' + Date.now(), { headers: H() });
+        if (r.ok) showFrame(new Uint8Array(await (await r.blob()).arrayBuffer()));
+      } catch (e) {}
+    }
+    await new Promise(res => setTimeout(res, 1500));
+  }
+  previewRunning = false;
 }
 
 if (TOKEN) { doLogin_fromStored(); } else { document.getElementById('login').hidden = false; }

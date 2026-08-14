@@ -17,7 +17,9 @@
 //
 //   GET  /api/status                          appliance + moderation state
 //   GET  /api/streams                         the roster
-//   GET  /api/preview.jpg                     live composite (~2 fps refresh)
+//   GET  /api/preview.jpg                     live composite snapshot
+//   GET  /api/preview.mjpg                    live composite STREAM (~14 fps,
+//                                             multipart/x-mixed-replace)
 //   GET  /api/displays                        monitors + active state + canvas rects (M43)
 //   POST /api/layout?name=<layout>            presentation|two-cubes|single-cube|wall
 //   POST /api/pause?on=0|1
@@ -30,6 +32,8 @@
 
 #ifdef _WIN32
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -109,7 +113,9 @@ class ControlApi {
     std::vector<ControlCommand> drainCommands();
     void publish(const ControlSnapshot& snap);
     // True when a preview was requested within the last 3 s AND the last
-    // readback is older than ~400 ms - the render loop's cue to refresh.
+    // readback is older than the refresh interval - the render loop's cue to
+    // refresh. Interval: ~400 ms for snapshot polling; ~70 ms (≈14 fps) while
+    // at least one MJPEG stream is attached.
     bool previewDue() const;
     void publishPreview(const uint8_t* bgra, uint32_t w, uint32_t h);
 
@@ -126,6 +132,15 @@ class ControlApi {
     uint32_t previewW_ = 0, previewH_ = 0;
     mutable int64_t previewRequestedNs_ = 0;
     int64_t previewRenderedNs_ = 0;
+    // MJPEG streaming: publishPreview bumps the sequence and wakes every
+    // stream handler; each handler encodes + writes one part per frame. Each
+    // stream occupies a civetweb worker thread for its lifetime, hence the
+    // hard cap (and num_threads sized to leave workers free for commands).
+    uint64_t previewSeq_ = 0;
+    std::condition_variable previewCv_;
+    std::atomic<int> previewStreamers_{0};
+    std::atomic<bool> stopping_{false}; // unparks stream handlers before mg_stop
+    static constexpr int kMaxPreviewStreams = 3;
 };
 
 } // namespace vkr

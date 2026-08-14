@@ -16,6 +16,15 @@ browser ── https ──► vkr_web ── Bearer check ── http ──►
 
 - The renderer's control API (`renderer/control_api.cpp`, civetweb NO_SSL)
   binds **127.0.0.1 only**. Localhost is its entire security model.
+- The live preview is `/api/preview.mjpg` - one long-lived
+  `multipart/x-mixed-replace` response per watching moderator (capped at 3;
+  each parks on a civetweb worker). While a stream is attached the render
+  loop refreshes the readback every ~70 ms instead of ~400 ms; vkr_web
+  relays multipart responses chunk-by-chunk instead of buffering them (a
+  stream never ends, so the buffered path would hang forever). The console
+  reads it with `fetch` because an `<img src>` cannot carry the Bearer
+  token; each part has a Content-Length so the reader never scans for
+  boundaries.
 - `vkr_web` reverse-proxies `/api/*` behind `Authorization: Bearer <admin_pin>`
   - the same same-origin pattern that carries WHIP through https.
 - HTTP threads never touch Vulkan or the scene: they queue commands and read
@@ -36,7 +45,7 @@ control_port=8875
 
 | feature | notes |
 |---|---|
-| Live composite preview | ~1.5 s refresh; readback only while a moderator is watching |
+| Live composite preview | MJPEG stream, ~10 fps measured; readback only while a moderator is watching (single-shot /api/preview.jpg remains as the fallback) |
 | Presenter roster | per slot: resolution, fps, live/stale age, badges |
 | Hide / Show | stays connected, removed from the layout; producer keeps flowing |
 | Kick | transport-level (close + recreate the slot channel) - works identically for WHIP, AirPlay, Miracast, RTSP, anything |
