@@ -37,6 +37,7 @@ add_library(vkrender_renderer SHARED
     ${REPO}/renderer/background_pass.cpp
     ${REPO}/renderer/portable_output.cpp
     ${REPO}/renderer/gpu_output.cpp
+    ${REPO}/renderer/android_displays.cpp
     ${REPO}/renderer/android_main.cpp
     renderer_jni.cpp
     fltest_producer.cpp

@@ -2,6 +2,7 @@
 #include "moderation.h"
 #include "gpu_trace.h"
 #include "portable_output.h"
+#include "android_displays.h"
 #include "portable_input.h"
 #include <sstream>
 // NativeActivity entry for the vkrender renderer on Android - M8 architecture.
@@ -331,6 +332,7 @@ void android_main(android_app* app) {
     std::vector<std::unique_ptr<InputStream>> departingStreams;
     std::vector<AImage*> newlyRetiring;
     std::vector<std::unique_ptr<InputStream>> newlyRetiringStreams;
+    vkr::AndroidDisplays displayOutputs;
     ANativeWindow* vkWindow = app->window;
     uint64_t adoptions = 0, renders = 0;
     int64_t rateWindowStart = nowNs();
@@ -501,6 +503,7 @@ void android_main(android_app* app) {
             if (!vk.recreateSurface(app->window)) break;
             vkWindow = app->window;
         }
+        displayOutputs.update(vk);
         if (!state.windowReady) continue;
 
         int64_t faceSlots[12];
@@ -691,6 +694,8 @@ void android_main(android_app* app) {
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) continue;
         vkResetFences(vk.device, 1, &f.inFlight);
 
+        std::vector<VkSemaphore> submitWaits{f.acquireSem},submitSignals{f.renderDoneSem};
+        std::vector<VkPipelineStageFlags> submitStages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         {
@@ -746,6 +751,8 @@ void android_main(android_app* app) {
 
         portableOutput.record(vk,(frameIndex-1)%2,f.cmd,vk.swapImages[imageIndex],vk.swapExtent,
             vk.swapFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,nowNs());
+        displayOutputs.record(vk,f.cmd,(frameIndex-1)%2,vk.swapImages[imageIndex],vk.swapExtent,
+                              submitWaits,submitStages,submitSignals);
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         toPresent.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -761,15 +768,14 @@ void android_main(android_app* app) {
         vkEndCommandBuffer(f.cmd);
         }
 
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        si.waitSemaphoreCount = 1;
-        si.pWaitSemaphores = &f.acquireSem;
-        si.pWaitDstStageMask = &waitStage;
+        si.waitSemaphoreCount = (uint32_t)submitWaits.size();
+        si.pWaitSemaphores = submitWaits.data();
+        si.pWaitDstStageMask = submitStages.data();
         si.commandBufferCount = 1;
         si.pCommandBuffers = &f.cmd;
-        si.signalSemaphoreCount = 1;
-        si.pSignalSemaphores = &f.renderDoneSem;
+        si.signalSemaphoreCount = (uint32_t)submitSignals.size();
+        si.pSignalSemaphores = submitSignals.data();
         if (vkrtrace::call("scene.queue_submit_cpu",[&]{return vkQueueSubmit(vk.queue,1,&si,f.inFlight);}) != VK_SUCCESS) break;
         // Old images may still be read by the previous submission. Only arm
         // retirement after a successful submit, never behind an older fence.
@@ -785,6 +791,7 @@ void android_main(android_app* app) {
         pi.pSwapchains = &vk.swapchain;
         pi.pImageIndices = &imageIndex;
         VkResult pr = vkrtrace::call("scene.present_call_cpu",[&]{return vkQueuePresentKHR(vk.queue,&pi);});
+        displayOutputs.present(vk);
         if(traceLimit && frameIndex>=traceLimit)state.destroyed=true;
         if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk.recreateSwapchain();
 
@@ -815,6 +822,7 @@ void android_main(android_app* app) {
         g_control.setReady(false);
     }
     vkDeviceWaitIdle(vk.device);
+    displayOutputs.destroy(vk);
     portableOutput.destroy(vk);
     for (auto& f : frames) {
         f.gpuTrace.destroy(vk);

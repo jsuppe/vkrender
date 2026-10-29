@@ -48,3 +48,17 @@ Java_dev_vkrender_renderer_RendererService_nativeControl(JNIEnv* env,jclass,jstr
     int result=vkrControl(a,slot,v);
     env->ReleaseStringUTFChars(value,v);env->ReleaseStringUTFChars(action,a);return result;
 }
+
+// The window reference acquired here is released by the render-thread output registry.
+#include "android_displays.h"
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vkrender_renderer_DisplayOutputs_nativeSetDisplaySurface(JNIEnv* env,jclass,jint id,
+        jobject surface,jfloat x,jfloat y,jfloat width,jfloat height,jboolean recreate) {
+    ANativeWindow* window=surface?ANativeWindow_fromSurface(env,surface):nullptr;
+    vkrSetDisplayWindow(id,window,x,y,width,height,recreate);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_vkrender_renderer_DisplayOutputs_nativeDisplayStatus(JNIEnv* env,jclass) {
+    return env->NewStringUTF(vkrDisplayStatus().c_str());
+}

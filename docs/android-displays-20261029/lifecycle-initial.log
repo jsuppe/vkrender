@@ -1,0 +1,59 @@
+--------- beginning of main
+10-29 20:54:49.405 24537 24562 I vkrender: renderer: device: V3D 7.1.7.0
+10-29 20:54:49.406 24537 24562 I vkrender: renderer: VK_GOOGLE_display_timing available
+10-29 20:54:49.437 24537 24562 I vkrender: renderer: stream service ready (up to 12 producers)
+10-29 20:54:49.495 24537 24562 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+10-29 20:54:49.516 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:54:49.525 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:54:49.585 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:54:51.669 24537 24562 I vkrender: display: crop updated id=4 0.250,0.250,0.500,0.500
+10-29 20:54:53.185 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:54:54.453 24537 24562 I vkrender: renderer: 0 adoptions / 295 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:54:59.453 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:04.469 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:09.470 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:14.470 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:19.486 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:24.486 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:29.487 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:34.487 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:34.523 24537 24562 I vkrender: display: detached id=4 presented=2698 unavailable=0
+10-29 20:55:34.884 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:55:34.885 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:55:35.207 24537 24562 I vkrender: display: detached id=4 presented=19 unavailable=0
+10-29 20:55:35.565 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:55:35.565 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:55:35.889 24537 24562 I vkrender: display: detached id=4 presented=20 unavailable=0
+10-29 20:55:36.249 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:55:36.249 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:55:37.066 24537 24562 I vkrender: display: detached id=4 presented=49 unavailable=0
+10-29 20:55:37.282 24537 24562 I vkrender: renderer: window replaced, recreating surface
+10-29 20:55:37.310 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:55:37.310 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:55:37.869 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:55:37.902 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:55:37.920 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:55:39.502 24537 24562 I vkrender: renderer: 0 adoptions / 285 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:44.503 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:49.503 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:54.520 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:55:59.536 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:04.552 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:06.804 24537 24562 I vkrender: display: detached id=4 presented=1770 unavailable=0
+10-29 20:56:06.814 24537 24562 I vkrender: display: attached id=4 1280x720 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:56:06.814 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1280x720
+10-29 20:56:06.818 24537 24562 I vkrender: display: crop updated id=4 0.000,0.000,1.000,1.000
+10-29 20:56:06.860 24537 24562 I vkrender: display: detached id=4 presented=3 unavailable=0
+10-29 20:56:06.873 24537 24562 I vkrender: display: attached id=4 1920x1080 images=5 crop=0.000,0.000,1.000,1.000
+10-29 20:56:06.873 24537 24562 I vkrender: display: first copy id=4 source=1920x1080 destination=1920x1080
+10-29 20:56:09.553 24537 24562 I vkrender: renderer: 0 adoptions / 299 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:14.569 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:19.570 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:24.586 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:29.586 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:34.602 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:39.603 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:44.619 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:49.619 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:54.620 24537 24562 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:56:59.636 24537 24562 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
