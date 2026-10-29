@@ -1,3 +1,4 @@
+#include "perf_trace.h"
 #include "nv12_output.h"
 #ifdef _WIN32
 #include "external_video_image.h"
@@ -105,19 +106,26 @@ bool Nv12Output::init(VkContext &vk, ID3D11Device *device,
   return true;
 }
 bool Nv12Output::finish(uint64_t value) {
+  vkrtrace::Scope trace("nv12.queue_conversion_cpu",(uint64_t)(uintptr_t)this);
+  if(trace.active) trace.event.fence=value;
+  if(trace.active && lastDone_) {
+    const uint64_t completed=done_->GetCompletedValue();
+    // This is a readiness observation, NOT video-engine execution duration.
+    vkrtrace::record({"nv12.fence_observation",vkrtrace::clockNs(),0,(uint64_t)(uintptr_t)this,completed,lastDone_,0,(int64_t)traceSubmitNs_,completed==UINT64_MAX?-1:(completed>=lastDone_?0:1)});
+  }
   if (FAILED(context_->Wait(fence_.Get(), value)))
-    return false;
+    return trace.result(false);
   D3D11_VIDEO_PROCESSOR_STREAM stream{};
   stream.Enable = TRUE;
   stream.pInputSurface = input_.Get();
-  if (FAILED(videoContext_->VideoProcessorBlt(processor_.Get(), output_.Get(),
-                                              0, 1, &stream)))
-    return false;
+  const HRESULT conversion=videoContext_->VideoProcessorBlt(processor_.Get(), output_.Get(),0,1,&stream);
+  if(FAILED(conversion))return trace.result(false);
   if (FAILED(context_->Signal(done_.Get(), value)))
-    return false;
+    return trace.result(false);
   lastDone_ = value;
+  if(trace.active)traceSubmitNs_=vkrtrace::clockNs();
   context_->Flush();
-  return true;
+  return trace.result(true);
 }
 void Nv12Output::destroy(VkContext &vk) {
   if (done_ && lastDone_ && done_->GetCompletedValue() < lastDone_) {

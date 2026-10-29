@@ -51,6 +51,10 @@ bool VideoPass::init(VkContext& vk, const std::string& shaderDir, Geometry geome
 
 bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     unbindPool(vk);
+    if(!leaf_) {
+        for(const auto& entry:pool.slots)if(!addSlot(vk,pool,entry.first))return false;
+        return true;
+    }
     planar_ = pool.planar;
     pcMatrix_ = pool.matrix == proto::Matrix::BT709 ? 1 : 0;
     pcFullRange_ = pool.range == proto::Range::Full ? 1 : 0;
@@ -84,23 +88,12 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
     if (vkCreateDescriptorSetLayout(vk.device, &dslci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    if (geometry_ == Geometry::Cube && planar_) {
-        // cube.vert claims push-constant offset 0 for the MVP; the planar
-        // fragment shader's constants would collide. The cube path is Android,
-        // where AHB import always yields combined mode, so this cannot happen.
-        VKR_ERR("cube geometry requires combined-sampler mode");
-        return false;
-    }
-    VkPushConstantRange pcRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 2 * sizeof(int32_t)};
-    if (geometry_ == Geometry::Cube)
-        pcRange = {VK_SHADER_STAGE_VERTEX_BIT, 0, 16 * sizeof(float)};
+    VkPushConstantRange pcRanges[2]{};uint32_t pcCount=0;
+    if(geometry_==Geometry::Cube)pcRanges[pcCount++]={VK_SHADER_STAGE_VERTEX_BIT,0,64};
+    if(planar_)pcRanges[pcCount++]={VK_SHADER_STAGE_FRAGMENT_BIT,geometry_==Geometry::Cube?64u:0u,8};
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    plci.setLayoutCount = 1;
-    plci.pSetLayouts = &setLayout_;
-    if (planar_ || geometry_ == Geometry::Cube) {
-        plci.pushConstantRangeCount = 1;
-        plci.pPushConstantRanges = &pcRange;
-    }
+    plci.setLayoutCount=1;plci.pSetLayouts=&setLayout_;
+    plci.pushConstantRangeCount=pcCount;plci.pPushConstantRanges=pcRanges;
     if (vkCreatePipelineLayout(vk.device, &plci, nullptr, &pipelineLayout_) != VK_SUCCESS)
         return false;
 
@@ -108,7 +101,7 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
         vk.device,
         shaderDir_ + (geometry_ == Geometry::Cube ? "/cube.vert.spv" : "/fullscreen.vert.spv"));
     VkShaderModule frag = loadShader(
-        vk.device, shaderDir_ + (planar_ ? "/nv12_planar.frag.spv" : "/video_ycbcr.frag.spv"));
+        vk.device, shaderDir_ + (planar_ ? (geometry_==Geometry::Cube ? "/nv12_cube.frag.spv" : "/nv12_planar.frag.spv") : "/video_ycbcr.frag.spv"));
     if (!vert || !frag) return false;
 
     VkPipelineShaderStageCreateInfo stages[2]{};
@@ -194,6 +187,21 @@ bool VideoPass::bindPool(VkContext& vk, const ExternalVideoPool& pool) {
 bool VideoPass::addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t key) {
     if (sets_.count(key)) return true;
     const auto* slot = pool.find(key);
+    if(!leaf_) {
+        if(!slot)return false;
+        auto identity=std::make_tuple((uint64_t)(uintptr_t)slot->conversion,slot->planar,(int)slot->matrix,(int)slot->range);
+        auto& variant=variants_[identity];
+        if(!variant) {
+            variant=std::make_unique<VideoPass>();variant->leaf_=true;
+            if(!variant->init(vk,shaderDir_,geometry_)){variant.reset();return false;}
+            ExternalVideoPool description;
+            description.planar=slot->planar;description.conversion=slot->conversion;
+            description.matrix=slot->matrix;description.range=slot->range;
+            if(!variant->bindPool(vk,description)){variant->destroy(vk);variant.reset();return false;}
+        }
+        if(!variant->addSlot(vk,pool,key))return false;
+        owners_[key]=variant.get();sets_[key]=variant->sets_.at(key);return true;
+    }
     if (!slot || !descriptorPool_) return false;
 
     VkDescriptorSetAllocateInfo dsai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -223,6 +231,7 @@ bool VideoPass::addSlot(VkContext& vk, const ExternalVideoPool& pool, uint32_t k
 }
 
 void VideoPass::removeSlot(VkContext& vk, uint32_t key) {
+    if(!leaf_) {auto it=owners_.find(key);if(it!=owners_.end()){it->second->removeSlot(vk,key);owners_.erase(it);}sets_.erase(key);return;}
     auto it = sets_.find(key);
     if (it == sets_.end()) return;
     vkFreeDescriptorSets(vk.device, descriptorPool_, 1, &it->second);
@@ -230,6 +239,8 @@ void VideoPass::removeSlot(VkContext& vk, uint32_t key) {
 }
 
 void VideoPass::unbindPool(VkContext& vk) {
+    for(auto& item:variants_)if(item.second)item.second->destroy(vk);
+    variants_.clear();owners_.clear();
     if (descriptorPool_) vkDestroyDescriptorPool(vk.device, descriptorPool_, nullptr);
     if (pipeline_) vkDestroyPipeline(vk.device, pipeline_, nullptr);
     if (pipelineLayout_) vkDestroyPipelineLayout(vk.device, pipelineLayout_, nullptr);
@@ -306,6 +317,10 @@ void beginClearedRendering(VkCommandBuffer cmd, VkImageView target, VkExtent2D e
 void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64_t slotKey,
                        VkImageView target, VkExtent2D extent, uint32_t queueFamily,
                        const float* mvp16) {
+    if(!leaf_ && slotKey>=0) {
+        auto it=owners_.find((uint32_t)slotKey);
+        if(it!=owners_.end()){it->second->record(cmd,pool,slotKey,target,extent,queueFamily,mvp16);return;}
+    }
     if (geometry_ == Geometry::Cube) {
         // Single cube, single stream on all six faces.
         int64_t faceSlots[6] = {slotKey, slotKey, slotKey, slotKey, slotKey, slotKey};
@@ -327,9 +342,9 @@ void VideoPass::record(VkCommandBuffer cmd, const ExternalVideoPool& pool, int64
 
     if (haveVideo) {
         // Letterbox: fit the video into the target preserving aspect ratio.
-        float scale = std::min((float)extent.width / (float)pool.width,
-                               (float)extent.height / (float)pool.height);
-        float vw = pool.width * scale, vh = pool.height * scale;
+        float scale = std::min((float)extent.width / (float)slot->width,
+                               (float)extent.height / (float)slot->height);
+        float vw = slot->width * scale, vh = slot->height * scale;
         VkViewport viewport{(extent.width - vw) * 0.5f, (extent.height - vh) * 0.5f,
                             vw, vh, 0.0f, 1.0f};
         VkRect2D scissor{{0, 0}, extent};
@@ -372,7 +387,7 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
     std::vector<const ExternalVideoPool::Slot*> barrierSlots;
     bool anyVideo = false;
     for (uint32_t f = 0; f < faceCount; ++f) {
-        if (faceSlots[f] < 0 || pipeline_ == VK_NULL_HANDLE) continue;
+        if (faceSlots[f] < 0 || (leaf_ && pipeline_ == VK_NULL_HANDLE)) continue;
         const auto* slot = pool.find((uint32_t)faceSlots[f]);
         auto setIt = sets_.find((uint32_t)faceSlots[f]);
         if (!slot || setIt == sets_.end()) continue;
@@ -402,21 +417,25 @@ void VideoPass::recordScene(VkCommandBuffer cmd, const ExternalVideoPool& pool,
         VkRect2D scissor{{(int32_t)bez, (int32_t)bez}, inner};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         // One draw per face (6 vertices each) with its cube's MVP; faces
         // without a stream are simply not drawn - back-face culling makes
         // that safe, and the cubes never overlap on screen.
         for (uint32_t c = 0; c < cubeCount; ++c) {
-            bool pushed = false;
             for (uint32_t f = 0; f < 6; ++f) {
                 VkDescriptorSet set = faceSet[c * 6 + f];
                 if (!set) continue;
-                if (!pushed && mvps) {
-                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                VideoPass* variant=this;
+                if(!leaf_)variant=owners_.at((uint32_t)faceSlots[c*6+f]);
+                vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,variant->pipeline_);
+                if (mvps) {
+                    vkCmdPushConstants(cmd, variant->pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                                        16 * sizeof(float), mvps + c * 16);
-                    pushed = true;
                 }
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                if(variant->planar_) {
+                    int32_t pc[2]={variant->pcMatrix_,variant->pcFullRange_};
+                    vkCmdPushConstants(cmd,variant->pipelineLayout_,VK_SHADER_STAGE_FRAGMENT_BIT,64,sizeof(pc),pc);
+                }
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, variant->pipelineLayout_,
                                         0, 1, &set, 0, nullptr);
                 vkCmdDraw(cmd, 6, 1, f * 6, 0);
             }

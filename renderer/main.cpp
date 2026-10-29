@@ -176,6 +176,7 @@ int main(int argc, char** argv) {
     if (waylandMode) {
         vkr::WaylandOptions wopts;
         wopts.socketName = waylandSocket;
+        wopts.sceneOutputs = sceneOutputs;
         wopts.headlessFrames = headlessFrames;
         wopts.dumpPath = dumpPath;
         wopts.shaderDir = exeDir() + "/shaders";

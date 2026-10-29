@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
+#include <map>
+#include <tuple>
 
 #include <volk.h>
 
@@ -40,6 +43,10 @@ public:
         // false for renderer-owned slots (M13 wl_shm upload path): no external
         // queue-family ownership transfer applies to those.
         bool external = true;
+        bool planar = false;
+        VkSamplerYcbcrConversion conversion = VK_NULL_HANDLE;
+        proto::Matrix matrix = proto::Matrix::BT709;
+        proto::Range range = proto::Range::Limited;
         // Owned slots only: persistently mapped host-visible memory + layout.
         void* mapped = nullptr;
         uint64_t rowPitch = 0;
@@ -98,6 +105,10 @@ public:
     }
 
     std::unordered_map<uint32_t, Slot> slots;
+    std::vector<VkSamplerYcbcrConversion> conversions;
+    std::map<std::tuple<int,int,int>,VkSamplerYcbcrConversion> formatConversions;
+    std::map<std::tuple<uint64_t,int,int,int>,VkSamplerYcbcrConversion> ahbConversions;
+    void tag(Slot& slot) const {slot.planar=planar;slot.conversion=conversion;slot.matrix=matrix;slot.range=range;}
     bool headerValid = false;
     // Decided on the first imported surface (needs the actual modifier):
     // false = combined NV12/RGB image with YCbCr conversion sampling,
@@ -121,7 +132,8 @@ bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemapho
 // consumer-ring direction: the renderer WRITES these; a consumer process
 // reads them). No view/sampler - blit-only.
 bool importWin32BlitTarget(VkContext& vk, uint64_t handleValue, uint32_t width,
-                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory);
+                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory,
+                           VkFormat format=VK_FORMAT_B8G8R8A8_UNORM);
 #endif
 
 } // namespace vkr

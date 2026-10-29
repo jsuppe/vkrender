@@ -1,4 +1,6 @@
-﻿// M13: minimal Wayland compositor front door for the Linux renderer.
+#include "perf_trace.h"
+#include "portable_input.h"
+// M13: minimal Wayland compositor front door for the Linux renderer.
 // See wayland_compositor.h for the architecture story.
 //
 // Implemented protocol surface (the subset gstreamer's waylandsink needs):
@@ -37,6 +39,7 @@
 #include "xdg-shell-server-protocol.h"
 
 #include "framelink.h"
+#include "framelink_sync_fd.h"
 #include "framelink_dmabuf.h"
 
 #include "background_pass.h"
@@ -600,11 +603,8 @@ void wmBaseBind(wl_client* client, void* data, uint32_t version, uint32_t id) {
 // ---- commit paths -----------------------------------------------------------
 
 bool ensurePool(Ctx& ctx, uint32_t width, uint32_t height, bool nv12) {
-    if (ctx.poolCreated) {
-        if (nv12 != ctx.poolIsNv12)
-            VKR_WARN("compositor: mixed NV12/RGB sessions unsupported; ignoring stream");
-        return nv12 == ctx.poolIsNv12;
-    }
+    if(ctx.poolCreated && nv12==ctx.poolIsNv12 && ctx.pool->width==(width&~1u) && ctx.pool->height==(height&~1u))return true;
+    bool first=!ctx.poolCreated;
     proto::PoolDescMsg header{};
     header.width = width & ~1u;
     header.height = height & ~1u;
@@ -615,7 +615,7 @@ bool ensurePool(Ctx& ctx, uint32_t width, uint32_t height, bool nv12) {
     if (!ctx.pool->create(*ctx.vk, header)) return false;
     ctx.poolCreated = true;
     ctx.poolIsNv12 = nv12;
-    ctx.passNeedsBind = true;
+    ctx.passNeedsBind = first;
     return true;
 }
 
@@ -784,6 +784,8 @@ struct FlSlotIn {
     uint64_t uid = 0;        // scene stream id
     uint64_t generation = 0; // which ring we imported - see flChannelInfo
     uint32_t width = 0, height = 0;
+    uint64_t lastReady=0;
+    std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
     int64_t currentSlot = -1;
@@ -816,6 +818,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
             // teardown drops them.
             flDropRing(ctx, s);
             s.generation = info.generation;
+            s.retire.clear();s.lastReady=0;
             s.width = info.width;
             s.height = info.height;
         }
@@ -844,6 +847,13 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
             flRelease(s.channel, &f);
             continue;
+        }
+        if(now.format!=FL_FORMAT_BGRA8) {
+            if(!s.imported[f.slot])s.keys[f.slot]=ctx.nextSlotKey++;
+            if(!uploadFrame(*ctx.vk,*ctx.pool,*ctx.pass,ctx.passBound,f.image,s.keys[f.slot],now)) {
+                flRelease(s.channel,&f);continue;
+            }
+            ctx.passNeedsBind=false;s.imported[f.slot]=true;
         }
         if (!s.imported[f.slot]) {
             flDmabuf db{};
@@ -887,11 +897,9 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         // fills the ring before the second adoption: the consumer holds one
         // frame, has released nothing, and the producer has no free slot to
         // ever announce a newer one.
-        if (f._readyValue > 1) {
-            flFrame prev = f;
-            prev._readyValue = f._readyValue - 1;
-            flRelease(s.channel, &prev);
-        }
+        s.lastReady=f._readyValue;
+        if(f._readyValue>1)s.retire.push_back({ctx.frameCounter+2,f._readyValue-1});
+        flRelease(s.channel,&f); // bookkeeping only; storage stays pinned
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
         ++ctx.adoptions;
@@ -932,6 +940,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     ExternalVideoPool pool;
 
     SceneHost host;
+    host.setOutputs(options.sceneOutputs);
     if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
     Ctx ctx;
@@ -963,7 +972,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
         FlSlotIn& s = flSlots[i];
         s.name = options.socketName + ".in." + std::to_string(i);
         s.uid = 0x46500000ull + i; // distinct from Stream* ids ('FL' + index)
-        if (flCreateChannelEx(s.name.c_str(), 640, 360, FL_FORMAT_BGRA8, 4, FL_MAP_CPU,
+        if (flCreateChannelEx(s.name.c_str(), 640, 360, inputFormat(i,FL_FORMAT_BGRA8), 4, FL_MAP_CPU|FL_DEFER_RELEASE,
                               &s.channel) != FL_OK) {
             VKR_ERR("compositor: input channel '%s' creation failed", s.name.c_str());
             s.channel = nullptr;
@@ -994,6 +1003,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     bool quit = false;
 
     while (!quit) {
+        vkrtrace::Scope loopTrace("service.iteration");
         if (headless) {
             if (finite && ctx.videoFramesSeen >= options.headlessFrames) break;
             if (finite && nowNs() > headlessDeadline) {
@@ -1044,6 +1054,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
             const bool expired =
                 s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
             if (s.departing && (expired || !host.retainsStream(s.uid))) {
+                if(s.lastReady)s.retire.push_back({ctx.frameCounter+2,s.lastReady});
                 s.currentSlot = -1;
                 s.departing = false;
                 continue;
@@ -1058,6 +1069,13 @@ int runWaylandCompositor(const WaylandOptions& options) {
             break;
         }
         ++ctx.frameCounter;
+        for(auto& slot:flSlots)while(!slot.retire.empty() && slot.retire.front().first<=ctx.frameCounter) {
+            flSignalConsumedSyncFd(slot.channel,slot.retire.front().second,-1);
+            slot.retire.erase(slot.retire.begin());
+        }
+        if(const char* limit=getenv("VKR_TRACE_FRAMES"))
+            if(vkrtrace::enabled() && std::strtoull(limit,nullptr,10)>0 &&
+               ctx.frameCounter>=std::strtoull(limit,nullptr,10))quit=true;
 
         // Buffers retired >= 2 frames ago: the host has waited that frame
         // fence before recording this one, so their GPU reads are done.

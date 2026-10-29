@@ -19,6 +19,8 @@
 
 #ifndef __ANDROID__
 
+#include "gpu_trace.h"
+#include "portable_output.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -27,7 +29,7 @@
 
 #include "background_pass.h"
 #include "external_video_image.h"
-#include "scene_motion.h"
+#include "scene_layout.h"
 #include "video_pass.h"
 #include "vk_context.h"
 
@@ -54,13 +56,14 @@ struct WindowSpec {
 
 // M25: Presentation = flat tiles in fixed regions, count-adaptive (1 full
 // screen, 2 top/bottom, 3 triangle, 4 quad), 16:9 aspect-fit per region.
-enum class SceneLayout { TwoCubes = 0, SingleCube, Wall, Presentation, Count };
+
 
 class SceneHost {
 public:
     // vk must already be initialized: window mode with the FIRST spec's size
     // (the host repositions it), or headless (then specs beyond the first are
     // ignored and the offscreen target is the whole canvas).
+    void setOutputs(const std::vector<std::string>& names) { portableOutput_.configure(names); }
     bool init(VkContext& vk, const std::string& shaderDir, std::vector<WindowSpec> specs);
     void destroy(VkContext& vk);
 
@@ -183,11 +186,13 @@ private:
     static constexpr uint32_t kFramesInFlight = 2;
     struct FrameSync {
         VkFence inFlight = VK_NULL_HANDLE;
+        FrameGpuTrace gpuTrace;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window
         std::vector<VkSemaphore> renderDoneSems; // per window
     };
     FrameSync frames_[kFramesInFlight];
+    PortableOutput portableOutput_;
     uint64_t frameIndex_ = 0;
     // M31: entry/reflow/exit animation for presentation tiles. Shared with the
     // Android wall demo (scene_motion.h) so the motion is written once.

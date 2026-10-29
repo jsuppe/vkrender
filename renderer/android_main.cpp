@@ -1,3 +1,7 @@
+#include "gpu_trace.h"
+#include "portable_output.h"
+#include "portable_input.h"
+#include <sstream>
 // NativeActivity entry for the vkrender renderer on Android - M8 architecture.
 //
 // The renderer OWNS an AImageReader; its Surface is handed to producers (the
@@ -33,12 +37,13 @@
 #include <volk.h>
 
 #include "framelink.h"
+#include "framelink_sync_fd.h"
 #include "framelink_ahb.h"
 
 #include "background_pass.h"
 #include "external_video_image.h"
 #include "log.h"
-#include "scene_math.h"
+#include "scene_layout.h"
 #include "video_pass.h"
 #include "vk_context.h"
 
@@ -85,7 +90,7 @@ std::vector<int64_t> g_pendingRelease; // stream keys to tear down on the render
 
 bool extractShaders(android_app* app, const std::string& outDir) {
     const char* names[] = {"fullscreen.vert.spv", "cube.vert.spv", "vaporwave.frag.spv",
-                           "video_ycbcr.frag.spv", "nv12_planar.frag.spv"};
+                           "video_ycbcr.frag.spv", "nv12_planar.frag.spv", "nv12_cube.frag.spv"};
     for (const char* name : names) {
         std::string assetPath = std::string("shaders/") + name;
         AAsset* asset =
@@ -108,6 +113,7 @@ bool extractShaders(android_app* app, const std::string& outDir) {
 }
 
 struct FrameSync {
+    FrameGpuTrace gpuTrace;
     VkSemaphore acquireSem = VK_NULL_HANDLE;
     VkSemaphore renderDoneSem = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
@@ -120,6 +126,10 @@ struct FrameSync {
 struct RendererState {
     bool windowReady = false;
     bool destroyed = false;
+    vkr::SceneLayout layout=vkr::SceneLayout::TwoCubes;
+    bool paused=false, backdrop=true;
+    float speed=1.0f;
+    uint32_t disabled=0;
 };
 
 // ---- M40: framelink input slots ---------------------------------------------
@@ -133,21 +143,36 @@ struct RendererState {
 // RGBA8 because AHardwareBuffer has no BGRA format; FL_MAP_CPU because a
 // native CPU producer is the first integrator this serves.
 //
-// LIMITATION, stated: the pool's sampler conversion is created from the FIRST
-// imported buffer. A session mixing MediaCodec NV12 streams (AIDL) with RGBA
-// framelink streams gets whichever came first right and the other wrong -
-// same single-format-per-session rule as the desktop compositor.
+// Per-buffer sampler variants allow RGB and YUV streams in the same scene.
 struct FlSlotIn {
     flChannel* channel = nullptr;
     std::string name;
     uint64_t generation = 0;
     uint32_t width = 0, height = 0;
+    uint64_t lastReady=0;
+    bool departing=false;
+    std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
     int64_t currentSlot = -1;
 };
 
 constexpr uint32_t kFlSlots = 12;
+
+int32_t onInput(android_app* app,AInputEvent* event) {
+    if(AInputEvent_getType(event)!=AINPUT_EVENT_TYPE_KEY || AKeyEvent_getAction(event)!=AKEY_EVENT_ACTION_DOWN)return 0;
+    auto& s=*(RendererState*)app->userData;
+    int key=AKeyEvent_getKeyCode(event);
+    if(key==AKEYCODE_L)s.layout=(vkr::SceneLayout)(((int)s.layout+1)%4);
+    else if(key==AKEYCODE_SPACE)s.paused=!s.paused;
+    else if(key==AKEYCODE_B)s.backdrop=!s.backdrop;
+    else if(key==AKEYCODE_MINUS)s.speed=std::max(0.05f,s.speed/1.25f);
+    else if(key==AKEYCODE_EQUALS)s.speed=std::min(8.0f,s.speed*1.25f);
+    else if(key==AKEYCODE_0)s.disabled=0;
+    else if(key>=AKEYCODE_1 && key<=AKEYCODE_9)s.disabled^=1u<<(key-AKEYCODE_1);
+    else return 0;
+    return 1;
+}
 
 void onAppCmd(android_app* app, int32_t cmd) {
     auto* state = (RendererState*)app->userData;
@@ -215,6 +240,11 @@ void android_main(android_app* app) {
     RendererState state;
     app->userData = &state;
     app->onAppCmd = onAppCmd;
+    app->onInputEvent = onInput;
+    if(const char* layout=getenv("VKR_LAYOUT")) {
+        const char* names[]={"two-cubes","single-cube","wall","presentation"};
+        for(int i=0;i<4;i++)if(!strcmp(layout,names[i]))state.layout=(vkr::SceneLayout)i;
+    }
 
     while (!state.windowReady && !state.destroyed) {
         android_poll_source* source = nullptr;
@@ -275,7 +305,12 @@ void android_main(android_app* app) {
     ANativeWindow* vkWindow = app->window;
     uint64_t adoptions = 0, renders = 0;
     int64_t rateWindowStart = nowNs();
-    const int64_t appStartNs = nowNs();
+    int64_t lastSceneNs=nowNs();
+    float sceneTime=0;
+    vkr::SceneMotion motion;
+    std::vector<std::pair<uint64_t,int64_t>> tileSlots;
+    std::vector<int64_t> sceneSlots;
+    std::vector<uint64_t> sceneIds;
 
     auto keyForBuffer = [](AHardwareBuffer* ahb) {
         uint64_t v = (uint64_t)(uintptr_t)ahb;
@@ -290,7 +325,7 @@ void android_main(android_app* app) {
     for (uint32_t i = 0; i < kFlSlots; ++i) {
         FlSlotIn& s = flSlots[i];
         s.name = std::string("vkrender.in.") + std::to_string(i);
-        if (flCreateChannelEx(s.name.c_str(), 640, 360, FL_FORMAT_RGBA8, 4, FL_MAP_CPU,
+        if (flCreateChannelEx(s.name.c_str(), 640, 360, vkr::inputFormat(i,FL_FORMAT_RGBA8), 4, FL_MAP_CPU|FL_DEFER_RELEASE,
                               &s.channel) != FL_OK) {
             VKR_ERR("renderer: framelink channel '%s' creation failed", s.name.c_str());
             s.channel = nullptr;
@@ -322,13 +357,14 @@ void android_main(android_app* app) {
                 }
                 s.currentSlot = -1;
                 s.generation = info.generation;
+                s.retire.clear();s.lastReady=0;s.departing=false;
                 s.width = info.width;
                 s.height = info.height;
             }
             flFrame fr{};
             const flResult r = flAcquireFrame(s.channel, &fr, 0);
             if (r == FL_DISCONNECTED) {
-                s.currentSlot = -1; // no exit animation on Android; tile pops
+                if(s.currentSlot>=0)s.departing=true; // retain image through presentation exit
                 continue;
             }
             if (r != FL_OK) continue;
@@ -375,11 +411,10 @@ void android_main(android_app* app) {
                 s.keys[fr.slot] = key;
             }
             // The monotonic release: everything BEFORE this frame is free.
-            if (fr._readyValue > 1) {
-                flFrame prev = fr;
-                prev._readyValue = fr._readyValue - 1;
-                flRelease(s.channel, &prev);
-            }
+            s.departing=false;
+            s.lastReady=fr._readyValue;
+            if(fr._readyValue>1)s.retire.push_back({frameIndex+2,fr._readyValue-1});
+            flRelease(s.channel,&fr); // bookkeeping; retire after the existing GPU fence
             s.currentSlot = (int64_t)s.keys[fr.slot];
             ++adoptions;
             if (fr.ptsNs > 0) {
@@ -399,7 +434,16 @@ void android_main(android_app* app) {
     AChoreographer* choreographer = AChoreographer_getInstance();
     bool frameDue = false;
 
+    vkr::PortableOutput portableOutput;
+    if(const char* names=std::getenv("VKR_SCENE_OUTPUTS")) {
+        std::istringstream list(names); std::string name; std::vector<std::string> outputs;
+        while(std::getline(list,name,','))if(!name.empty())outputs.push_back(name);
+        portableOutput.configure(outputs);
+    }
+    const char* traceLimitText=std::getenv("VKR_TRACE_FRAMES");
+    const uint64_t traceLimit=traceLimitText?std::strtoull(traceLimitText,nullptr,10):0;
     while (!state.destroyed) {
+        vkrtrace::Scope loopTrace("service.iteration");
         // Vsync-paced event pump (see M7.1 notes: unpaced loops free-run).
         if (state.windowReady && choreographer) {
             frameDue = false;
@@ -522,6 +566,15 @@ void android_main(android_app* app) {
             flPoll(active, &nActive);
             if (nActive)
                 for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % nActive];
+            sceneSlots.clear();sceneIds.clear();
+            size_t ordinal=0;
+            auto addScene=[&](uint64_t id,int64_t slot){
+                if(slot<0)return;
+                if(!(state.disabled&(1u<<ordinal))){sceneSlots.push_back(slot);sceneIds.push_back(id);}
+                ++ordinal;
+            };
+            for(auto& sp:g_streams)addScene((uint64_t)sp->key,sp->currentSlot);
+            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing)addScene((1ull<<63)|i,flSlots[i].currentSlot);
             streamCount = g_streams.size();
             for (FlSlotIn& fs : flSlots)
                 if (fs.currentSlot >= 0) ++streamCount;
@@ -529,15 +582,20 @@ void android_main(android_app* app) {
 
         FrameSync& f = frames[frameIndex % kFramesInFlight];
         ++frameIndex;
-        vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
+        vkrtrace::call("scene.wait_inflight_fence",[&]{return vkWaitForFences(vk.device,1,&f.inFlight,VK_TRUE,UINT64_MAX);});
+        f.gpuTrace.prepare(vk);
+        portableOutput.retire(vk,(frameIndex-1)%2);
+        for(auto& slot:flSlots)while(!slot.retire.empty() && slot.retire.front().first<=frameIndex) {
+            flSignalConsumedSyncFd(slot.channel,slot.retire.front().second,-1);
+            slot.retire.erase(slot.retire.begin());
+        }
         // Fence retired: every submission recorded before it is done; images
         // parked on this frame can go back to the BufferQueue.
         for (AImage* retired : f.retiring) AImage_delete(retired);
         f.retiring.clear();
 
         uint32_t imageIndex = 0;
-        VkResult ar = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, f.acquireSem,
-                                            VK_NULL_HANDLE, &imageIndex);
+        VkResult ar = vkrtrace::call("scene.acquire_swapchain",[&]{return vkAcquireNextImageKHR(vk.device,vk.swapchain,UINT64_MAX,f.acquireSem,VK_NULL_HANDLE,&imageIndex);});
         if (ar == VK_ERROR_OUT_OF_DATE_KHR) {
             vk.recreateSwapchain();
             continue;
@@ -547,7 +605,10 @@ void android_main(android_app* app) {
 
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        {
+        vkrtrace::Scope recording("scene.record_commands_cpu");
         vkBeginCommandBuffer(f.cmd, &bi);
+        f.gpuTrace.begin(f.cmd);
 
         VkImageMemoryBarrier2 toColor{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toColor.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
@@ -562,18 +623,33 @@ void android_main(android_app* app) {
         dep.pImageMemoryBarriers = &toColor;
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
-        float tSec = (float)((nowNs() - appStartNs) * 1e-9);
-        float mvps[32];
-        Mat4 top = cubeMvp(tSec, vk.swapExtent, 0.0f, 1.55f, 1.0f, 0.0f);
-        Mat4 bottom = cubeMvp(tSec, vk.swapExtent, 0.0f, -1.55f, -1.0f, 2.1f);
-        memcpy(mvps, top.m, sizeof(top.m));
-        memcpy(mvps + 16, bottom.m, sizeof(bottom.m));
-        if (!passBound)
-            for (int fi = 0; fi < 12; ++fi) faceSlots[fi] = -1;
-        pass.recordScene(f.cmd, pool, faceSlots, 2, mvps, vk.swapViews[imageIndex],
-                         vk.swapExtent, vk.queueFamily, background.valid() ? &background : nullptr,
-                         tSec);
+        int64_t sceneNow=nowNs();
+        double dt=std::min(0.1,(sceneNow-lastSceneNs)*1e-9);lastSceneNs=sceneNow;
+        if(!state.paused)sceneTime+=(float)dt*state.speed;
+        float tSec=sceneTime;
+        std::vector<Mat4> models;
+        std::vector<int64_t> faces;
+        float aspect=(float)vk.swapExtent.width/vk.swapExtent.height;
+        vkr::buildScene(state.layout,tSec,aspect,dt,sceneSlots,sceneIds,pool,motion,tileSlots,models,faces);
+        for(size_t i=0;i<flSlots.size();++i) {
+            auto& slot=flSlots[i];
+            if(slot.departing && !motion.has((1ull<<63)|i)) {
+                if(slot.lastReady)slot.retire.push_back({frameIndex+2,slot.lastReady});
+                slot.currentSlot=-1;slot.departing=false;
+                VKR_LOG("renderer: departure retired '%s'",slot.name.c_str());
+            }
+        }
+        if(!passBound){models.clear();faces.clear();}
+        std::vector<float> mvps(models.size()*16);
+        auto projection=vkr::matPerspective(0.7854f,aspect,0.1f,100.0f);
+        for(size_t i=0;i<models.size();i++){
+            auto mvp=vkr::matMul(projection,models[i]);memcpy(mvps.data()+i*16,mvp.m,sizeof(mvp.m));
+        }
+        pass.recordScene(f.cmd,pool,faces.data(),(uint32_t)models.size(),mvps.data(),vk.swapViews[imageIndex],
+            vk.swapExtent,vk.queueFamily,state.backdrop && background.valid()?&background:nullptr,tSec);
 
+        portableOutput.record(vk,(frameIndex-1)%2,f.cmd,vk.swapImages[imageIndex],vk.swapExtent,
+            vk.swapFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,nowNs());
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         toPresent.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -585,7 +661,9 @@ void android_main(android_app* app) {
         dep.pImageMemoryBarriers = &toPresent;
         vkCmdPipelineBarrier2(f.cmd, &dep);
 
+        f.gpuTrace.end(f.cmd);
         vkEndCommandBuffer(f.cmd);
+        }
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -596,7 +674,9 @@ void android_main(android_app* app) {
         si.pCommandBuffers = &f.cmd;
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &f.renderDoneSem;
-        if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) break;
+        if (vkrtrace::call("scene.queue_submit_cpu",[&]{return vkQueueSubmit(vk.queue,1,&si,f.inFlight);}) != VK_SUCCESS) break;
+        f.gpuTrace.submitted(frameIndex-1);
+        portableOutput.submitted((frameIndex-1)%2);
 
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;
@@ -604,7 +684,8 @@ void android_main(android_app* app) {
         pi.swapchainCount = 1;
         pi.pSwapchains = &vk.swapchain;
         pi.pImageIndices = &imageIndex;
-        VkResult pr = vkQueuePresentKHR(vk.queue, &pi);
+        VkResult pr = vkrtrace::call("scene.present_call_cpu",[&]{return vkQueuePresentKHR(vk.queue,&pi);});
+        if(traceLimit && frameIndex>=traceLimit)state.destroyed=true;
         if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk.recreateSwapchain();
 
         ++renders;
@@ -633,7 +714,9 @@ void android_main(android_app* app) {
         g_rendererReady = false;
     }
     vkDeviceWaitIdle(vk.device);
+    portableOutput.destroy(vk);
     for (auto& f : frames) {
+        f.gpuTrace.destroy(vk);
         for (AImage* retired : f.retiring) AImage_delete(retired);
         vkDestroySemaphore(vk.device, f.acquireSem, nullptr);
         vkDestroySemaphore(vk.device, f.renderDoneSem, nullptr);
@@ -657,6 +740,9 @@ void android_main(android_app* app) {
         g_pendingRelease.clear();
     }
     vk.destroy();
+    vkrtrace::flush();
+    flTraceFlush();
+    if(traceLimit)ANativeActivity_finish(app->activity);
 }
 
 #endif // __ANDROID__

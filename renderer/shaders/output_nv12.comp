@@ -1,0 +1,15 @@
+#version 450
+layout(local_size_x=64) in;
+layout(set=0,binding=0,std430) readonly buffer Source { uint pixels[]; } src;
+layout(set=0,binding=1,std430) writeonly buffer Dest { uint words[]; } dst;
+layout(push_constant) uniform Params { uint sw; uint sh; uint dw; uint dh; uint bgra; uint format; } p;
+ivec3 rgb(uint x,uint y){ uint v=src.pixels[(((2*y+1)*p.sh)/(2*p.dh))*p.sw+((2*x+1)*p.sw)/(2*p.dw)]; ivec3 c=ivec3(v&255,(v>>8)&255,(v>>16)&255);return p.bgra!=0?c.bgr:c; }
+uint byteValue(uint at){
+ uint n=p.dw*p.dh;if(at>=n*3/2)return 0;
+ if(at<n){ivec3 c=rgb(at%p.dw,at/p.dw);return uint(clamp(16+((47*c.r+157*c.g+16*c.b+128)>>8),0,255));}
+ uint uv=at-n;uint x=(uv%p.dw)&~1u,y=(uv/p.dw)*2;ivec3 c=rgb(x,y)+rgb(x+1,y)+rgb(x,y+1)+rgb(x+1,y+1);
+ int v=(uv&1u)==0?128+((-26*c.r-87*c.g+112*c.b+512)>>10):128+((112*c.r-102*c.g-10*c.b+512)>>10);return uint(clamp(v,0,255));
+}
+void main(){uint i=gl_GlobalInvocationID.x+gl_GlobalInvocationID.y*gl_NumWorkGroups.x*64;
+ if(p.format!=2){if(i>=p.dw*p.dh)return;ivec3 c=rgb(i%p.dw,i/p.dw);uint v;if(p.format==3)v=uint(c.r*1023/255)|uint(c.g*1023/255)<<10|uint(c.b*1023/255)<<20|0xc0000000u;else{if(p.format==1)c=c.bgr;v=uint(c.r)|uint(c.g)<<8|uint(c.b)<<16|0xff000000u;}dst.words[i]=v;return;}
+ uint n=p.dw*p.dh*3/2;if(i>=(n+3)/4)return;uint b=i*4;dst.words[i]=byteValue(b)|(byteValue(b+1)<<8)|(byteValue(b+2)<<16)|(byteValue(b+3)<<24);}

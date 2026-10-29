@@ -1,0 +1,3 @@
+matched=120 distinct=111 worst_YUV_error=1 (limit=3)
+channel=rgb received=121 sequence_gaps=2 elapsed_s=2.051 arrival_ms_p50=15.837 p95=18.998 p99=19.729 max=20.337
+channel=nv12 received=122 sequence_gaps=1 elapsed_s=2.051 arrival_ms_p50=15.815 p95=18.967 p99=19.667 max=20.570

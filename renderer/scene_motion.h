@@ -138,6 +138,8 @@ public:
         }
     }
 
+    void clear() { tiles_.clear(); }
+
     size_t count() const { return tiles_.size(); }
 
     uint64_t idAt(size_t i) const { return tiles_[i].id; }

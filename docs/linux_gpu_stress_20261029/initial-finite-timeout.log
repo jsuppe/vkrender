@@ -1,0 +1,36 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene output: strict GPU-only mode; unsupported imports are refused (no CPU fallback)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('gpu-output-wayland.in.0' .. 'gpu-output-wayland.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=gpu-output-wayland (up to 12 streams)
+[INF] GPU output 'gpu.output.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'gpu.output.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'gpu.output.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'gpu.output.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'gpu.output.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'gpu.output.nv12': imported native buffer format=2 planes=2
+[INF] scene: 306 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 309 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 310 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 309 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 310 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 310 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 309 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 310 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 310 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 309 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] scene: 309 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[ERR] compositor headless: no 72000 frames within 60 s (saw 0)

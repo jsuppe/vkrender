@@ -1,0 +1,63 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene output: strict GPU-only mode; unsupported imports are refused (no CPU fallback)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('stress-wayland.in.0' .. 'stress-wayland.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=stress-wayland (up to 12 streams)
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] scene: 304 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] scene: 307 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.rgba': imported native buffer format=4 planes=1
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2
+[INF] GPU output 'stress.nv12': imported native buffer format=2 planes=2

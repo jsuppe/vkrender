@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
 project(vkrender LANGUAGES C CXX)
 
+option(VKR_DISABLE_TRACE "Compile out performance tracing" OFF)
+if(VKR_DISABLE_TRACE)
+    add_compile_definitions(FL_TRACE_COMPILED_OUT)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -106,7 +111,8 @@ set(VKR_SHADERS
     ${CMAKE_SOURCE_DIR}/renderer/shaders/cube.vert
     ${CMAKE_SOURCE_DIR}/renderer/shaders/vaporwave.frag
     ${CMAKE_SOURCE_DIR}/renderer/shaders/video_ycbcr.frag
-    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag)
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_cube.frag)
 set(VKR_SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${VKR_SHADER_OUT_DIR})
 set(VKR_SHADER_OUTPUTS "")
@@ -129,8 +135,13 @@ add_executable(vkrenderer
     renderer/video_pass.cpp
     renderer/background_pass.cpp
     renderer/nv12_output.cpp
+    renderer/portable_output.cpp
+    renderer/portable_input.cpp
     renderer/dump_util.cpp
     renderer/scene_host.cpp)
+if(NOT WIN32)
+    target_sources(vkrenderer PRIVATE renderer/gpu_output.cpp)
+endif()
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
 if(WIN32)
@@ -311,6 +322,7 @@ if(NOT WIN32)
             list(APPEND VKR_WL_CLIENT_GEN ${_chdr} ${VKR_WL_GEN_DIR}/${_pname}-protocol.c)
         endforeach()
         add_executable(vkr_wl_dmabuf_client test/wayland_dmabuf_client.c ${VKR_WL_CLIENT_GEN})
+        target_link_libraries(vkr_wl_dmabuf_client PRIVATE framelink)
         target_include_directories(vkr_wl_dmabuf_client PRIVATE ${VKR_WL_GEN_DIR})
         target_link_libraries(vkr_wl_dmabuf_client PRIVATE PkgConfig::WLCLIENT)
     endif()
@@ -361,4 +373,51 @@ if(WIN32)
         add_test(NAME nv12_gpu_${w}x${h} COMMAND vkr_nv12_output_test ${VKR_SHADER_OUT_DIR} ${w} ${h})
         set_tests_properties(nv12_gpu_${w}x${h} PROPERTIES TIMEOUT 60)
     endforeach()
+endif()
+
+# Integration driver: run alongside a renderer publishing <prefix>.rgba/.nv12.
+add_executable(vkr_portable_output_check test/portable_output_check.cpp)
+target_link_libraries(vkr_portable_output_check PRIVATE framelink)
+
+if(UNIX AND NOT ANDROID AND TARGET vkr_wl_dmabuf_client)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    enable_testing()
+    add_test(NAME mixed_rgb_nv12_input COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/mixed_formats.py ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(mixed_rgb_nv12_input PROPERTIES TIMEOUT 30)
+endif()
+
+if(UNIX AND NOT ANDROID)
+    add_executable(vkr_gpu_sync_fd_test test/gpu_sync_fd.cpp renderer/vk_context.cpp)
+    target_include_directories(vkr_gpu_sync_fd_test PRIVATE renderer common)
+    target_link_libraries(vkr_gpu_sync_fd_test PRIVATE framelink volk glfw)
+    add_test(NAME vulkan_sync_fd_contract COMMAND vkr_gpu_sync_fd_test)
+    set_tests_properties(vulkan_sync_fd_contract PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77)
+endif()
+
+add_executable(vkr_scene_layout_test test/scene_layout.cpp)
+target_include_directories(vkr_scene_layout_test PRIVATE renderer common)
+target_link_libraries(vkr_scene_layout_test PRIVATE volk)
+enable_testing()
+add_test(NAME shared_scene_layouts COMMAND vkr_scene_layout_test)
+
+if(UNIX AND NOT ANDROID)
+    add_executable(vkr_gpu_output_caps test/gpu_output_caps.cpp renderer/vk_context.cpp)
+    target_include_directories(vkr_gpu_output_caps PRIVATE renderer common)
+    target_link_libraries(vkr_gpu_output_caps PRIVATE volk glfw)
+endif()
+
+if(UNIX AND NOT ANDROID)
+ add_executable(vkr_gpu_output_pixels test/gpu_output_pixels.cpp renderer/gpu_output.cpp renderer/vk_context.cpp)
+ target_include_directories(vkr_gpu_output_pixels PRIVATE renderer common)
+ target_link_libraries(vkr_gpu_output_pixels PRIVATE framelink volk glfw)
+ foreach(fmt 1 2 3 4)
+  add_test(NAME gpu_output_pixels_${fmt} COMMAND vkr_gpu_output_pixels ${fmt})
+  set_tests_properties(gpu_output_pixels_${fmt} PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
+ endforeach()
+endif()
+
+if(UNIX AND NOT ANDROID)
+ add_test(NAME gpu_output_pixels_4k_rgba COMMAND vkr_gpu_output_pixels 4 large)
+ set_tests_properties(gpu_output_pixels_4k_rgba PROPERTIES TIMEOUT 45 SKIP_RETURN_CODE 77)
 endif()

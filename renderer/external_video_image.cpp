@@ -217,6 +217,7 @@ bool importWin32Slot(VkContext& vk, VkFormat format, uint32_t width, uint32_t he
 } // namespace
 
 bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
+    conversion=VK_NULL_HANDLE;planar=false;
     format = vkFormatFor(desc.format);
     if (format == VK_FORMAT_UNDEFINED) {
         VKR_ERR("unsupported shared format %u", (uint32_t)desc.format);
@@ -228,7 +229,12 @@ bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
     range = desc.range;
 
     if (desc.format == proto::SharedFormat::NV12) {
-        if (!createYcbcrConversion(vk, format, matrix, range, &conversion)) return false;
+        auto key=std::make_tuple((int)format,(int)matrix,(int)range);
+        conversion=formatConversions[key];
+        if(!conversion) {
+            if (!createYcbcrConversion(vk, format, matrix, range, &conversion)) return false;
+            conversions.push_back(conversion);formatConversions[key]=conversion;
+        }
     }
 
 #ifdef _WIN32
@@ -249,6 +255,7 @@ bool ExternalVideoPool::create(VkContext& vk, const proto::PoolDescMsg& desc) {
             }
             slot.width = width;
             slot.height = height;
+            tag(slot);
             slots.emplace(i, slot);
         }
         if (!importTimelineSemaphore(vk.device, desc.readyFenceHandle, &readySem) ||
@@ -318,7 +325,7 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
     // if the driver cannot sample multi-planar NV12 with this modifier
     // (NVIDIA only lists LINEAR for NV12 but supports its block-linear
     // modifiers for R8/R8G8), fall back to per-plane images + shader YUV.
-    if (slots.empty() && format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+    if (format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
         VkDrmFormatModifierPropertiesListEXT list{
             VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
         VkFormatProperties2 props{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
@@ -414,6 +421,7 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
         // and modifiers), so they take the stream header's.
         slot.width = width;
         slot.height = height;
+        tag(slot);
         slots.emplace(desc.slotKey, slot);
         VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx planar (%zu total, "
                 "zero-copy)",
@@ -569,6 +577,7 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
 
     slot.width = width;
     slot.height = height;
+    tag(slot);
     slots.emplace(desc.slotKey, slot);
     VKR_LOG("renderer: imported dma-buf surface key=%u modifier=0x%llx (%zu total, zero-copy)",
             desc.slotKey, (unsigned long long)desc.drmModifier, slots.size());
@@ -602,7 +611,13 @@ bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuff
         return false;
     }
 
-    if (!conversion) {
+    const bool rgb = fmtProps.format==VK_FORMAT_R8G8B8A8_UNORM ||
+        fmtProps.format==VK_FORMAT_B8G8R8A8_UNORM || fmtProps.format==VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    auto conversionKey=std::make_tuple(fmtProps.externalFormat,(int)fmtProps.format,
+        (int)fmtProps.suggestedYcbcrModel,(int)fmtProps.suggestedYcbcrRange);
+    conversion=rgb?VK_NULL_HANDLE:ahbConversions[conversionKey];
+    planar=false;
+    if (!rgb && !conversion) {
         VkExternalFormatANDROID extFmt{VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID};
         extFmt.externalFormat = fmtProps.externalFormat;
         VkSamplerYcbcrConversionCreateInfo convInfo{
@@ -627,6 +642,7 @@ bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuff
                     (unsigned long long)fmtProps.externalFormat);
             return false;
         }
+        conversions.push_back(conversion);ahbConversions[conversionKey]=conversion;
         format = fmtProps.format; // may stay UNDEFINED (external format)
     }
 
@@ -689,6 +705,7 @@ bool ExternalVideoPool::addSurfaceAHB(VkContext& vk, uint32_t key, AHardwareBuff
     // The buffer knows its own size, so prefer that over the stream header.
     slot.width = ahbDesc.width;
     slot.height = ahbDesc.height;
+    tag(slot);
     slots.emplace(key, slot);
     VKR_LOG("renderer: imported AHardwareBuffer surface key=%u extFmt=0x%llx (%zu total, "
             "zero-copy)",
@@ -726,6 +743,7 @@ bool ExternalVideoPool::addSurfaceWin32(VkContext& vk, uint32_t key, uint64_t ha
     if (!importWin32Slot(vk, format, w, h, handleValue, &slot, conversion)) return false;
     slot.width = w;
     slot.height = h;
+    tag(slot);
     slots.emplace(key, slot);
     VKR_LOG("renderer: imported win32 surface key=%u %ux%u (%zu total, zero-copy)", key, w, h,
             slots.size());
@@ -737,14 +755,14 @@ bool importTimelineSemaphoreWin32(VkContext& vk, uint64_t handleValue, VkSemapho
 }
 
 bool importWin32BlitTarget(VkContext& vk, uint64_t handleValue, uint32_t width,
-                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory) {
+                           uint32_t height, VkImage* outImage, VkDeviceMemory* outMemory, VkFormat format) {
     VkExternalMemoryImageCreateInfo extImg{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
     extImg.handleTypes = kWin32HandleType;
 
     VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ici.pNext = &extImg;
     ici.imageType = VK_IMAGE_TYPE_2D;
-    ici.format = VK_FORMAT_B8G8R8A8_UNORM;
+    ici.format = format;
     ici.extent = {width, height, 1};
     ici.mipLevels = 1;
     ici.arrayLayers = 1;
@@ -938,7 +956,8 @@ void ExternalVideoPool::destroy(VkContext& vk) {
             if (m) vkFreeMemory(vk.device, m, nullptr);
     }
     slots.clear();
-    if (conversion) vkDestroySamplerYcbcrConversion(vk.device, conversion, nullptr);
+    for(auto c:conversions)vkDestroySamplerYcbcrConversion(vk.device,c,nullptr);
+    conversions.clear();ahbConversions.clear();formatConversions.clear();
     conversion = VK_NULL_HANDLE;
     if (readySem) vkDestroySemaphore(vk.device, readySem, nullptr);
     if (consumedSem) vkDestroySemaphore(vk.device, consumedSem, nullptr);
