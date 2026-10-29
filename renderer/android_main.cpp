@@ -507,6 +507,7 @@ void android_main(android_app* app) {
             VKR_LOG("renderer: window replaced, recreating surface");
             if (!vk.recreateSurface(app->window)) break;
             vkWindow = app->window;
+            preview.supported(vk);
         }
         displayOutputs.update(vk);
         if (!state.windowReady) continue;
@@ -695,6 +696,7 @@ void android_main(android_app* app) {
         VkResult ar = vkrtrace::call("scene.acquire_swapchain",[&]{return vkAcquireNextImageKHR(vk.device,vk.swapchain,UINT64_MAX,f.acquireSem,VK_NULL_HANDLE,&imageIndex);});
         if (ar == VK_ERROR_OUT_OF_DATE_KHR) {
             vk.recreateSwapchain();
+            preview.supported(vk);
             continue;
         }
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) continue;
@@ -801,7 +803,10 @@ void android_main(android_app* app) {
         VkResult pr = vkrtrace::call("scene.present_call_cpu",[&]{return vkQueuePresentKHR(vk.queue,&pi);});
         displayOutputs.present(vk);
         if(traceLimit && frameIndex>=traceLimit)state.destroyed=true;
-        if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk.recreateSwapchain();
+        if (pr == VK_ERROR_OUT_OF_DATE_KHR) {
+            vk.recreateSwapchain();
+            preview.supported(vk);
+        }
 
         ++renders;
         if (nowNs() - rateWindowStart > 5000000000ll) {

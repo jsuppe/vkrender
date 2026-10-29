@@ -1,5 +1,32 @@
 # Roadmap
 
+## Active execution scope — 2026-10-29
+
+The current delivery plan is GPU/parity integration plus synchronized audio/video
+session evaluation. Older milestones below remain historical/deferred proposals,
+not an instruction to expand this delivery into unrelated receivers, cloud calling
+or HDR work.
+
+- [x] FrameLink #1 and renderer #10 GPU baseline merged after stress/reconnect tests.
+- [x] Linux/Android control, Binder lifecycle, bounded preview and secondary-display
+      implementation integrated in renderer #11; final CI/merge gate remains.
+- [ ] Final integration CI and merge, with platform qualification limitations recorded.
+- [ ] FrameLink audio/video work (in progress separately): audit timestamps/clocks,
+      runnable GStreamer example pairing FrameLink video with an existing audio path,
+      measurable loss/discontinuity/drift tests and explicit track negotiation.
+- [ ] Prefer separate PCM audio/video tracks sharing clock/session identity; F32/S16,
+      explicit rate/channel layout, first-sample timestamp, count/sequence/generation.
+      Do not add audio payloads to `flFrame` or implicit codecs/mixing/resampling.
+- [ ] Reuse existing audio transport if it meets cross-platform needs; only implement
+      a bounded companion PCM transport if the evaluation demonstrates a gap.
+- [ ] Document Linux/Windows/Android tested/build-only/unsupported results and merge
+      audio sample/tests separately after review and CI.
+
+No blanket zero-copy, zero-buffering, drop-free or physical scanout timing claims.
+See [platform qualification](docs/PLATFORM_PARITY.md),
+[Android control](docs/ANDROID_CONTROL.md) and
+[Cuttlefish qualification](docs/CUTTLEFISH_GPU_VALIDATION.md).
+
 ## Done — M1–M4: Windows pipeline (2026-08)
 
 - Two-process zero-copy pipeline: RTSP → D3D11VA decode → shared BGRA texture

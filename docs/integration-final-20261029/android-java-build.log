@@ -1,0 +1,62 @@
+WARNING: We recommend using a newer Android Gradle plugin to use compileSdk = 36
+
+This Android Gradle plugin (8.5.2) was tested up to compileSdk = 34.
+
+You are strongly encouraged to update your project to use a newer
+Android Gradle plugin that has been tested with compileSdk = 36.
+
+If you are already using the latest version of the Android Gradle plugin,
+you may need to wait until a newer version with support for compileSdk = 36 is available.
+
+For more information refer to the compatibility table:
+https://d.android.com/r/tools/api-level-support
+
+To suppress this warning, add/update
+    android.suppressUnsupportedCompileSdk=36
+to this project's gradle.properties.
+> Task :renderer:preBuild UP-TO-DATE
+> Task :renderer:preDebugBuild UP-TO-DATE
+> Task :renderer:javaPreCompileDebug
+> Task :renderer:generateDebugResValues
+> Task :renderer:checkDebugAarMetadata
+> Task :renderer:compileDebugAidl
+> Task :renderer:mapDebugSourceSetPaths
+> Task :renderer:generateDebugResources
+> Task :renderer:mergeDebugResources
+> Task :renderer:packageDebugResources
+> Task :renderer:createDebugCompatibleScreenManifests
+> Task :renderer:extractDeepLinksDebug
+> Task :renderer:parseDebugLocalResources
+> Task :renderer:processDebugMainManifest
+> Task :renderer:processDebugManifest
+> Task :renderer:preReleaseBuild UP-TO-DATE
+> Task :renderer:javaPreCompileRelease
+> Task :renderer:processDebugManifestForPackage
+> Task :renderer:checkReleaseAarMetadata
+> Task :renderer:generateReleaseResValues
+> Task :renderer:mapReleaseSourceSetPaths
+> Task :renderer:compileReleaseAidl
+> Task :renderer:generateReleaseResources
+> Task :renderer:mergeReleaseResources
+> Task :renderer:packageReleaseResources
+> Task :renderer:createReleaseCompatibleScreenManifests
+> Task :renderer:extractDeepLinksRelease
+> Task :renderer:parseReleaseLocalResources
+> Task :renderer:processReleaseMainManifest
+> Task :renderer:processReleaseManifest
+> Task :renderer:processReleaseManifestForPackage
+> Task :renderer:processReleaseResources
+> Task :renderer:processDebugResources
+
+> Task :renderer:compileReleaseJavaWithJavac
+Note: /tmp/vkrender-integration/android/renderer/src/main/java/dev/vkrender/renderer/DisplayOutputs.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :renderer:compileDebugJavaWithJavac
+Note: /tmp/vkrender-integration/android/renderer/src/main/java/dev/vkrender/renderer/DisplayOutputs.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+[Incubating] Problems report is available at: file:///tmp/vkrender-integration/android/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 2s
+32 actionable tasks: 32 executed

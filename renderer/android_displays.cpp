@@ -50,7 +50,7 @@ struct AndroidDisplays::Impl {
         bool acquired=false,dirty=false;
         uint64_t frames=0,unavailable=0;
     };
-    struct Stage {VkImage image=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;VkExtent2D extent{};};
+    struct Stage {VkImage image=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;VkExtent2D extent{};VkFormat format=VK_FORMAT_UNDEFINED;};
     Stage stage[2];
     std::map<int,Output> outputs;
     void publishStatus() {
@@ -68,7 +68,7 @@ struct AndroidDisplays::Impl {
         s={};
     }
     bool ensureStage(VkContext& vk,Stage& s,VkExtent2D extent) {
-        if(s.image&&s.extent.width==extent.width&&s.extent.height==extent.height)return true;
+        if(s.image&&s.extent.width==extent.width&&s.extent.height==extent.height&&s.format==vk.swapFormat)return true;
         clearStage(vk,s);
         VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};ci.imageType=VK_IMAGE_TYPE_2D;
         ci.format=vk.swapFormat;ci.extent={extent.width,extent.height,1};ci.mipLevels=1;ci.arrayLayers=1;
@@ -83,7 +83,7 @@ struct AndroidDisplays::Impl {
         if(type==UINT32_MAX){clearStage(vk,s);return false;}
         VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};ai.allocationSize=req.size;ai.memoryTypeIndex=type;
         if(vkAllocateMemory(vk.device,&ai,nullptr,&s.memory)!=VK_SUCCESS||vkBindImageMemory(vk.device,s.image,s.memory,0)!=VK_SUCCESS){clearStage(vk,s);return false;}
-        s.extent=extent;return true;
+        s.extent=extent;s.format=vk.swapFormat;return true;
     }
     void clear(VkContext& vk,Output& o) {
         for(auto sem:o.done)if(sem)vkDestroySemaphore(vk.device,sem,nullptr);

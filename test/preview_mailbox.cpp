@@ -12,5 +12,10 @@ int main(){
  box.ready(false);CHECK(box.request().argb.empty());box.publish(epoch,2,1,{1,2});CHECK(box.captures()==1);
  box.ready(true);CHECK(box.request().argb.empty());box.publish(epoch,2,1,{1,2});CHECK(box.captures()==1); // obsolete in-flight capture rejected
  box.supported(false);CHECK(box.request().argb.empty());CHECK(!box.takeRequest());
+ vkr::PreviewMailbox changed;changed.supported(true);changed.ready(true);changed.request();
+ changed.supported(false);CHECK(!changed.takeRequest()); // revoke queued capture immediately
+ changed.supported(true);CHECK(!changed.takeRequest());changed.request();auto old=changed.takeRequest();CHECK(old);
+ changed.supported(false);changed.supported(true);changed.publish(old,1,1,{1});
+ CHECK(changed.captures()==0 && changed.request().argb.empty()); // old format result rejected
  return 0;
 }

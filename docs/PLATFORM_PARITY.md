@@ -248,3 +248,35 @@ selection policy. Old Surface/owner transaction IDs remain intact. Physical Pi
 Binder control validation passed; see ANDROID_CONTROL.md. This does not expose
 camera, preview or physical display controls through Binder; capabilities reject
 those explicitly, rather than returning success for no effect.
+
+## Final integration gate (2026-10-29)
+
+This section supersedes the earlier staged implementation limitations above:
+Android Binder now supports bounded on-demand JPEG preview and eligible secondary
+Presentation display enable/disable/crop/status. Camera remains unsupported on
+Android/Linux; no virtual-camera backend is fabricated. See ANDROID_CONTROL.md
+and the preserved Pi preview/display fixture evidence (including negative runs).
+
+The combined integration passed Linux **18/18** tests, native Android arm64-v8a
+and x86_64 builds, and Android debug/release Java + AIDL compilation. Logs are in
+`integration-final-20261029/`. Earlier Windows final integration evidence is in
+`windows_gpu_stress_20261029/stage3/` (7 targeted tests, 300 matched RGB/NV12
+pairs and 8 GPU JPEG previews); final Android-only changes do not change the
+Windows renderer path. CI builds the final shared source on all three platforms.
+
+Review confirmed that preview CPU readback happens only after the associated
+existing frame fence, and per-frame staging allocations are reused only after
+that fence. Secondary present completion semaphores are indexed by acquired
+image; acquire semaphores by fenced frame slot. Attach/detach waits only on the
+lifecycle path, not each frame. Preview and secondary output restore the primary
+image layout before presentation. Review fixed staging reuse across a primary
+format change and refreshes preview capabilities after swapchain recreation.
+Capability changes invalidate queued previews and stale results; a regression
+test covers capability revocation and re-enablement across an in-flight capture.
+
+Secondary output and preview use a device-local intermediate copy because direct
+scaled WSI blitting failed on the physical Pi. This is GPU-only output, not a
+zero-copy claim. Screenshot comparisons do not qualify physical scanout tearing.
+Linux physical hotplug/windowed output remains unqualified on available hardware.
+Cuttlefish NV12/RGB10 allocation and native SYNC_FD failures remain documented
+limitations, not passes; see CUTTLEFISH_GPU_VALIDATION.md.

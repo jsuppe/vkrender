@@ -8,7 +8,7 @@ namespace vkr {
 class PreviewMailbox {
  public:
     struct Result {uint32_t width=0,height=0,sequence=0;std::vector<uint32_t> argb;};
-    void supported(bool value){std::lock_guard<std::mutex> lock(m_);supported_=value;}
+    void supported(bool value){std::lock_guard<std::mutex> lock(m_);if(supported_!=value){++epoch_;result_={};requested_=false;}supported_=value;}
     bool supported(){std::lock_guard<std::mutex> lock(m_);return supported_;}
     void ready(bool value){std::lock_guard<std::mutex> lock(m_);if(ready_!=value){++epoch_;result_={};requested_=false;}ready_=value;}
     uint32_t captures(){std::lock_guard<std::mutex> lock(m_);return sequence_;}
@@ -18,7 +18,7 @@ class PreviewMailbox {
         requested_=false;next_=now+std::chrono::milliseconds(200);return epoch_;}
     void publish(uint64_t epoch,uint32_t w,uint32_t h,std::vector<uint32_t> pixels){
         if(!w || !h || w>320 || h>180 || pixels.size()!=(size_t)w*h)return;
-        std::lock_guard<std::mutex> lock(m_);if(!ready_ || epoch!=epoch_)return;
+        std::lock_guard<std::mutex> lock(m_);if(!ready_ || !supported_ || epoch!=epoch_)return;
         result_={w,h,++sequence_,std::move(pixels)};
     }
  private:
