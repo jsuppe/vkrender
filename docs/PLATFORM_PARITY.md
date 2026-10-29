@@ -168,3 +168,45 @@ recreation/resizing while an output is pending: Linux/tablet4 formats, Pi2 forma
 passed with zero byte error. Pi NV12 and RGB10 allocation limits are explicit.
 Tablet full Activity comparison remains unverified while screen-locked; native
 conversion/lifecycle tests passed. Broad platform integration parity is not complete.
+
+## Linux control-plane implementation
+
+Linux `--wayland` now honors `--control-port` (default 8875, 0 disables HTTP),
+using the same loopback-only HTTP server and moderation policy as Windows.
+`GET /api/capabilities` reports available camera, preview and display controls.
+Linux has no virtual-camera gate: `/api/camera` returns 501, not false success.
+Runtime display attach/detach is available in headless mode when GLFW can access
+a display server; unsupported display control returns 501. Preview reads the
+actual last primary image, in both windowed and headless modes.
+
+FrameLink input slots are 0..11; live Wayland content surfaces receive slots
+12..23, stable for the lifetime of the surface and reusable after disconnect.
+Use the current `/api/streams` roster before issuing a command. Kicking a Wayland
+surface disconnects its entire client (and hence all that client's surfaces).
+Hidden/rotated-out inputs are still acquired/released and Wayland frame callbacks
+continue; moderation does not stall their producer rings. Explicit kick retires
+GPU reads before closing FrameLink storage and removes retained presentation tiles.
+Stream `fps` is mean adoption rate since connection, not display scanout FPS;
+`ageMs` measures time since the last adopted frame.
+
+All platforms now validate layout names, boolean toggles, integer slot IDs,
+known roster/display IDs, max-visible bounds and finite rotation intervals
+(1..86400 seconds). Unknown stream actions return 400; command queue saturation
+returns 503. These reject formerly silently ignored malformed commands.
+
+CPU-only tests `shared_moderation` and `control_http` cover selection/rotation,
+hide/pin/spotlight interplay, HTTP commands and malformed/unsupported requests.
+
+Validation: Linux CPU suite 4/4 (IPC, shared layouts, moderation, HTTP) passed.
+Live GPU/control integration passed with concurrent Wayland and FrameLink inputs;
+a hidden FrameLink producer completed 240 frames with zero timeouts. JPEG/MJPEG
+preview, Wayland kick, all moderation actions and unsupported camera rejection
+passed. Preview capture is queued before present while the image remains acquired,
+not a read of an already-presented swapchain image. Physical display hotplug and
+windowed preview need separate display-equipped qualification.
+
+Windows now uses the same pre-present preview capture and the actual acquired
+image index instead of reading image 0 after present. The existing demand-driven
+readback wait remains; no preview readback occurs without an HTTP request. Linux
+integration was repeated with Khronos validation enabled: passed with no reported
+Vulkan validation errors. New pure control tests are included in Linux/Windows CI.

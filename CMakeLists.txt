@@ -144,6 +144,9 @@ if(NOT WIN32)
 endif()
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
 add_dependencies(vkrenderer vkr_shaders)
+target_sources(vkrenderer PRIVATE renderer/control_api.cpp third_party/civetweb/civetweb.c)
+target_include_directories(vkrenderer PRIVATE third_party/civetweb third_party/stb)
+target_compile_definitions(vkrenderer PRIVATE NO_SSL USE_IPV6)
 if(WIN32)
     # M14: producer-facing service mode (--serve). M38 retired the client
     # library that used to come with it: producers speak framelink now.
@@ -152,8 +155,7 @@ if(WIN32)
     # Target-level NO_SSL, deliberately NOT set_source_files_properties: source
     # properties are directory-scoped and would strip TLS from vkr_web's build
     # of the very same civetweb.c.
-    target_sources(vkrenderer PRIVATE renderer/win_service.cpp
-        renderer/control_api.cpp third_party/civetweb/civetweb.c)
+    target_sources(vkrenderer PRIVATE renderer/win_service.cpp)
     target_include_directories(vkrenderer PRIVATE third_party/civetweb third_party/stb)
     target_compile_definitions(vkrenderer PRIVATE NO_SSL USE_IPV6)
     target_link_libraries(vkrenderer PRIVATE d3d11 dxgi framelink ws2_32)
@@ -421,3 +423,16 @@ if(UNIX AND NOT ANDROID)
  add_test(NAME gpu_output_pixels_4k_rgba COMMAND vkr_gpu_output_pixels 4 large)
  set_tests_properties(gpu_output_pixels_4k_rgba PROPERTIES TIMEOUT 45 SKIP_RETURN_CODE 77)
 endif()
+
+# Pure control-plane tests: no Vulkan device or display needed.
+add_executable(vkr_control_test test/control_fixture.cpp renderer/control_api.cpp third_party/civetweb/civetweb.c)
+target_include_directories(vkr_control_test PRIVATE renderer common third_party/civetweb third_party/stb)
+target_compile_definitions(vkr_control_test PRIVATE NO_SSL USE_IPV6)
+if(WIN32)
+    target_link_libraries(vkr_control_test PRIVATE ws2_32)
+else()
+    target_link_libraries(vkr_control_test PRIVATE pthread dl)
+endif()
+add_test(NAME shared_moderation COMMAND vkr_control_test)
+add_test(NAME control_http COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/control_api.py $<TARGET_FILE:vkr_control_test>)
+set_tests_properties(control_http PROPERTIES TIMEOUT 20)

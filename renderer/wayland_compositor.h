@@ -26,6 +26,7 @@ namespace vkr {
 struct WaylandOptions {
     std::vector<std::string> sceneOutputs;
     std::string socketName = "vkrender-0";
+    int controlPort = 8875;
     int headlessFrames = 0; // 0 = windowed
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;

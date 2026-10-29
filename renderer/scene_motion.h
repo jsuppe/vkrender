@@ -139,6 +139,7 @@ public:
     }
 
     void clear() { tiles_.clear(); }
+    void forget(uint64_t id) { for(size_t i=tiles_.size();i-->0;)if(tiles_[i].id==id)tiles_.erase(tiles_.begin()+i); }
 
     size_t count() const { return tiles_.size(); }
 

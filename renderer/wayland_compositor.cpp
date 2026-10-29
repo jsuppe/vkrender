@@ -1,3 +1,5 @@
+#include "control_api.h"
+#include "moderation.h"
 #include "perf_trace.h"
 #include "portable_input.h"
 // M13: minimal Wayland compositor front door for the Linux renderer.
@@ -107,6 +109,7 @@ struct BufferParams {
 // Every wl_surface gets a Stream record; only surfaces that commit buffers
 // (and have no content-bearing subsurface children) land on cube faces.
 struct Stream {
+    int controlSlot = -1;
     Ctx* ctx = nullptr;
     wl_resource* wlSurface = nullptr;
     Stream* parent = nullptr; // set for subsurfaces
@@ -128,6 +131,8 @@ struct Stream {
     // currently composited buffer (released after frame fences retire)
     wl_resource* currentBuffer = nullptr;
     int64_t currentSlot = -1;
+    int64_t lastAdoptNs=0, firstAdoptNs=0;
+    uint64_t adopted=0;
 
     // shm upload path: double-buffered owned slots
     uint32_t shmKey[2] = {0, 0};
@@ -653,6 +658,7 @@ void handleShmCommit(Stream* s, wl_shm_buffer* shm) {
                                  (uint64_t)wl_shm_buffer_get_stride(shm), w, h);
     wl_shm_buffer_end_access(shm);
     s->currentSlot = (int64_t)s->shmKey[idx];
+        s->lastAdoptNs=nowNs();if(!s->firstAdoptNs)s->firstAdoptNs=s->lastAdoptNs;++s->adopted;
     s->shmNext = 1 - idx;
     ++ctx.adoptions;
     ++ctx.videoFramesSeen;
@@ -752,6 +758,7 @@ void adoptStreams(Ctx& ctx) {
         if (s->currentBuffer) ctx.retiring.push_back({ctx.frameCounter, s->currentBuffer});
         s->currentBuffer = s->waitingBuffer;
         s->currentSlot = (int64_t)buf->slotKey;
+        s->lastAdoptNs=nowNs();if(!s->firstAdoptNs)s->firstAdoptNs=s->lastAdoptNs;++s->adopted;
         s->waitingBuffer = nullptr;
         ++ctx.adoptions;
         ++ctx.videoFramesSeen;
@@ -789,6 +796,8 @@ struct FlSlotIn {
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
     int64_t currentSlot = -1;
+    int64_t lastAdoptNs=0, firstAdoptNs=0;
+    uint64_t adopted=0;
     bool departing = false;
     int64_t departedNs = 0;
 };
@@ -819,6 +828,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
             flDropRing(ctx, s);
             s.generation = info.generation;
             s.retire.clear();s.lastReady=0;
+            s.adopted=0;s.firstAdoptNs=s.lastAdoptNs=0;
             s.width = info.width;
             s.height = info.height;
         }
@@ -902,6 +912,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         flRelease(s.channel,&f); // bookkeeping only; storage stays pinned
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
+        s.lastAdoptNs=nowNs();if(!s.firstAdoptNs)s.firstAdoptNs=s.lastAdoptNs;++s.adopted;
         ++ctx.adoptions;
         ++ctx.videoFramesSeen;
         if (f.ptsNs > 0) {
@@ -1001,6 +1012,16 @@ int runWaylandCompositor(const WaylandOptions& options) {
     int64_t rateWindowStart = nowNs();
     int exitCode = 0;
     bool quit = false;
+    constexpr size_t controlSlots=kFlSlots+kMaxStreams;
+    ModerationPolicy<controlSlots> moderation;
+    Stream* owners[controlSlots]{};
+    ControlApi control;
+    ControlSnapshot initial;initial.cameraAvailable=false;initial.cameraOn=false;
+    initial.maxSlots=controlSlots;initial.previewAvailable=true;
+    initial.displaysAvailable=headless && vk.canDisplay;
+    control.publish(initial);
+    const bool controlUp=options.controlPort>0 && control.start(options.controlPort);
+    if(options.controlPort>0 && !controlUp){exitCode=1;quit=true;}
 
     while (!quit) {
         vkrtrace::Scope loopTrace("service.iteration");
@@ -1041,6 +1062,59 @@ int runWaylandCompositor(const WaylandOptions& options) {
 
         adoptStreams(ctx);
         flPollSlots(ctx, flSlots, &hopSamples, &hopTotalUs, &hopMaxUs);
+        // Stable slots while each Wayland surface lives; FrameLink owns 0..11.
+        for(size_t i=kFlSlots;i<controlSlots;i++)if(owners[i]) {
+            auto it=std::find(ctx.streams.begin(),ctx.streams.end(),owners[i]);
+            if(it==ctx.streams.end() || (*it)->controlSlot!=(int)i) {
+                owners[i]=nullptr;moderation.hidden[i]=moderation.pinned[i]=false;
+                if(moderation.spotlight==(int)i)moderation.spotlight=-1;
+            }
+        }
+        for(auto* stream:ctx.streams)if(stream->controlSlot<0 && stream->currentSlot>=0 && !hasContentChild(ctx,stream)) {
+            for(size_t i=kFlSlots;i<controlSlots;i++)if(!owners[i]){owners[i]=stream;stream->controlSlot=(int)i;break;}
+        }
+        for(const auto& c:control.drainCommands()) {
+            using T=ControlCommand::Type;
+            if(c.type==T::Layout) {
+                if(c.str=="wall")host.setLayout(SceneLayout::Wall);
+                else if(c.str=="presentation")host.setLayout(SceneLayout::Presentation);
+                else if(c.str=="single-cube")host.setLayout(SceneLayout::SingleCube);
+                else host.setLayout(SceneLayout::TwoCubes);
+            } else if(c.type==T::Pause)host.setPaused(c.i!=0);
+            else if(c.type==T::Config){if(c.i>0)moderation.maxVisible=c.i;if(c.d>=1)moderation.rotateSeconds=c.d;}
+            else if(c.type==T::Unspotlight)moderation.spotlight=-1;
+            else if(c.type==T::Display)host.setDisplayActive(vk,c.slot,c.i!=0);
+            else if(c.slot>=0 && (size_t)c.slot<controlSlots) {
+                unsigned i=c.slot;
+                switch(c.type) {
+                case T::Hide:moderation.hidden[i]=true;break;
+                case T::Show:moderation.hidden[i]=false;break;
+                case T::Pin:moderation.pinned[i]=true;moderation.toFront(i);break;
+                case T::Unpin:moderation.pinned[i]=false;break;
+                case T::Spotlight:moderation.spotlight=i;break;
+                case T::Front:moderation.toFront(i);break;
+                case T::Kick:
+                    if(i<kFlSlots) {
+                        // Explicit kick is rare. Finish sampling before closing ring ownership.
+                        vkDeviceWaitIdle(vk.device);
+                        auto& slot=flSlots[i];host.forgetStream(slot.uid);flDropRing(ctx,slot);
+                        if(slot.channel)flClose(slot.channel);
+                        slot.channel=nullptr;slot.lastReady=0;slot.generation=0;
+                        slot.retire.clear();slot.departing=false;slot.adopted=0;slot.firstAdoptNs=slot.lastAdoptNs=0;
+                        flCreateChannelEx(slot.name.c_str(),640,360,inputFormat(i,FL_FORMAT_BGRA8),4,FL_MAP_CPU|FL_DEFER_RELEASE,&slot.channel);
+                    } else if(owners[i]) {
+                        auto* client=wl_resource_get_client(owners[i]->wlSurface);
+                        for(auto* stream:ctx.streams)if(wl_resource_get_client(stream->wlSurface)==client)host.forgetStream((uint64_t)(uintptr_t)stream);
+                        wl_client_destroy(client);
+                        // One Wayland client may own multiple surfaces, all now destroyed.
+                        for(size_t j=kFlSlots;j<controlSlots;j++)if(std::find(ctx.streams.begin(),ctx.streams.end(),owners[j])==ctx.streams.end()){owners[j]=nullptr;moderation.hidden[j]=moderation.pinned[j]=false;if(moderation.spotlight==(int)j)moderation.spotlight=-1;}
+                    }
+                    break;
+                default:break;
+                }
+            }
+        }
+
 
         // Leaf content streams -> SceneHost (it applies layout + enable set).
         std::vector<SceneHost::StreamRef> streams;
@@ -1063,10 +1137,41 @@ int runWaylandCompositor(const WaylandOptions& options) {
             streams.push_back({s.uid, s.currentSlot});
         }
 
+        bool live[controlSlots]{};
+        for(size_t i=0;i<kFlSlots;i++)live[i]=flSlots[i].currentSlot>=0 && !flSlots[i].departing;
+        for(size_t i=kFlSlots;i<controlSlots;i++)live[i]=owners[i] && owners[i]->currentSlot>=0 && !hasContentChild(ctx,owners[i]);
+        for(size_t i=0;i<controlSlots;i++)if(live[i])moderation.ensureOrdered(i);
+        auto selected=moderation.select(live,nowNs());
+        std::vector<SceneHost::StreamRef> filtered;
+        for(auto i:selected){uint64_t uid=i<kFlSlots?flSlots[i].uid:(uint64_t)(uintptr_t)owners[i];for(auto stream:streams)if(stream.id==uid)filtered.push_back(stream);}
+        streams=std::move(filtered);
+        if(controlUp && control.previewDue())host.requestPreview();
         SceneHost::Extras extras; // wayland sync is CPU-side (sync-file polls)
         if (!host.frame(vk, pool, pass, ctx.passBound, streams, extras, &quit)) {
             exitCode = 1;
             break;
+        }
+        if(controlUp) {
+            ControlSnapshot snap=initial;
+            const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
+            switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
+            snap.paused=host.paused();snap.maxVisible=moderation.maxVisible;
+            snap.rotateSeconds=moderation.rotateSeconds;snap.spotlightSlot=moderation.spotlight;
+            for(size_t i=0;i<controlSlots;i++)if(live[i] || moderation.hidden[i] || moderation.pinned[i]) {
+                ControlStreamInfo st;st.slot=i;st.connected=live[i];st.hidden=moderation.hidden[i];st.pinned=moderation.pinned[i];st.spotlit=moderation.spotlight==(int)i;
+                st.visible=std::find(selected.begin(),selected.end(),i)!=selected.end();
+                if(live[i]){auto key=i<kFlSlots?flSlots[i].currentSlot:owners[i]->currentSlot;auto* image=pool.find((uint32_t)key);if(image){st.width=image->width;st.height=image->height;}
+                    auto last=i<kFlSlots?flSlots[i].lastAdoptNs:owners[i]->lastAdoptNs;
+                    auto first=i<kFlSlots?flSlots[i].firstAdoptNs:owners[i]->firstAdoptNs;
+                    auto count=i<kFlSlots?flSlots[i].adopted:owners[i]->adopted;
+                    if(last){st.ageMs=(nowNs()-last)/1000000ll;if(last>first)st.fps=(count-1)*1e9/(last-first);}
+                }
+                snap.presenting|=live[i];snap.streams.push_back(st);
+            }
+            for(const auto& d:host.listDisplays())snap.displays.push_back({d.id,d.name,d.x,d.y,d.width,d.height,d.primary,d.active,d.u0,d.v0,d.u1,d.v1});
+            control.publish(snap);
+            std::vector<uint8_t> bgra;
+            if(host.takePreview(bgra))control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
         }
         ++ctx.frameCounter;
         for(auto& slot:flSlots)while(!slot.retire.empty() && slot.retire.front().first<=ctx.frameCounter) {
@@ -1122,6 +1227,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
         }
     }
 
+    if(controlUp)control.stop();
     vkDeviceWaitIdle(vk.device);
     if (finite && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());

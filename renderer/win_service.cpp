@@ -1,3 +1,4 @@
+#include "moderation.h"
 #include "perf_trace.h"
 // M14/M15: Windows renderer service - see win_service.h for the architecture.
 //
@@ -123,62 +124,7 @@ constexpr uint32_t kInSlots = 12;
 // otherwise pinned streams take their seats first and the remainder rotate
 // through the leftover seats every rotateSeconds - the carousel that lets a
 // room cap the tiles at 4 while every presenter still gets screen time.
-struct Moderation {
-    bool hidden[kInSlots] = {};
-    bool pinned[kInSlots] = {};
-    int spotlight = -1;                  // slot index, -1 = none
-    uint32_t maxVisible = 4;
-    double rotateSeconds = 8.0;
-    std::vector<uint32_t> order;         // slot indices, front = first seated
-
-    void ensureOrdered(uint32_t slot) {
-        for (uint32_t o : order)
-            if (o == slot) return;
-        order.push_back(slot);
-    }
-    void toFront(uint32_t slot) {
-        ensureOrdered(slot);
-        for (size_t i = 0; i < order.size(); ++i)
-            if (order[i] == slot) {
-                order.erase(order.begin() + (ptrdiff_t)i);
-                break;
-            }
-        order.insert(order.begin(), slot);
-    }
-
-    // The seated slots for this frame, in seating order.
-    std::vector<uint32_t> select(const bool live[kInSlots], int64_t nowNsV) const {
-        std::vector<uint32_t> out;
-        if (spotlight >= 0 && spotlight < (int)kInSlots && live[spotlight] &&
-            !hidden[spotlight]) {
-            out.push_back((uint32_t)spotlight);
-            return out;
-        }
-        std::vector<uint32_t> eligible; // ordered, live, not hidden
-        for (uint32_t o : order)
-            if (o < kInSlots && live[o] && !hidden[o]) eligible.push_back(o);
-        // Pinned first, in order.
-        std::vector<uint32_t> rest;
-        for (uint32_t e : eligible) {
-            if (pinned[e] && out.size() < maxVisible) out.push_back(e);
-            else if (!pinned[e]) rest.push_back(e);
-        }
-        const size_t seats = maxVisible > out.size() ? maxVisible - out.size() : 0;
-        if (rest.size() <= seats) {
-            out.insert(out.end(), rest.begin(), rest.end());
-        } else if (seats > 0) {
-            // The carousel: the window over `rest` advances one PAGE per
-            // period, so every presenter gets equal time and the transition
-            // is the presentation layout's own enter/exit animation.
-            const uint64_t page =
-                (uint64_t)((double)nowNsV * 1e-9 / (rotateSeconds > 0.5 ? rotateSeconds : 0.5));
-            const size_t start = (size_t)((page * seats) % rest.size());
-            for (size_t i = 0; i < seats; ++i)
-                out.push_back(rest[(start + i) % rest.size()]);
-        }
-        return out;
-    }
-};
+using Moderation = ModerationPolicy<kInSlots>;
 
 } // namespace
 
@@ -696,26 +642,18 @@ int runWinService(const WinServeOptions& options) {
             }
         } // all scene outputs share this render and timestamp
 
+        if(controlUp && control.previewDue())host.requestPreview();
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
             exitCode = 1;
             break;
         }
 
-        // M42: publish the moderation snapshot + refresh the live preview when
-        // the console is watching. The readback happens HERE, between frames
-        // on the render thread - the one place it is legal - and only when a
-        // preview was requested in the last few seconds.
+        // Preview is captured on demand by SceneHost before presentation,
+        // while the selected swapchain image is still acquired.
         if (controlUp) {
-            if (control.previewDue()) {
-                std::vector<uint8_t> bgra;
-                if (vkrReadImage(vk, host.commandPool(),
-                                 headless ? vk.swapImages[0] : vk.swapImages[0], vk.swapExtent,
-                                 headless ? VK_IMAGE_LAYOUT_GENERAL
-                                          : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                 bgra))
-                    control.publishPreview(bgra.data(), vk.swapExtent.width,
-                                           vk.swapExtent.height);
-            }
+            std::vector<uint8_t> bgra;
+            if(host.takePreview(bgra))
+                control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
             ControlSnapshot snap;
             switch (host.layout()) {
                 case SceneLayout::Presentation: snap.layout = "presentation"; break;
@@ -729,7 +667,7 @@ int runWinService(const WinServeOptions& options) {
             snap.rotateSeconds = mod.rotateSeconds;
             snap.spotlightSlot = mod.spotlight;
             snap.cameraOn = cameraOn;
-            snap.displaysAvailable = vk.canDisplay;
+            snap.displaysAvailable = headless && vk.canDisplay;
             for (const auto& d : host.listDisplays()) {
                 ControlDisplayInfo cd;
                 cd.id = d.id;

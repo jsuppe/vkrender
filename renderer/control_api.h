@@ -30,7 +30,6 @@
 //   POST /api/display?id=N&on=0|1             attach/detach a monitor (M43)
 #pragma once
 
-#ifdef _WIN32
 
 #include <atomic>
 #include <condition_variable>
@@ -75,6 +74,9 @@ struct ControlSnapshot {
     double rotateSeconds = 8.0;
     int spotlightSlot = -1;
     bool presenting = false;
+    bool cameraAvailable = true;
+    bool previewAvailable = true;
+    uint32_t maxSlots = 12;
     bool cameraOn = true;         // M43
     bool displaysAvailable = false; // M43: false = no window system (true server)
     std::vector<ControlStreamInfo> streams;
@@ -144,5 +146,3 @@ class ControlApi {
 };
 
 } // namespace vkr
-
-#endif // _WIN32

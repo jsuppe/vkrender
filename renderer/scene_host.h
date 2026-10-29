@@ -118,6 +118,14 @@ public:
     SceneLayout layout() const { return layout_; }
     void setPaused(bool p) { paused_ = p; }
     bool paused() const { return paused_; }
+    void requestPreview() { previewRequested_=true; }
+    bool takePreview(std::vector<uint8_t>& pixels) {
+        pixels.swap(previewPixels_);previewPixels_.clear();return !pixels.empty();
+    }
+    void forgetStream(uint64_t id) {
+        motion_.forget(id);
+        for(size_t i=tileSlots_.size();i-->0;)if(tileSlots_[i].first==id)tileSlots_.erase(tileSlots_.begin()+i);
+    }
 
     // M43: runtime display outputs (headless appliance mode). The offscreen
     // canvas stays the master - the camera always sees the whole scene - and
@@ -211,6 +219,8 @@ private:
 
     // Snapshot control (P key, or VKR_SNAPSHOT_SECONDS for periodic dumps):
     // writes each window's last presented frame to scene-w<N>.ppm.
+    bool previewRequested_ = false;
+    std::vector<uint8_t> previewPixels_;
     bool snapshotRequested_ = false;
     double snapshotEvery_ = 0.0;
     int64_t lastSnapshotNs_ = 0;
