@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
 project(vkrender LANGUAGES C CXX)
 
+option(VKR_DISABLE_TRACE "Compile out performance tracing" OFF)
+if(VKR_DISABLE_TRACE)
+    add_compile_definitions(FL_TRACE_COMPILED_OUT)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

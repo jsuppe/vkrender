@@ -1,4 +1,5 @@
-﻿// M15 scene host implementation - see scene_host.h.
+#include "perf_trace.h"
+// M15 scene host implementation - see scene_host.h.
 
 #ifndef __ANDROID__
 
@@ -508,8 +509,23 @@ bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
     return resizeFrameSync(vk);
 }
 
+void SceneHost::collectTrace(VkContext& vk, FrameSync& f) {
+        if(f.tracePending) {
+            uint64_t ticks[2]{};
+            VkResult r=vkGetQueryPoolResults(vk.device,f.traceQueries,0,2,sizeof(ticks),ticks,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT);
+            if(r==VK_SUCCESS) {
+                uint64_t delta=ticks[1]-ticks[0];
+                if(f.traceValidBits<64)delta&=(1ull<<f.traceValidBits)-1;
+                vkrtrace::record({"gpu.scene_duration",vkrtrace::clockNs(),(uint64_t)(delta*f.tracePeriod),0,f.traceFrame,0,0,0,0});
+            } else vkrtrace::record({"gpu.scene_query_unavailable",vkrtrace::clockNs(),0,0,f.traceFrame,0,0,0,r});
+            f.tracePending=false;
+        }
+}
+
 bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, bool passBound,
                       const std::vector<StreamRef>& streams, const Extras& extras, bool* quit) {
+    vkrtrace::Scope trace("scene.frame_cpu");
+    if(trace.active) trace.event.sequence=frameIndex_;
     *quit = false;
     if (!vk.headless) {
         glfwPollEvents();
@@ -754,7 +770,25 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     static const bool kTiming = getenv("VKR_SCENE_TIMING") != nullptr;
     const int64_t tFrameStart = kTiming ? nowNs() : 0;
 
-    vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);
+    vkrtrace::call("scene.wait_inflight_fence", [&]{return vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);});
+    if(vkrtrace::gpuEnabled()) {
+        if(!f.traceAttempted) {
+            f.traceAttempted=true;
+            uint32_t count=0; vkGetPhysicalDeviceQueueFamilyProperties(vk.phys,&count,nullptr);
+            std::vector<VkQueueFamilyProperties> props(count);
+            vkGetPhysicalDeviceQueueFamilyProperties(vk.phys,&count,props.data());
+            VkPhysicalDeviceProperties deviceProps{}; vkGetPhysicalDeviceProperties(vk.phys,&deviceProps);
+            f.traceValidBits=props[vk.queueFamily].timestampValidBits;
+            f.tracePeriod=deviceProps.limits.timestampPeriod;
+            VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qi.queryType=VK_QUERY_TYPE_TIMESTAMP; qi.queryCount=2;
+            if(!f.traceValidBits || vkCreateQueryPool(vk.device,&qi,nullptr,&f.traceQueries)!=VK_SUCCESS) {
+                f.traceQueries=VK_NULL_HANDLE;
+                vkrtrace::record({"gpu.scene_unavailable",vkrtrace::clockNs(),0,0,0,0,0,0,-1});
+            }
+        }
+        collectTrace(vk,f);
+    }
     const int64_t tAfterFence = kTiming ? nowNs() : 0;
 
     // Acquire every window's image. Headless: window 0 is the offscreen
@@ -764,9 +798,9 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     std::vector<uint32_t> imageIndex(windowCount, 0);
     for (size_t w = firstChain; w < windowCount; ++w) {
         VkSwapchainKHR chain = w == 0 ? vk.swapchain : extra_[w - 1].swapchain;
-        VkResult ar = vkAcquireNextImageKHR(vk.device, chain, UINT64_MAX,
+        VkResult ar = vkrtrace::call("scene.acquire_swapchain", [&]{return vkAcquireNextImageKHR(vk.device, chain, UINT64_MAX,
                                             f.acquireSems[w], VK_NULL_HANDLE,
-                                            &imageIndex[w]);
+                                            &imageIndex[w]);});
         if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
             // Drain any acquire semaphores already signaled this frame so
             // they can be reused, then rebuild and skip the frame.
@@ -792,7 +826,13 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    {
+    vkrtrace::Scope recording("scene.record_commands_cpu");
     vkBeginCommandBuffer(f.cmd, &bi);
+    if(f.traceQueries) {
+        vkCmdResetQueryPool(f.cmd,f.traceQueries,0,2);
+        vkCmdWriteTimestamp(f.cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,f.traceQueries,0);
+    }
 
     for (size_t w = 0; w < windowCount; ++w) {
         VkImage image = w == 0 ? vk.swapImages[imageIndex[0]] : extra_[w - 1].images[imageIndex[w]];
@@ -908,7 +948,9 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         vkCmdPipelineBarrier2(f.cmd, &dep);
     }
 
+    if(f.traceQueries) vkCmdWriteTimestamp(f.cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,f.traceQueries,1);
     vkEndCommandBuffer(f.cmd);
+    }
     const int64_t tAfterRecord = kTiming ? nowNs() : 0;
 
     std::vector<VkSemaphore> waitSems;
@@ -950,10 +992,11 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     si.pCommandBuffers = &f.cmd;
     si.signalSemaphoreCount = (uint32_t)signalSems.size();
     si.pSignalSemaphores = signalSems.data();
-    if (vkQueueSubmit(vk.queue, 1, &si, f.inFlight) != VK_SUCCESS) {
+    if (vkrtrace::call("scene.queue_submit_cpu", [&]{return vkQueueSubmit(vk.queue, 1, &si, f.inFlight);}) != VK_SUCCESS) {
         VKR_ERR("scene: submit failed");
         return false;
     }
+    if(f.traceQueries){f.tracePending=true;f.traceFrame=frameIndex_-1;}
     const int64_t tAfterSubmit = kTiming ? nowNs() : 0;
 
     if (windowCount > firstChain) {
@@ -968,7 +1011,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         pi.pSwapchains = chains.data();
         pi.pImageIndices = imageIndex.data() + firstChain;
         pi.pResults = results.data();
-        vkQueuePresentKHR(vk.queue, &pi);
+        vkrtrace::call("scene.present_call_cpu", [&]{return vkQueuePresentKHR(vk.queue, &pi);});
         for (size_t w = 0; w < results.size(); ++w)
             if (results[w] == VK_ERROR_OUT_OF_DATE_KHR || results[w] == VK_SUBOPTIMAL_KHR)
                 recreateWindow(vk, w + firstChain);
@@ -1037,6 +1080,9 @@ void SceneHost::destroy(VkContext& vk) {
     for (auto& f : frames_) {
         for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
         for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
+        collectTrace(vk,f);
+        if (f.traceQueries) vkDestroyQueryPool(vk.device,f.traceQueries,nullptr);
+        f.traceQueries=VK_NULL_HANDLE;
         if (f.inFlight) vkDestroyFence(vk.device, f.inFlight, nullptr);
         f.acquireSems.clear();
         f.renderDoneSems.clear();

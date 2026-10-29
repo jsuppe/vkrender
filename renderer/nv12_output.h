@@ -28,6 +28,8 @@ private:
   Microsoft::WRL::ComPtr<ID3D11VideoProcessorOutputView> output_;
   Microsoft::WRL::ComPtr<ID3D11Fence> fence_, done_;
   uint64_t lastDone_ = 0;
+  uint64_t traceSubmitNs_ = 0;
+
 };
 } // namespace vkr
 #endif

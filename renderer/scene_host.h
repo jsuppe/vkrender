@@ -183,10 +183,16 @@ private:
     static constexpr uint32_t kFramesInFlight = 2;
     struct FrameSync {
         VkFence inFlight = VK_NULL_HANDLE;
+        VkQueryPool traceQueries = VK_NULL_HANDLE;
+        bool traceAttempted = false, tracePending = false;
+        uint32_t traceValidBits = 0;
+        double tracePeriod = 0;
+        uint64_t traceFrame = 0;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window
         std::vector<VkSemaphore> renderDoneSems; // per window
     };
+    void collectTrace(VkContext& vk, FrameSync& f);
     FrameSync frames_[kFramesInFlight];
     uint64_t frameIndex_ = 0;
     // M31: entry/reflow/exit animation for presentation tiles. Shared with the

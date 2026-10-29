@@ -1,3 +1,4 @@
+#include "perf_trace.h"
 // M14/M15: Windows renderer service - see win_service.h for the architecture.
 //
 // The service allocates each client's ring with D3D11 (shared NT-handle BGRA
@@ -392,6 +393,7 @@ int runWinService(const WinServeOptions& options) {
 
     bool quit = false;
     while (!quit) {
+        vkrtrace::Scope loopTrace("service.iteration");
         if (headless) {
             if (finite && videoFramesSeen >= options.headlessFrames) break;
             if (finite && nowNs() > headlessDeadline) {
@@ -404,7 +406,7 @@ int runWinService(const WinServeOptions& options) {
             // M43: unless a display output is attached - then its FIFO
             // present paces the loop at the panel's refresh instead.
             if (host.activeDisplayCount() == 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                { vkrtrace::Scope pacing("service.headless_pacing"); std::this_thread::sleep_for(std::chrono::milliseconds(16)); }
         }
 
         for(auto&output:sceneOuts)attachSceneOut(output);
@@ -649,6 +651,7 @@ int runWinService(const WinServeOptions& options) {
         }
         const int64_t scenePts=nowNs();
         for (auto& sceneOut : sceneOuts) {
+            vkrtrace::Scope outputTrace("service.output_prepare",vkrtrace::id(sceneOut.name.c_str()));
             sceneOut.pendingSlot = -1;
             if (sceneOut.channel && presenting && cameraOn) {
                 flBuffer buf{};
@@ -757,6 +760,7 @@ int runWinService(const WinServeOptions& options) {
         // The submit carrying the blit is queued and will signal the value we
         // reserved, so the frame can be published now.
         for (auto& sceneOut : sceneOuts) {
+            vkrtrace::Scope outputTrace("service.output_publish",vkrtrace::id(sceneOut.name.c_str()));
             if (sceneOut.pendingSlot >= 0) {
                 flBuffer buf{};
                 buf.slot = (uint32_t)sceneOut.pendingSlot;

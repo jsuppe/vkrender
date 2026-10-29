@@ -231,3 +231,5 @@ future ideas live there and in the GitHub issues.
 The service can publish its rendered scene to a consumer-owned NV12 channel,
 using GPU conversion with fence-ordered delivery. BGRA output remains supported.
 See [NV12 output setup, architecture and tests](docs/NV12_OUTPUT.md).
+
+Opt-in CPU/GPU performance evaluation: [tracing audit and capture guide](docs/PERFORMANCE_TRACING.md).
