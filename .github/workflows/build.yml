@@ -7,11 +7,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Match the renderer API to a reproducible FrameLink revision.
+env:
+  FRAMELINK_REF: ae0a42353b2889fe018c7b14aad52db84dd81241
+
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out FrameLink
+        uses: actions/checkout@v4
+        with:
+          repository: jsuppe/framelink
+          ref: ${{ env.FRAMELINK_REF }}
+          path: deps/framelink
+          persist-credentials: false
+
 
       # No pinned generator: the runner image ships whichever Visual Studio
       # is current, and CMake's default picks it up.
@@ -41,7 +54,7 @@ jobs:
           if ($p1.ExitCode -ne 0 -or $p2.ExitCode -ne 0) { exit 1 }
 
       - name: Configure
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A x64 -DFRAMELINK_DIR="${{ github.workspace }}/deps/framelink"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
@@ -73,24 +86,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out FrameLink
+        uses: actions/checkout@v4
+        with:
+          repository: jsuppe/framelink
+          ref: ${{ env.FRAMELINK_REF }}
+          path: deps/framelink
+          persist-credentials: false
+
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libgstreamer-plugins-bad1.0-dev \
-            libva-dev libdrm-dev \
+            libva-dev libdrm-dev libgbm-dev \
             xorg-dev libwayland-dev libwayland-bin libxkbcommon-dev wayland-protocols
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFRAMELINK_DIR="$GITHUB_WORKSPACE/deps/framelink"
 
       - name: Build
         run: cmake --build build --parallel 4
 
       # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -R "^(ipc|shared_scene_layouts)$"
 
   # The sender is a Flutter app, so it builds and tests entirely outside the
   # CMake tree and needs its own job. Ubuntu is deliberate: the suite is pure
@@ -130,6 +152,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out FrameLink
+        uses: actions/checkout@v4
+        with:
+          repository: jsuppe/framelink
+          ref: ${{ env.FRAMELINK_REF }}
+          path: deps/framelink
+          persist-credentials: false
+
+
       # The WebRTC APK statically links the whole webrtcbin + Rust closure into
       # a ~350 MB RelWithDebInfo .so per ABI; on a cache miss the GStreamer
       # prune also extracts multi-GB trees. Reclaim ~10 GB of preinstalled
@@ -164,7 +195,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Assemble APKs (renderer + decoder + airplay + webrtc)
-        run: gradle -p android assembleDebug
+        run: gradle -p android assembleDebug -PframelinkDir="$GITHUB_WORKSPACE/deps/framelink"
 
       # Tag/manual only, and short-lived - see the note on the Windows upload.
       # This job is the expensive one: 4.23 GB of the 4.90 GB that filled the
