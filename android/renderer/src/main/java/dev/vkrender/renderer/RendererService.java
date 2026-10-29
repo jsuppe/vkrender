@@ -23,6 +23,9 @@ public class RendererService extends Service {
     private static native Surface nativeAcquireInputSurface(int uid, int slot);
 
     private static native void nativeReleaseInputSurface(int uid, int slot);
+    private static native String nativeControlStatus();
+    private static native String nativeControlCapabilities();
+    private static native int nativeControl(String action, int slot, String value);
 
     private final StreamOwners<Surface> owners = new StreamOwners<>(new StreamOwners.Backend<Surface>() {
         public Surface acquire(int uid, int slot) { return nativeAcquireInputSurface(uid, slot); }
@@ -30,6 +33,14 @@ public class RendererService extends Service {
     });
 
     private final IVkRendererService.Stub binder = new IVkRendererService.Stub() {
+        @Override public int getControlVersion() { return 1; }
+        @Override public String getControlCapabilities() { return nativeControlCapabilities(); }
+        @Override public String getControlStatus() { return nativeControlStatus(); }
+        @Override public int submitControl(String action, int slot, String value) {
+            if(action==null || value==null || action.length()>64 || value.length()>256)return 1;
+            return nativeControl(action,slot,value);
+        }
+
         @Override
         public Surface acquireInputSurface() {
             return owners.acquire(Binder.getCallingUid(), 0, null);

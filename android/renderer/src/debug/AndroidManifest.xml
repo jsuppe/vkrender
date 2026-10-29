@@ -3,5 +3,6 @@
         <!-- Debug-only, separate process for genuine Binder death testing. -->
         <service android:name=".SurfaceLifecycleTestService"
                  android:process=":surface_lifecycle_test" android:exported="true" />
+        <service android:name=".ControlTestService" android:process=":control_test" android:exported="true" />
     </application>
 </manifest>

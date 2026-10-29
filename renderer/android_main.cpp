@@ -1,3 +1,5 @@
+#include "android_control.h"
+#include "moderation.h"
 #include "gpu_trace.h"
 #include "portable_output.h"
 #include "portable_input.h"
@@ -74,6 +76,7 @@ inline int64_t streamKey(int uid, int slot) {
 }
 
 struct InputStream {
+    int controlSlot=-1;
     int64_t key = -1;
     uint64_t sceneId = 0; // unique across release/reacquire of the same UID/slot
     AImageReader* reader = nullptr;
@@ -86,6 +89,7 @@ struct InputStream {
 std::mutex g_streamsMutex;
 std::condition_variable g_readerCv; // renderer-readiness for binder waits
 bool g_rendererReady = false;
+vkr::AndroidControl g_control;
 std::vector<std::unique_ptr<InputStream>> g_streams;
 uint64_t g_nextSceneId = 1;
 std::vector<int64_t> g_pendingRelease; // stream keys to tear down on the render thread
@@ -128,6 +132,7 @@ struct FrameSync {
 
 struct RendererState {
     bool windowReady = false;
+    bool resumed = false, initialized = false;
     bool destroyed = false;
     vkr::SceneLayout layout=vkr::SceneLayout::TwoCubes;
     bool paused=false, backdrop=true;
@@ -183,10 +188,17 @@ void onAppCmd(android_app* app, int32_t cmd) {
         case APP_CMD_INIT_WINDOW: state->windowReady = app->window != nullptr; break;
         case APP_CMD_TERM_WINDOW: state->windowReady = false; break;
         case APP_CMD_DESTROY: state->destroyed = true; break;
+        case APP_CMD_RESUME: state->resumed = true; break;
+        case APP_CMD_PAUSE: state->resumed = false; break;
     }
+    g_control.setReady(state->initialized && state->windowReady && state->resumed && !state->destroyed);
 }
 
 } // namespace
+
+std::string vkrControlStatus(){return g_control.status();}
+const char* vkrControlCapabilities(){return vkr::AndroidControl::capabilities();}
+int vkrControl(const std::string& action,int slot,const std::string& value){return g_control.submit(action,slot,value);}
 
 // Called from RendererService's binder thread (renderer_jni.cpp). Returns the
 // caller's existing stream window for (uid, slot), or creates a fresh
@@ -220,6 +232,10 @@ ANativeWindow* vkrAcquireStreamWindow(int uid, int slot) {
     }
     auto s = std::make_unique<InputStream>();
     s->key = key;
+    for(int controlSlot=12;controlSlot<24;controlSlot++) {
+        bool occupied=false;for(auto& existing:g_streams)if(existing->controlSlot==controlSlot)occupied=true;
+        if(!occupied){s->controlSlot=controlSlot;break;}
+    }
     s->sceneId = g_nextSceneId++;
     media_status_t ms = AImageReader_newWithUsage(1920, 1080, AIMAGE_FORMAT_PRIVATE,
                                                   AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 6,
@@ -282,6 +298,8 @@ void android_main(android_app* app) {
         std::lock_guard<std::mutex> lock(g_streamsMutex);
         g_rendererReady = true;
     }
+    g_control.publish("{}",{},0);
+    state.initialized=true;g_control.setReady(state.windowReady && state.resumed);
     g_readerCv.notify_all();
     VKR_LOG("renderer: stream service ready (up to %zu producers)", kMaxStreams);
 
@@ -344,6 +362,10 @@ void android_main(android_app* app) {
     }
     VKR_LOG("renderer: %u framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.%u')",
             kFlSlots, kFlSlots - 1);
+
+    vkr::ModerationPolicy<24> moderation;
+    uint64_t controlApplied=0;
+    uint64_t controlGenerations[24]{};
 
     // Poll the slots on the render thread. Import-once per (generation, ring
     // slot); release value-1 on every adoption so latest-wins skips free their
@@ -487,6 +509,45 @@ void android_main(android_app* app) {
         {
             std::lock_guard<std::mutex> lock(g_streamsMutex);
 
+            for(const auto& c:g_control.drain()) {
+                using T=vkr::ControlCommand::Type;
+                if(c.type==T::Layout){
+                    if(c.str=="wall")state.layout=vkr::SceneLayout::Wall;
+                    else if(c.str=="presentation")state.layout=vkr::SceneLayout::Presentation;
+                    else if(c.str=="single-cube")state.layout=vkr::SceneLayout::SingleCube;
+                    else state.layout=vkr::SceneLayout::TwoCubes;
+                } else if(c.type==T::Pause)state.paused=c.i!=0;
+                else if(c.type==T::Config){if(c.i>0)moderation.maxVisible=c.i;if(c.d>=1)moderation.rotateSeconds=c.d;}
+                else if(c.type==T::Unspotlight)moderation.spotlight=-1;
+                else if(c.slot>=0 && c.slot<24) {
+                    unsigned i=c.slot;
+                    switch(c.type) {
+                    case T::Hide:moderation.hidden[i]=true;break;
+                    case T::Show:moderation.hidden[i]=false;break;
+                    case T::Pin:moderation.pinned[i]=true;moderation.toFront(i);break;
+                    case T::Unpin:moderation.pinned[i]=false;break;
+                    case T::Spotlight:moderation.spotlight=i;break;
+                    case T::Front:moderation.toFront(i);break;
+                    case T::Kick:
+                        if(i>=kFlSlots){for(auto& stream:g_streams)if(stream->controlSlot==(int)i)g_pendingRelease.push_back(stream->key);}
+                        else {
+                            // Rare explicit kick: no imported buffer is freed during GPU reads.
+                            vkDeviceWaitIdle(vk.device);
+                            auto& slot=flSlots[i];
+                            uint64_t id=(1ull<<63)|i;motion.forget(id);
+                            for(size_t j=tileSlots.size();j-->0;)if(tileSlots[j].first==id)tileSlots.erase(tileSlots.begin()+j);
+                            for(unsigned j=0;j<8;j++)if(slot.imported[j]){pass.removeSlot(vk,slot.keys[j]);pool.removeSlot(vk,slot.keys[j]);}
+                            if(slot.channel)flClose(slot.channel);
+                            auto name=slot.name;slot=FlSlotIn{};slot.name=name;
+                            flCreateChannelEx(name.c_str(),640,360,vkr::inputFormat(i,FL_FORMAT_RGBA8),4,FL_MAP_CPU|FL_DEFER_RELEASE,&slot.channel);
+                        }
+                        break;
+                    default:break;
+                    }
+                }
+                ++controlApplied;
+            }
+
             // Detach immediately so reacquire gets a new generation/reader.
             // Keep the old image/import alive while its scene tile exits.
             for (int64_t skey : g_pendingRelease) {
@@ -564,14 +625,34 @@ void android_main(android_app* app) {
             if (nActive)
                 for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % nActive];
             sceneSlots.clear();sceneIds.clear();
-            size_t ordinal=0;
-            auto addScene=[&](uint64_t id,int64_t slot){
-                if(slot<0)return;
-                if(!(state.disabled&(1u<<ordinal))){sceneSlots.push_back(slot);sceneIds.push_back(id);}
-                ++ordinal;
-            };
-            for(auto& sp:g_streams)addScene(sp->sceneId,sp->currentSlot);
-            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing)addScene((1ull<<63)|i,flSlots[i].currentSlot);
+            bool live[24]{},keyboardEnabled[24]{};int64_t images[24];uint64_t ids[24]{};unsigned ordinal=0;
+            std::fill(images,images+24,-1);
+            for(auto& sp:g_streams)if(sp->currentSlot>=0 && sp->controlSlot>=0){auto i=sp->controlSlot;live[i]=true;images[i]=sp->currentSlot;ids[i]=sp->sceneId;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
+            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing && flSlots[i].currentSlot>=0){live[i]=true;images[i]=flSlots[i].currentSlot;ids[i]=(1ull<<63)|i;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
+            for(unsigned i=0;i<24;i++) {
+                if(controlGenerations[i]!=ids[i]) {
+                    moderation.hidden[i]=moderation.pinned[i]=false;
+                    if(moderation.spotlight==(int)i)moderation.spotlight=-1;
+                    controlGenerations[i]=ids[i];
+                }
+                if(live[i])moderation.ensureOrdered(i);
+            }
+            auto selected=moderation.select(live,nowNs());
+            for(auto i:selected)if(keyboardEnabled[i]){sceneSlots.push_back(images[i]);sceneIds.push_back(ids[i]);}
+            const char* layoutNames[]={"two-cubes","single-cube","wall","presentation"};
+            std::string status="{\"layout\":\""+std::string(layoutNames[(int)state.layout])+"\",\"paused\":"+(state.paused?"true":"false")+
+                ",\"maxVisible\":"+std::to_string(moderation.maxVisible)+",\"rotateSeconds\":"+std::to_string(moderation.rotateSeconds)+",\"streams\":[";
+            std::vector<int> roster;
+            for(unsigned i=0;i<24;i++)if(live[i]) {
+                if(!roster.empty())status+=",";roster.push_back(i);
+                auto* image=pool.find(images[i]);
+                status+="{\"connected\":true,\"slot\":"+std::to_string(i)+",\"generation\":\""+std::to_string(ids[i])+"\""+
+                    ",\"width\":"+std::to_string(image?image->width:0)+",\"height\":"+std::to_string(image?image->height:0)+
+                    ",\"hidden\":"+(moderation.hidden[i]?"true":"false")+",\"pinned\":"+(moderation.pinned[i]?"true":"false")+
+                    ",\"spotlit\":"+(moderation.spotlight==(int)i?"true":"false")+
+                    ",\"visible\":"+((std::find(selected.begin(),selected.end(),i)!=selected.end() && keyboardEnabled[i])?"true":"false")+"}";
+            }
+            status+="]}";g_control.publish(status,roster,controlApplied);
             streamCount = g_streams.size();
             for (FlSlotIn& fs : flSlots)
                 if (fs.currentSlot >= 0) ++streamCount;
@@ -731,6 +812,7 @@ void android_main(android_app* app) {
     {
         std::lock_guard<std::mutex> lock(g_streamsMutex);
         g_rendererReady = false;
+        g_control.setReady(false);
     }
     vkDeviceWaitIdle(vk.device);
     portableOutput.destroy(vk);

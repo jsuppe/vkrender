@@ -213,3 +213,10 @@ Vulkan validation errors. New pure control tests are included in Linux/Windows C
 Windows validation: isolated Caspar MSVC Release build of renderer/control tests
 passed; shared layouts, shared moderation and HTTP tests passed 3/3. This does
 not qualify Windows scanout/preview pixels; no GPU workload was started there.
+
+Android signature-protected Binder moderation now provides a versioned capability
+query, bounded status snapshot and render-thread command queue using the shared
+selection policy. Old Surface/owner transaction IDs remain intact. Physical Pi
+Binder control validation passed; see ANDROID_CONTROL.md. This does not expose
+camera, preview or physical display controls through Binder; capabilities reject
+those explicitly, rather than returning success for no effect.

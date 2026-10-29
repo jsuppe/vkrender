@@ -1,0 +1,3 @@
+--------- beginning of main
+10-29 20:53:08.095 24385 24398 I RendererControlTest: PASS hidden producer posted120frames without stall
+10-29 20:53:08.320 24385 24398 I RendererControlTest: PASS control version/capabilities/status, validation, queued actions, hidden progress, pause/resume bounds and kick

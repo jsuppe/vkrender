@@ -37,4 +37,14 @@ interface IVkRendererService {
 
     /** Only releases if owner still owns this UID/slot (stale releases are ignored). */
     void releaseInputSurfaceWithOwner(int slot, IBinder owner);
+    /** Control API version; appended to preserve existing transaction IDs. */
+    int getControlVersion();
+    String getControlCapabilities();
+    /** Nonblocking last published state, including ready/pending/applied. */
+    String getControlStatus();
+    /** 0 queued, 1 invalid, 2 unsupported, 3 renderer unavailable, 4 queue full.
+     * action: layout/pause/max_visible/rotate_seconds; value is text.
+     * stream actions hide/show/pin/unpin/spotlight/unspotlight/front/kick use
+     * the control roster slot (NOT a producer's input-surface slot). */
+    int submitControl(String action, int slot, String value);
 }

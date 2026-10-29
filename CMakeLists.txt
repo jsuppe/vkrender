@@ -448,3 +448,8 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Java_FOUND AND Python3_Interpreter_FOUND)
     add_test(NAME android_stream_owners COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/android_stream_owners.py)
 endif()
+
+add_executable(vkr_android_control_test test/android_control.cpp)
+target_include_directories(vkr_android_control_test PRIVATE renderer)
+add_test(NAME android_control_mailbox COMMAND vkr_android_control_test)
+add_test(NAME android_control_aidl COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/android_control_aidl.py)
