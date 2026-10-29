@@ -210,3 +210,6 @@ image index instead of reading image 0 after present. The existing demand-driven
 readback wait remains; no preview readback occurs without an HTTP request. Linux
 integration was repeated with Khronos validation enabled: passed with no reported
 Vulkan validation errors. New pure control tests are included in Linux/Windows CI.
+Windows validation: isolated Caspar MSVC Release build of renderer/control tests
+passed; shared layouts, shared moderation and HTTP tests passed 3/3. This does
+not qualify Windows scanout/preview pixels; no GPU workload was started there.

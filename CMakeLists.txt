@@ -425,6 +425,7 @@ if(UNIX AND NOT ANDROID)
 endif()
 
 # Pure control-plane tests: no Vulkan device or display needed.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_executable(vkr_control_test test/control_fixture.cpp renderer/control_api.cpp third_party/civetweb/civetweb.c)
 target_include_directories(vkr_control_test PRIVATE renderer common third_party/civetweb third_party/stb)
 target_compile_definitions(vkr_control_test PRIVATE NO_SSL USE_IPV6)
