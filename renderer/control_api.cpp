@@ -260,10 +260,11 @@ int ControlApi::handleRequest(mg_connection* conn) {
             std::atomic<int>& count;
             ~Admission() { --count; }
         } admission{previewStreamers_};
-        mg_printf(conn,
+        static constexpr char header[] =
                   "HTTP/1.1 200 OK\r\n"
                   "Content-Type: multipart/x-mixed-replace; boundary=vkrframe\r\n"
-                  "Cache-Control: no-store\r\nConnection: close\r\n\r\n");
+                  "Cache-Control: no-store\r\nConnection: close\r\n\r\n";
+        if (mg_write(conn, header, sizeof(header)-1) != (int)(sizeof(header)-1)) return 200;
         uint64_t seen = 0;
         bool alive = true;
         while (alive && !stopping_.load()) {
@@ -281,7 +282,7 @@ int ControlApi::handleRequest(mg_connection* conn) {
                     // stream cap exactly this way. A stray CRLF between
                     // multipart parts is harmless to readers.
                     hold.unlock();
-                    alive = mg_write(conn, "\r\n", 2) > 0;
+                    alive = mg_write(conn, "\r\n", 2) == 2;
                     continue;
                 }
                 seen = previewSeq_;
@@ -297,9 +298,9 @@ int ControlApi::handleRequest(mg_connection* conn) {
                                     "Content-Length: %u\r\n\r\n",
                                     (unsigned)jpg.size());
             const int64_t t0 = nowNs();
-            alive = mg_write(conn, part, (size_t)pn) > 0 &&
-                    mg_write(conn, jpg.data(), jpg.size()) > 0 &&
-                    mg_write(conn, "\r\n", 2) > 0;
+            alive = mg_write(conn, part, (size_t)pn) == pn &&
+                    mg_write(conn, jpg.data(), jpg.size()) == (int)jpg.size() &&
+                    mg_write(conn, "\r\n", 2) == 2;
             // A frozen client (a background tab Chrome stopped scheduling)
             // trickle-ACKs against a full TCP window: writes "succeed" after
             // blocking for ages and the handler wedges holding its slot.

@@ -28,3 +28,13 @@ handler exit. The CPU HTTP regression launches eight clients simultaneously,
 asserts exactly three streams and five503 responses, checks control requests
 remain responsive, disconnects all streams, and repeats eight batches to check
 lease reclamation. This is not a GPU/video performance test.
+
+## Partial multipart socket writes
+
+Every multipart header, JPEG and separator write now requires the full requested
+byte count; a short write ends the handler and releases admission. A Linux-only
+link-wrapper regression transmits half a real JPEG and returns the actual short
+count. Eight sequential requests must receive exactly the truncated frame then
+EOF, remain able to query status, and reclaim their stream leases. The old code
+fails this test by continuing to send more multipart fragments; fixed code and
+both existing HTTP/admission tests pass. Before/after CTest logs are included.
