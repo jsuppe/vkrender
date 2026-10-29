@@ -213,6 +213,12 @@ struct Image {
         VK_SUCCESS)
       return false;
     bool resolve = f.format == VK_FORMAT_UNDEFINED;
+    // Native YUV can also expose a defined multiplanar format. That requires
+    // plane-specific copies; it must not enter the single-color RGB path.
+    if (info.format == FL_FORMAT_NV12 && !resolve) {
+      VKR_WARN("GPU output: defined-format Android YUV transfer is not supported (VkFormat=%u)", f.format);
+      return false;
+    }
     if (resolve && (!v.hasExternalResolve ||
                     rp.colorAttachmentFormat == VK_FORMAT_UNDEFINED))
       return false;

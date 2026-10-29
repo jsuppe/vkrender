@@ -16,15 +16,32 @@ int main(int argc,char** argv){
  const std::string prefix=argc>1?argv[1]:"parity.output";
  flChannel* ch[2]{};
  const flFormat rgbFormat=argc>2 && std::string(argv[2])=="rgb10a2"?FL_FORMAT_RGB10A2:FL_FORMAT_RGBA8;
- const unsigned w=160,h=90;
+ const auto positiveEnv=[](const char* name,unsigned fallback){
+  const char* value=std::getenv(name);if(!value)return fallback;
+  char* end=nullptr;unsigned long n=std::strtoul(value,&end,10);
+  if(!*value || *end || !n || n>1000000){fprintf(stderr,"invalid %s\n",name);std::exit(2);}
+  return (unsigned)n;
+ };
+ const unsigned w=positiveEnv("VKR_CHECK_WIDTH",160),h=positiveEnv("VKR_CHECK_HEIGHT",90);
+ if(w>8192 || h>8192 || (w&1) || (h&1)){fprintf(stderr,"invalid even dimensions\n");return 2;}
+ const unsigned target=positiveEnv("VKR_CHECK_FRAMES",20);
+ const unsigned timeout=positiveEnv("VKR_CHECK_TIMEOUT",45);
+ std::vector<double> arrival[2];Clock::time_point previous[2]{};
+ uint64_t received[2]{},sequenceGaps[2]{},lastSequence[2]{};
+ const auto started=Clock::now();
  for(unsigned p=0;p<2;p++)if(flCreateChannelEx((prefix+(p?".nv12":".rgba")).c_str(),w,h,p?FL_FORMAT_NV12:rgbFormat,4,FL_MAP_CPU|((std::getenv("VKR_OUTPUT_MODE") && std::string(std::getenv("VKR_OUTPUT_MODE"))=="gpu")?FL_GPU_RENDER:0),&ch[p])!=FL_OK)return 2;
  std::map<int64_t,Image> saved[2];std::set<uint64_t> hashes;unsigned matched=0;int worst=0;
- auto deadline=Clock::now()+std::chrono::seconds(45);
- while(Clock::now()<deadline && matched<20){
+ auto deadline=Clock::now()+std::chrono::seconds(timeout);
+ while(Clock::now()<deadline && matched<target){
   for(unsigned p=0;p<2;p++){
    flFrame f{};flResult r=flAcquireFrame(ch[p],&f,10);
    if(r==FL_TIMEOUT || r==FL_DISCONNECTED)continue;
    if(r!=FL_OK)return 3;
+   auto now=Clock::now();
+   if(received[p])arrival[p].push_back(std::chrono::duration<double,std::milli>(now-previous[p]).count());
+   previous[p]=now;received[p]++;
+   if(lastSequence[p] && f.sequence>lastSequence[p]+1)sequenceGaps[p]+=f.sequence-lastSequence[p]-1;
+   lastSequence[p]=f.sequence;
    flMappedImage m{};if(flImageMapPlanes(f.image,&m)!=FL_OK)return 4;
    Image image;
    for(unsigned plane=0;plane<m.planes;plane++)for(unsigned y=0;y<m.plane[plane].rows;y++){
@@ -37,7 +54,7 @@ int main(int argc,char** argv){
     image.data[i+2]=((word>>20)&1023)*255/1023;image.data[i+3]=(word>>30)*85;
    }
    for(auto c:image.data){image.hash^=c;image.hash*=1099511628211ull;}
-   flImageUnmap(f.image);flRelease(ch[p],&f);
+   flImageUnmap(f.image);if(flRelease(ch[p],&f)!=FL_OK)return 6;
    saved[p][f.ptsNs]=std::move(image);
    if(saved[p].size()>64)saved[p].erase(saved[p].begin());
   }
@@ -69,5 +86,11 @@ int main(int argc,char** argv){
  }
  for(auto c:ch)flClose(c);
  printf("matched=%u distinct=%zu worst_YUV_error=%d (limit=3)\n",matched,hashes.size(),worst);
- return matched>=20 && hashes.size()>=10 && worst<=3?0:1;
+ const double seconds=std::chrono::duration<double>(Clock::now()-started).count();
+ for(unsigned p=0;p<2;p++){
+  auto& a=arrival[p];std::sort(a.begin(),a.end());
+  auto percentile=[&](double q){return a.empty()?0.:a[(size_t)(q*(a.size()-1))];};
+  printf("channel=%s received=%llu sequence_gaps=%llu elapsed_s=%.3f arrival_ms_p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",p?"nv12":"rgb",(unsigned long long)received[p],(unsigned long long)sequenceGaps[p],seconds,percentile(.5),percentile(.95),percentile(.99),percentile(1));
+ }
+ return matched>=target && hashes.size()>=std::min(target,10u) && worst<=3?0:1;
 }

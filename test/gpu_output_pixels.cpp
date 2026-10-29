@@ -17,8 +17,10 @@
 int main(int argc, char **argv) {
   flFormat format = argc > 1 ? (flFormat)atoi(argv[1]) : FL_FORMAT_RGBA8;
   bool large = argc > 2 && std::string(argv[2]) == "large";
+  bool stress = argc > 2 && std::string(argv[2]) == "stress";
   unsigned w = large ? 3840 : 130, h = large ? 2160 : 66;
-  const unsigned iterations = large ? 4 : 24, recreate = large ? 2 : 12;
+  const unsigned iterations = stress ? 2400 : (large ? 4 : 24), recreate = large ? 2 : 12;
+  unsigned discarded = 0;
   vkr::VkContext v;
   CHECK(v.init(64, 32, "GPU output pixels", true));
   const std::string channel = "gpu.pixel.test." + std::to_string(getpid());
@@ -145,11 +147,12 @@ int main(int argc, char **argv) {
     flFrame unpublished{};
     auto before = flAcquireFrame(c, &unpublished, 0);
     CHECK(before == FL_TIMEOUT || before == FL_DISCONNECTED);
-    if (frame == recreate) {
+    if (stress ? frame % 24 == recreate : frame == recreate) {
       flClose(c);
       c = nullptr;
-      w += 4;
-      h += 4;
+      if (stress) { w = w == 130 ? 134 : 130; h = h == 66 ? 70 : 66; }
+      else { w += 4; h += 4; }
+      discarded++;
       CHECK(flCreateChannelEx(channel.c_str(), w, h, format, 3,
                               FL_MAP_CPU | FL_GPU_RENDER, &c) == FL_OK);
     }
@@ -162,7 +165,7 @@ int main(int argc, char **argv) {
           VK_SUCCESS);
     vkResetFences(v.device, 1, &fence);
     output.retire(v, frame % 2);
-    if (frame == recreate) {
+    if (stress ? frame % 24 == recreate : frame == recreate) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1100));
       continue;
     }
@@ -251,5 +254,5 @@ int main(int argc, char **argv) {
   printf("format=%u frames=%u worst_byte_error=%d\n", format, received, worst);
   if (!received)
     return 77;
-  return received == iterations - 1 && worst <= 1 ? 0 : 1;
+  return received == iterations - discarded && worst <= 1 ? 0 : 1;
 }

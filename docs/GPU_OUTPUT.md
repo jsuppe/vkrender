@@ -57,6 +57,7 @@ make an entire CPU-reading consumer pipeline GPU-only.
 
 Linux import currently accepts shared-object DMA-BUF plane layouts. Unsupported
 modifiers/disjoint objects are rejected. Device capability checks still matter.
+Android defined-format YUV AHB imports are explicitly refused: the current Android NV12 GPU path requires external-format resolve, not the single-plane RGB copy path.
 The Android null-color-attachment resolve branch was hardware-tested on Mali;
 the non-null intermediate-color-attachment branch is implemented but unverified
 on hardware requiring it.
@@ -117,3 +118,7 @@ The first 4K validation attempt timed out while repeatedly reading individual
 bytes from uncached mapped GPU memory. The checker now copies each mapped row
 once into CPU-owned verification storage; the unchanged GPU path passes in
 3.6 seconds on Linux. This is test-only readback, not the renderer output path.
+
+## Sustained follow-up
+
+See [Linux stress evidence](linux_gpu_stress_20261029/README.md) for the 18,000-pair run and process-crash/resize cycles. Arrival gaps are reported rather than treated as a drop-free pass.
