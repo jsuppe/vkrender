@@ -1,0 +1,80 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene: 1 window(s), canvas 640x360 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('preview-sync.in.0' .. 'preview-sync.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=preview-sync (up to 12 streams)
+[INF] control: moderation API on http://127.0.0.1:42521/api/
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9ce5c20 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9ce5c20
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9cef7e0 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9cef7e0
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9ce5c20 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4de80 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9ce5c20
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9cef7e0 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9cef7e0
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9ce5c20 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4de80 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9ce5c20
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9cef7e0 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9cef7e0
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9ce5c20 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4de80 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9ce5c20
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9cef7e0 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9cef7e0
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9ce5c20 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4de80 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9ce5c20
+
+Validation Error: [ SYNC-HAZARD-READ-AFTER-WRITE ] | MessageID = 0xe4d96472
+(Warning - This VUID has now been reported 10 times, which is the duplicated_message_limit value, this will be the last time reporting it).
+vkQueueSubmit(): READ_AFTER_WRITE hazard detected. vkCmdCopyImageToBuffer (from VkCommandBuffer 0x5836c9cef7e0 submitted on the current VkQueue 0x5836c99dac80) reads VkImage 0x10000000001, which was previously written during an image layout transition initiated by vkCmdPipelineBarrier2 (from VkCommandBuffer 0x5836c9c4f8e0 submitted on VkQueue 0x5836c99dac80). 
+No sufficient synchronization is present to ensure that a read (VK_ACCESS_2_TRANSFER_READ_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior layout transition.
+Objects: 2
+    [0] VkQueue 0x5836c99dac80
+    [1] VkCommandBuffer 0x5836c9cef7e0
+
+[INF] scene: 292 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 0 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
