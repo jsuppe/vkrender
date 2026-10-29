@@ -1,0 +1,122 @@
+--------- beginning of crash
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: FATAL EXCEPTION: BackgroundExecutor
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: Process: com.android.launcher3, PID: 1203
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: java.lang.IllegalArgumentException: Required value was null.
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at okio.Buffer$$ExternalSyntheticBUOutline3.m(R8$$SyntheticClass:0)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.dagger.PerDisplayScopedProviderModule.provideTaskbarFeatureEvaluator(PerDisplayModule.kt:221)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.dagger.PerDisplayScopedProviderModule_ProvideTaskbarFeatureEvaluatorFactory.provideTaskbarFeatureEvaluator(PerDisplayScopedProviderModule_ProvideTaskbarFeatureEvaluatorFactory.java:54)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.dagger.DaggerLauncherAppComponent$ActivityContextComponentImpl.getTaskbarFeatureEvaluator(DaggerLauncherAppComponent.java:980)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarActivityContext.<init>(TaskbarActivityContext.java:339)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarManagerImpl.createTaskbarActivityContext(TaskbarManagerImpl.java:1087)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarManagerImpl.recreateTaskbarForDisplay(TaskbarManagerImpl.java:778)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarManagerImpl.initPerDisplayResource(TaskbarManagerImpl.java:465)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarManagerImpl.$r8$lambda$a9M-vXorMoJ6KWojPUjSqsq7Meo(TaskbarManagerImpl.java:0)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.launcher3.taskbar.TaskbarManagerImpl$$ExternalSyntheticLambda3.apply(R8$$SyntheticClass:0)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.quickstep.DisplayModel.storeDisplayResource(DisplayModel.kt:138)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.quickstep.DisplayModel.onDisplayAddSystemDecorations(DisplayModel.kt:60)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.app.displaylib.DisplaysWithDecorationsRepositoryCompat$startCollectingIfNeeded$1$1$1$1.invokeSuspend(DisplaysWithDecorationsRepositoryCompat.kt:122)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.os.Handler.handleCallback(Handler.java:1095)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.os.Handler.dispatchMessageImpl(Handler.java:135)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:125)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:296)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:397)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:9523)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:575)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:939)
+10-24 12:21:34.557  1203  1222 E AndroidRuntime: 	Suppressed: kotlinx.coroutines.internal.DiagnosticCoroutineContextException: [CoroutineName(LauncherBg), StandaloneCoroutine{Cancelling}@d564e0c, com.android.launcher3.util.LooperExecutor@2cf1355]
+--------- beginning of main
+10-29 20:44:12.365 23448 23469 I vkrender: renderer: device: V3D 7.1.7.0
+10-29 20:44:12.366 23448 23469 I vkrender: renderer: VK_GOOGLE_display_timing available
+10-29 20:44:12.403 23448 23469 I vkrender: renderer: stream service ready (up to 12 producers)
+10-29 20:44:12.471 23448 23469 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+10-29 20:44:15.103 23448 23460 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:15.269 23448 23469 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+10-29 20:44:15.269 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837615195 extFmt=0x25 (1 total, zero-copy)
+10-29 20:44:15.286 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837944155 extFmt=0x25 (2 total, zero-copy)
+10-29 20:44:15.304 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837948235 extFmt=0x25 (3 total, zero-copy)
+10-29 20:44:15.336 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837935995 extFmt=0x25 (4 total, zero-copy)
+10-29 20:44:15.386 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837956395 extFmt=0x25 (5 total, zero-copy)
+10-29 20:44:16.436 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 1
+10-29 20:44:16.436 23448 23460 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:16.452 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837952315 extFmt=0x25 (6 total, zero-copy)
+10-29 20:44:16.485 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837977051 extFmt=0x25 (7 total, zero-copy)
+10-29 20:44:16.502 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837968891 extFmt=0x25 (8 total, zero-copy)
+10-29 20:44:16.519 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837960475 extFmt=0x25 (9 total, zero-copy)
+10-29 20:44:16.536 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (10 total, zero-copy)
+10-29 20:44:16.619 23448 23469 I vkrender: renderer: stream generation 1 departure completed
+10-29 20:44:16.652 23448 23469 I vkrender: renderer: stream generation 1 GPU retirement (5 imports)
+10-29 20:44:17.420 23448 23469 I vkrender: renderer: 105 adoptions / 289 presents in 5s (pool 5 buffers, 1 streams)
+10-29 20:44:18.919 23499 23512 I SurfaceLifecycleTest: PASS tracked release/reacquire and stale release; waiting last-stream exit
+10-29 20:44:18.919 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 2
+10-29 20:44:19.102 23448 23469 I vkrender: renderer: stream generation 2 departure completed
+10-29 20:44:19.136 23448 23469 I vkrender: renderer: stream generation 2 GPU retirement (5 imports)
+10-29 20:44:21.436 23448 23520 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:21.452 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837964555 extFmt=0x25 (1 total, zero-copy)
+10-29 20:44:21.469 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837960475 extFmt=0x25 (2 total, zero-copy)
+10-29 20:44:21.486 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837952315 extFmt=0x25 (3 total, zero-copy)
+10-29 20:44:21.519 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (4 total, zero-copy)
+10-29 20:44:21.569 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837997451 extFmt=0x25 (5 total, zero-copy)
+10-29 20:44:22.436 23448 23469 I vkrender: renderer: 121 adoptions / 301 presents in 5s (pool 5 buffers, 1 streams)
+10-29 20:44:22.672 23499 23512 I SurfaceLifecycleTest: PASS drawing before intentional producer process death
+10-29 20:44:22.702 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 3
+10-29 20:44:22.886 23448 23469 I vkrender: renderer: stream generation 3 departure completed
+10-29 20:44:22.919 23448 23469 I vkrender: renderer: stream generation 3 GPU retirement (5 imports)
+10-29 20:44:27.453 23448 23469 I vkrender: renderer: 11 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:32.261 23448 23463 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:32.466 23448 23469 I vkrender: renderer: 0 adoptions / 292 presents in 5s (pool 0 buffers, 1 streams)
+10-29 20:44:32.519 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837627435 extFmt=0x25 (1 total, zero-copy)
+10-29 20:44:32.536 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837952315 extFmt=0x25 (2 total, zero-copy)
+10-29 20:44:32.552 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (3 total, zero-copy)
+10-29 20:44:32.569 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837960475 extFmt=0x25 (4 total, zero-copy)
+10-29 20:44:32.586 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837956395 extFmt=0x25 (5 total, zero-copy)
+10-29 20:44:33.752 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 4
+10-29 20:44:33.753 23448 23461 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:33.769 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837977051 extFmt=0x25 (6 total, zero-copy)
+10-29 20:44:33.787 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837948235 extFmt=0x25 (7 total, zero-copy)
+10-29 20:44:33.819 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (8 total, zero-copy)
+10-29 20:44:33.836 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (9 total, zero-copy)
+10-29 20:44:33.869 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837935995 extFmt=0x25 (10 total, zero-copy)
+10-29 20:44:33.936 23448 23469 I vkrender: renderer: stream generation 4 departure completed
+10-29 20:44:33.969 23448 23469 I vkrender: renderer: stream generation 4 GPU retirement (5 imports)
+10-29 20:44:34.996 23537 23554 I SurfaceLifecycleTest: PASS legacy release/reacquire
+10-29 20:44:35.002 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 5
+10-29 20:44:35.186 23448 23469 I vkrender: renderer: stream generation 5 departure completed
+10-29 20:44:35.219 23448 23469 I vkrender: renderer: stream generation 5 GPU retirement (5 imports)
+10-29 20:44:37.469 23448 23469 I vkrender: renderer: 120 adoptions / 299 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:42.470 23448 23469 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:47.486 23448 23469 I vkrender: renderer: 0 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:52.486 23448 23469 I vkrender: renderer: 0 adoptions / 300 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:52.520 23448 23463 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:52.552 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837935995 extFmt=0x25 (1 total, zero-copy)
+10-29 20:44:52.569 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (2 total, zero-copy)
+10-29 20:44:52.585 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (3 total, zero-copy)
+10-29 20:44:52.602 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837948235 extFmt=0x25 (4 total, zero-copy)
+10-29 20:44:52.636 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837964555 extFmt=0x25 (5 total, zero-copy)
+10-29 20:44:54.349 23448 23469 I vkrender: renderer: window replaced, recreating surface
+10-29 20:44:54.378 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 6
+10-29 20:44:54.378 23448 23463 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:54.405 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837623355 extFmt=0x25 (6 total, zero-copy)
+10-29 20:44:54.420 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837668491 extFmt=0x25 (7 total, zero-copy)
+10-29 20:44:54.468 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837705723 extFmt=0x25 (8 total, zero-copy)
+10-29 20:44:54.486 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837615195 extFmt=0x25 (9 total, zero-copy)
+10-29 20:44:54.486 23448 23469 I vkrender: renderer: stream generation 6 departure completed
+10-29 20:44:54.519 23448 23469 I vkrender: renderer: stream generation 6 GPU retirement (5 imports)
+10-29 20:44:54.536 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837981131 extFmt=0x25 (5 total, zero-copy)
+10-29 20:44:56.862 23537 23590 I SurfaceLifecycleTest: PASS tracked release/reacquire and stale release; waiting last-stream exit
+10-29 20:44:56.869 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 7
+10-29 20:44:57.052 23448 23469 I vkrender: renderer: stream generation 7 departure completed
+10-29 20:44:57.086 23448 23469 I vkrender: renderer: stream generation 7 GPU retirement (5 imports)
+10-29 20:44:57.503 23448 23469 I vkrender: renderer: 166 adoptions / 250 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:44:59.369 23448 23610 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:44:59.386 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837615195 extFmt=0x25 (1 total, zero-copy)
+10-29 20:44:59.402 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837705723 extFmt=0x25 (2 total, zero-copy)
+10-29 20:44:59.419 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837668491 extFmt=0x25 (3 total, zero-copy)
+10-29 20:44:59.452 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (4 total, zero-copy)
+10-29 20:44:59.510 23448 23469 I vkrender: renderer: imported AHardwareBuffer surface key=2837977051 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:00.609 23537 23590 I SurfaceLifecycleTest: PASS drawing before intentional producer process death
+10-29 20:45:00.636 23448 23469 I vkrender: renderer: stream departing uid 10116 slot 0 generation 8
+10-29 20:45:00.819 23448 23469 I vkrender: renderer: stream generation 8 departure completed
+10-29 20:45:00.852 23448 23469 I vkrender: renderer: stream generation 8 GPU retirement (5 imports)

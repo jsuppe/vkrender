@@ -1,0 +1,14 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 640x360 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('windows-stress-pixels.in.0' .. 'windows-stress-pixels.in.11')
+[INF] service: publishing scene to 'windows-stress-pixels.rgba' (160x90, ring of 4)
+[INF] service: publishing scene to 'windows-stress-pixels.nv12' (160x90, ring of 4)
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=16 640x360 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=19 640x360 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=17 640x360 (3 total, zero-copy)
+[INF] scene: 274 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 131 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.82 ms max 32.65 ms over 131
+[INF] service: scene channel 'windows-stress-pixels.rgba' released
+[INF] service: scene channel 'windows-stress-pixels.nv12' released

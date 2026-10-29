@@ -1,0 +1,13 @@
+[  5%] Built target volk
+[ 18%] Built target framelink
+[ 26%] Built target vkr_gpu_output_caps
+[ 31%] Built target vkr_portable_output_check
+[ 47%] Built target vkr_gpu_sync_fd_test
+[ 47%] Built target framelink_producer
+[ 57%] Built target vkr_gpu_output_pixels
+[ 65%] Built target framelink_consumer
+[ 68%] Building CXX object CMakeFiles/vkrender_renderer.dir/tmp/vkrender-integration/renderer/android_preview.cpp.o
+[ 71%] Building CXX object CMakeFiles/vkrender_renderer.dir/tmp/vkrender-integration/renderer/android_main.cpp.o
+[ 73%] Building CXX object CMakeFiles/vkrender_renderer.dir/renderer_jni.cpp.o
+[ 76%] Linking CXX shared library libvkrender_renderer.so
+[100%] Built target vkrender_renderer

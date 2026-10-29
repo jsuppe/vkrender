@@ -1,0 +1,106 @@
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+CMake Deprecation Warning at C:/Users/jonsu/dev/vkrender/build/_deps/volk-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- Including Win32 support
+-- No build type selected, default to Debug
+-- framelink: building GStreamer elements (gstframelink)
+-- Configuring done (3.2s)
+-- Generating done (0.7s)
+-- Build files have been written to: C:/Users/jonsu/dev/vkrender-control-20261029/build-control
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  1>Checking Build System
+  glslang-default-resource-limits.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\glslang\Release\glslang-default-resource-limits.lib
+  glslang.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\glslang\Release\glslang.lib
+  glslang-standalone.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\StandAlone\Release\glslang.exe
+  Compiling cube.vert -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/cube.vert
+  Compiling fullscreen.vert -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/fullscreen.vert
+  Compiling nv12_cube.frag -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/nv12_cube.frag
+  Compiling nv12_planar.frag -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/nv12_planar.frag
+  Compiling vaporwave.frag -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/vaporwave.frag
+  Compiling video_ycbcr.frag -> SPIR-V
+  C:/Users/jonsu/dev/vkrender-control-20261029/renderer/shaders/video_ycbcr.frag
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  framelink.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\framelink.dll
+  glfw.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glfw-build\src\Release\glfw3.lib
+  volk.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\volk-build\Release\volk.lib
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  ipc_win32.cpp
+  vkr_common.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_common.lib
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  background_pass.cpp
+  control_api.cpp
+  dump_util.cpp
+  external_video_image.cpp
+  main.cpp
+  nv12_output.cpp
+  portable_input.cpp
+  portable_output.cpp
+  scene_host.cpp
+  video_pass.cpp
+  vk_context.cpp
+  win_service.cpp
+  Generating Code...
+  civetweb.c
+  vkrenderer.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkrenderer.exe
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  control_api.cpp
+  control_fixture.cpp
+  Generating Code...
+  civetweb.c
+  vkr_control_test.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_control_test.exe
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  volk.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\volk-build\Release\volk.lib
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  scene_layout.cpp
+  vkr_scene_layout_test.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_scene_layout_test.exe
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  glslang-default-resource-limits.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\glslang\Release\glslang-default-resource-limits.lib
+  glslang.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\glslang\Release\glslang.lib
+  glslang-standalone.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glslang-build\StandAlone\Release\glslang.exe
+  framelink.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\framelink.dll
+  glfw.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\glfw-build\src\Release\glfw3.lib
+  vkr_common.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_common.lib
+  volk.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\_deps\volk-build\Release\volk.lib
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  nv12_output_win.cpp
+  nv12_output.cpp
+  vk_context.cpp
+  external_video_image.cpp
+  Generating Code...
+  vkr_nv12_output_test.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_nv12_output_test.exe
+Test project C:/Users/jonsu/dev/vkrender-control-20261029/build-control
+    Start 1: nv12_gpu_64x32
+1/7 Test #1: nv12_gpu_64x32 ...................   Passed    0.46 sec
+    Start 2: nv12_gpu_130x66
+2/7 Test #2: nv12_gpu_130x66 ..................   Passed    0.41 sec
+    Start 3: nv12_gpu_1920x1080
+3/7 Test #3: nv12_gpu_1920x1080 ...............   Passed    0.48 sec
+    Start 4: shared_scene_layouts
+4/7 Test #4: shared_scene_layouts .............   Passed    0.02 sec
+    Start 5: shared_moderation
+5/7 Test #5: shared_moderation ................   Passed    0.02 sec
+    Start 6: control_http
+6/7 Test #6: control_http .....................   Passed    0.23 sec
+    Start 7: control_preview_admission
+7/7 Test #7: control_preview_admission ........   Passed    1.47 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =   3.71 sec

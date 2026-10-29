@@ -1,0 +1,36 @@
+--------- beginning of main
+10-29 20:59:21.731 25135 25163 I RendererControlTest: PASS hidden producer posted120frames without stall
+10-29 20:59:21.885 25135 25163 E RendererControlTest: FAIL
+10-29 20:59:21.885 25135 25163 E RendererControlTest: java.lang.AssertionError: preview contains rendered scene
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.check(ControlTestService.java:28)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.runTest(ControlTestService.java:79)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.-$$Nest$mrunTest(ControlTestService.java:0)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.lambda$onServiceConnected$0(ControlTestService.java:19)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.$r8$lambda$XbymJ67OT4wqDf_efv-M1pGKjn0(ControlTestService.java:0)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+10-29 20:59:21.885 25135 25163 E RendererControlTest: 	at java.lang.Thread.run(Thread.java:1572)
+10-29 20:59:45.656 25271 25291 I RendererControlTest: PASS hidden producer posted120frames without stall
+10-29 20:59:46.823 25271 25291 E RendererControlTest: FAIL
+10-29 20:59:46.823 25271 25291 E RendererControlTest: java.lang.AssertionError: preview contains rendered scene
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.check(ControlTestService.java:28)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.runTest(ControlTestService.java:81)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.-$$Nest$mrunTest(ControlTestService.java:0)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.lambda$onServiceConnected$0(ControlTestService.java:19)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.$r8$lambda$XbymJ67OT4wqDf_efv-M1pGKjn0(ControlTestService.java:0)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+10-29 20:59:46.823 25271 25291 E RendererControlTest: 	at java.lang.Thread.run(Thread.java:1572)
+10-29 20:59:58.212 25358 25372 I RendererControlTest: PASS hidden producer posted120frames without stall
+10-29 20:59:59.379 25358 25372 I RendererControlTest: preview luminance min=1 max=1 center=ff010101
+10-29 20:59:59.380 25358 25372 E RendererControlTest: FAIL
+10-29 20:59:59.380 25358 25372 E RendererControlTest: java.lang.AssertionError: preview contains rendered scene
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.check(ControlTestService.java:28)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.runTest(ControlTestService.java:83)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService.-$$Nest$mrunTest(ControlTestService.java:0)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.lambda$onServiceConnected$0(ControlTestService.java:19)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1.$r8$lambda$XbymJ67OT4wqDf_efv-M1pGKjn0(ControlTestService.java:0)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at dev.vkrender.renderer.ControlTestService$1$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+10-29 20:59:59.380 25358 25372 E RendererControlTest: 	at java.lang.Thread.run(Thread.java:1572)
+10-29 21:00:36.680 25456 25476 I RendererControlTest: PASS hidden producer posted120frames without stall
+10-29 21:00:37.852 25456 25476 I RendererControlTest: preview luminance min=5 max=172 center=ff01ff02
+10-29 21:00:38.654 25456 25476 I RendererControlTest: PASS asynchronous bounded JPEG preview and no idle readback
+10-29 21:00:38.793 25456 25476 I RendererControlTest: PASS control version/capabilities/status, validation, queued actions, hidden progress, pause/resume bounds and kick

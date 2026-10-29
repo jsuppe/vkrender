@@ -1,0 +1,18 @@
+Internal ctest changing into directory: /tmp/vkrender-preview-build
+Test project /tmp/vkrender-preview-build
+    Start 15: control_preview_short_write
+1/1 Test #15: control_preview_short_write ......***Failed   10.21 sec
+Traceback (most recent call last):
+  File "/tmp/vkrender-preview-review/test/control_short_write.py", line 20, in <module>
+    assert len(jpeg)==expected//2 and jpeg.startswith(b'\xff\xd8'), (len(jpeg),expected)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (369565, 615)
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =  10.21 sec
+
+The following tests FAILED:
+	 15 - control_preview_short_write (Failed)
+Errors while running CTest

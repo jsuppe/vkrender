@@ -3,6 +3,34 @@
 Scope: all functional gaps across FrameLink and vkrender, not tracing alone.
 This ledger is in-progress, not a blanket parity certification.
 
+## Current qualification checkpoint
+
+The sections below retain incremental test history; this checkpoint supersedes
+older statements that the baseline stress or Binder lifecycle work is outstanding.
+
+- Baseline merged: FrameLink PR #1 (`1a46650`) and renderer PR #10 (`2c0a699`),
+  after all four renderer CI jobs passed. Final FrameLink suites: Linux 27/27,
+  Windows 28/28.
+- Linux and Windows sustained GPU output, pixel comparison, reconnect and
+  process-death evidence: `linux_gpu_stress_20261029/` and
+  `windows_gpu_stress_20261029/`. Linux recorded sequence gaps; these are not
+  drop-free or scanout-latency qualifications.
+- Integrated control/lifecycle/preview regressions: Linux 17/17. Windows stage3
+  seven targeted tests passed, plus 300 matched/distinct RGB/NV12 pairs (worst
+  YUV error 1, zero sequence gaps) and eight distinct actual GPU JPEG snapshots.
+  See `windows_gpu_stress_20261029/stage3/` for the exact tested snapshot.
+- Android Binder owner death, stale release and Surface recreation passed on
+  physical Pi; see `ANDROID_SURFACE_LIFECYCLE.md`.
+- Android opt-in secondary outputs passed physical Pi mirror/crop byte checks,
+  detach/reattach, pause/resume and buffer resize. The working path adds a
+  device-local GPU staging copy, not CPU readback. See `ANDROID_DISPLAY_OUTPUTS.md`.
+- A15 Cuttlefish RGB GPU output passed. NV12/RGB10 renderable allocation was
+  unsupported; native SYNC_FD event-gated submission timed out. These are not
+  passing qualifications. See `CUTTLEFISH_GPU_VALIDATION.md`.
+- Android preview/display Binder integration is still in progress. Android and
+  Linux virtual-camera backend support remains unavailable and is reported as
+  such. Physical Linux hotplug and optical/scanout timing remain unqualified.
+
 ## Implemented in FrameLink
 
 - Portable `flImageMapPlanes` in the core header; Linux native mapping,
@@ -168,3 +196,87 @@ recreation/resizing while an output is pending: Linux/tablet4 formats, Pi2 forma
 passed with zero byte error. Pi NV12 and RGB10 allocation limits are explicit.
 Tablet full Activity comparison remains unverified while screen-locked; native
 conversion/lifecycle tests passed. Broad platform integration parity is not complete.
+
+## Linux control-plane implementation
+
+Linux `--wayland` now honors `--control-port` (default 8875, 0 disables HTTP),
+using the same loopback-only HTTP server and moderation policy as Windows.
+`GET /api/capabilities` reports available camera, preview and display controls.
+Linux has no virtual-camera gate: `/api/camera` returns 501, not false success.
+Runtime display attach/detach is available in headless mode when GLFW can access
+a display server; unsupported display control returns 501. Preview reads the
+actual last primary image, in both windowed and headless modes.
+
+FrameLink input slots are 0..11; live Wayland content surfaces receive slots
+12..23, stable for the lifetime of the surface and reusable after disconnect.
+Use the current `/api/streams` roster before issuing a command. Kicking a Wayland
+surface disconnects its entire client (and hence all that client's surfaces).
+Hidden/rotated-out inputs are still acquired/released and Wayland frame callbacks
+continue; moderation does not stall their producer rings. Explicit kick retires
+GPU reads before closing FrameLink storage and removes retained presentation tiles.
+Stream `fps` is mean adoption rate since connection, not display scanout FPS;
+`ageMs` measures time since the last adopted frame.
+
+All platforms now validate layout names, boolean toggles, integer slot IDs,
+known roster/display IDs, max-visible bounds and finite rotation intervals
+(1..86400 seconds). Unknown stream actions return 400; command queue saturation
+returns 503. These reject formerly silently ignored malformed commands.
+
+CPU-only tests `shared_moderation` and `control_http` cover selection/rotation,
+hide/pin/spotlight interplay, HTTP commands and malformed/unsupported requests.
+
+Validation: Linux CPU suite 4/4 (IPC, shared layouts, moderation, HTTP) passed.
+Live GPU/control integration passed with concurrent Wayland and FrameLink inputs;
+a hidden FrameLink producer completed 240 frames with zero timeouts. JPEG/MJPEG
+preview, Wayland kick, all moderation actions and unsupported camera rejection
+passed. Preview capture is queued before present while the image remains acquired,
+not a read of an already-presented swapchain image. Physical display hotplug and
+windowed preview need separate display-equipped qualification.
+
+Windows now uses the same pre-present preview capture and the actual acquired
+image index instead of reading image 0 after present. The existing demand-driven
+readback wait remains; no preview readback occurs without an HTTP request. Linux
+integration was repeated with Khronos validation enabled: passed with no reported
+Vulkan validation errors. New pure control tests are included in Linux/Windows CI.
+Windows validation: isolated Caspar MSVC Release build of renderer/control tests
+passed; shared layouts, shared moderation and HTTP tests passed 3/3. This does
+not qualify Windows scanout/preview pixels; no GPU workload was started there.
+
+Android signature-protected Binder moderation now provides a versioned capability
+query, bounded status snapshot and render-thread command queue using the shared
+selection policy. Old Surface/owner transaction IDs remain intact. Physical Pi
+Binder control validation passed; see ANDROID_CONTROL.md. This does not expose
+camera, preview or physical display controls through Binder; capabilities reject
+those explicitly, rather than returning success for no effect.
+
+## Final integration gate (2026-10-29)
+
+This section supersedes the earlier staged implementation limitations above:
+Android Binder now supports bounded on-demand JPEG preview and eligible secondary
+Presentation display enable/disable/crop/status. Camera remains unsupported on
+Android/Linux; no virtual-camera backend is fabricated. See ANDROID_CONTROL.md
+and the preserved Pi preview/display fixture evidence (including negative runs).
+
+The combined integration passed Linux **18/18** tests, native Android arm64-v8a
+and x86_64 builds, and Android debug/release Java + AIDL compilation. Logs are in
+`integration-final-20261029/`. Earlier Windows final integration evidence is in
+`windows_gpu_stress_20261029/stage3/` (7 targeted tests, 300 matched RGB/NV12
+pairs and 8 GPU JPEG previews); final Android-only changes do not change the
+Windows renderer path. CI builds the final shared source on all three platforms.
+
+Review confirmed that preview CPU readback happens only after the associated
+existing frame fence, and per-frame staging allocations are reused only after
+that fence. Secondary present completion semaphores are indexed by acquired
+image; acquire semaphores by fenced frame slot. Attach/detach waits only on the
+lifecycle path, not each frame. Preview and secondary output restore the primary
+image layout before presentation. Review fixed staging reuse across a primary
+format change and refreshes preview capabilities after swapchain recreation.
+Capability changes invalidate queued previews and stale results; a regression
+test covers capability revocation and re-enablement across an in-flight capture.
+
+Secondary output and preview use a device-local intermediate copy because direct
+scaled WSI blitting failed on the physical Pi. This is GPU-only output, not a
+zero-copy claim. Screenshot comparisons do not qualify physical scanout tearing.
+Linux physical hotplug/windowed output remains unqualified on available hardware.
+Cuttlefish NV12/RGB10 allocation and native SYNC_FD failures remain documented
+limitations, not passes; see CUTTLEFISH_GPU_VALIDATION.md.

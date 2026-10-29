@@ -784,6 +784,13 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     f.gpuTrace.submitted(frameIndex_-1);
     portableOutput_.submitted((frameIndex_-1)%kFramesInFlight);
     const int64_t tAfterSubmit = kTiming ? nowNs() : 0;
+    // Read while the swapchain image is still acquired, before presenting it.
+    // A post-present read is not valid without another WSI acquire.
+    if(previewRequested_) {
+        previewRequested_=false;
+        vkrReadImage(vk,cmdPool_,vk.swapImages[imageIndex[0]],vk.swapExtent,
+            vk.headless?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,previewPixels_);
+    }
 
     if (windowCount > firstChain) {
         std::vector<VkSwapchainKHR> chains;

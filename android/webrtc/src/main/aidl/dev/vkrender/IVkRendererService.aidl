@@ -1,5 +1,7 @@
 package dev.vkrender;
 
+import android.os.IBinder;
+
 /**
  * The renderer's producer-facing API: hands out the Surface of its
  * AImageReader. Any Surface producer (MediaCodec, camera, another app - the
@@ -27,4 +29,28 @@ interface IVkRendererService {
 
     /** Tears down the caller's stream in `slot`. */
     void releaseInputSurfaceSlot(int slot);
+
+    /** Opt-in lifetime tracking. Keep owner alive until production ends.
+     * A different owner replaces this UID/slot; legacy transaction IDs remain stable. */
+    Surface acquireInputSurfaceWithOwner(int slot, IBinder owner);
+
+    /** Only releases if owner still owns this UID/slot (stale releases are ignored). */
+    void releaseInputSurfaceWithOwner(int slot, IBinder owner);
+    /** Control API version; appended to preserve existing transaction IDs. */
+    int getControlVersion();
+    String getControlCapabilities();
+    /** Nonblocking last published state, including ready/pending/applied. */
+    String getControlStatus();
+    /** 0 queued, 1 invalid, 2 unsupported, 3 renderer unavailable, 4 queue full.
+     * action: layout/pause/max_visible/rotate_seconds; value is text.
+     * stream actions hide/show/pin/unpin/spotlight/unspotlight/front/kick use
+     * the control roster slot (NOT a producer's input-surface slot). */
+    int submitControl(String action, int slot, String value);
+    /** Requests an asynchronous preview and returns latest JPEG (<=128 KiB),
+     * or null until ready / when paused or unsupported. At most 320x180, 5 Hz. */
+    byte[] getPreviewJpeg();
+    /** Display roster includes actual native presentation counters. */
+    String getDisplayOutputsStatus();
+    /** Queue secondary output/crop; same result codes as submitControl. */
+    int configureDisplayOutput(int id, boolean enabled, float x, float y, float width, float height);
 }
