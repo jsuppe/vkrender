@@ -251,6 +251,11 @@ int runWinService(const WinServeOptions& options) {
     auto dropRing = [&](SlotIn& s) {
         if (!s.readySem && s.currentSlot < 0 && s.generation == 0) return;
         vkDeviceWaitIdle(vk.device);
+        if(s.consumedSem && s.currentReady>s.lastConsumedSignal) {
+            VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+            signal.semaphore=s.consumedSem;signal.value=s.currentReady;
+            vkSignalSemaphore(vk.device,&signal); // all old GPU reads retired above
+        }
         for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
             if (!s.imported[i]) continue;
             const uint32_t key = (s.uid << 4) | i;

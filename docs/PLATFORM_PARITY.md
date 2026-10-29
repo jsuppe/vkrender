@@ -123,3 +123,20 @@ The input script checks finite renderer completion; inspect `parity-nvinput.ppm`
 for its red fixture. The output script checks 20 timestamp-matched frame pairs,
 frame diversity and YUV conversion error. These scripts stop only their own
 child processes, not an existing live demo.
+
+## Reconnect lifetime regression (2026-10-29)
+
+Replacement producers now receive `FL_BUSY` while old storage is held or its
+completion fence is pending. A successful reconnect starts a fresh generation;
+old completion values cannot authorize reuse in the new timeline. Renderer
+departure paths retire their final retained frame after GPU reads complete.
+
+- FrameLink suites: Linux 25/25, Windows 28/28 passed.
+- Held-frame reconnect and delayed-completion reconnect passed on Linux and
+  both Android devices; held-frame reconnect also passed on Windows.
+- Renderer NV12 reconnect: Linux completed 30 adoptions; Windows completed
+  70 rendered frames across reconnect; Pi producer submitted 90 frames with
+  one reconnect and no producer timeouts (renderer trace: 89 adoptions).
+- Linux CPU-fallback 640x360 integration exceeded its 15-second test timeout;
+  the passing reconnect fixture used 128x72 input. This is not a throughput
+  qualification. Long-running GPU/process-death stress remains outstanding.

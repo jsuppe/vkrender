@@ -149,6 +149,7 @@ struct FlSlotIn {
     std::string name;
     uint64_t generation = 0;
     uint32_t width = 0, height = 0;
+    uint64_t lastReady=0;
     std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
@@ -355,13 +356,14 @@ void android_main(android_app* app) {
                 }
                 s.currentSlot = -1;
                 s.generation = info.generation;
-                s.retire.clear();
+                s.retire.clear();s.lastReady=0;
                 s.width = info.width;
                 s.height = info.height;
             }
             flFrame fr{};
             const flResult r = flAcquireFrame(s.channel, &fr, 0);
             if (r == FL_DISCONNECTED) {
+                if(s.currentSlot>=0 && s.lastReady)s.retire.push_back({frameIndex+2,s.lastReady});
                 s.currentSlot = -1; // no exit animation on Android; tile pops
                 continue;
             }
@@ -409,6 +411,7 @@ void android_main(android_app* app) {
                 s.keys[fr.slot] = key;
             }
             // The monotonic release: everything BEFORE this frame is free.
+            s.lastReady=fr._readyValue;
             if(fr._readyValue>1)s.retire.push_back({frameIndex+2,fr._readyValue-1});
             flRelease(s.channel,&fr); // bookkeeping; retire after the existing GPU fence
             s.currentSlot = (int64_t)s.keys[fr.slot];

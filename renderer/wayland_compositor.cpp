@@ -784,6 +784,7 @@ struct FlSlotIn {
     uint64_t uid = 0;        // scene stream id
     uint64_t generation = 0; // which ring we imported - see flChannelInfo
     uint32_t width = 0, height = 0;
+    uint64_t lastReady=0;
     std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
@@ -817,7 +818,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
             // teardown drops them.
             flDropRing(ctx, s);
             s.generation = info.generation;
-            s.retire.clear();
+            s.retire.clear();s.lastReady=0;
             s.width = info.width;
             s.height = info.height;
         }
@@ -896,6 +897,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         // fills the ring before the second adoption: the consumer holds one
         // frame, has released nothing, and the producer has no free slot to
         // ever announce a newer one.
+        s.lastReady=f._readyValue;
         if(f._readyValue>1)s.retire.push_back({ctx.frameCounter+2,f._readyValue-1});
         flRelease(s.channel,&f); // bookkeeping only; storage stays pinned
         s.departing = false;
@@ -1052,6 +1054,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
             const bool expired =
                 s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
             if (s.departing && (expired || !host.retainsStream(s.uid))) {
+                if(s.lastReady)s.retire.push_back({ctx.frameCounter+2,s.lastReady});
                 s.currentSlot = -1;
                 s.departing = false;
                 continue;
