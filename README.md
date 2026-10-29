@@ -225,3 +225,9 @@ scripts/   Android GStreamer prebuilt fetch/prune, legacy FFmpeg cross-build
 See [ROADMAP.md](ROADMAP.md) — all milestones through M9 (GStreamer decode
 pipelines on Windows, Linux, and Android) are complete; the backlog and
 future ideas live there and in the GitHub issues.
+
+### NV12 FrameLink scene output (Windows)
+
+The service can publish its rendered scene to a consumer-owned NV12 channel,
+using GPU conversion with fence-ordered delivery. BGRA output remains supported.
+See [NV12 output setup, architecture and tests](docs/NV12_OUTPUT.md).

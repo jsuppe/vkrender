@@ -128,6 +128,7 @@ add_executable(vkrenderer
     renderer/external_video_image.cpp
     renderer/video_pass.cpp
     renderer/background_pass.cpp
+    renderer/nv12_output.cpp
     renderer/dump_util.cpp
     renderer/scene_host.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
@@ -345,4 +346,19 @@ if(NOT WIN32)
     add_executable(vkr_ipc_test test/ipc_test.cpp)
     target_link_libraries(vkr_ipc_test PRIVATE vkr_common)
     add_test(NAME ipc COMMAND vkr_ipc_test)
+endif()
+
+if(WIN32)
+    enable_testing()
+    add_executable(vkr_nv12_output_test test/nv12_output_win.cpp
+        renderer/nv12_output.cpp renderer/vk_context.cpp renderer/external_video_image.cpp)
+    target_include_directories(vkr_nv12_output_test PRIVATE renderer)
+    target_link_libraries(vkr_nv12_output_test PRIVATE vkr_common volk glfw framelink d3d11 dxgi)
+    add_dependencies(vkr_nv12_output_test vkr_shaders)
+    foreach(size "64;32" "130;66" "1920;1080")
+        list(GET size 0 w)
+        list(GET size 1 h)
+        add_test(NAME nv12_gpu_${w}x${h} COMMAND vkr_nv12_output_test ${VKR_SHADER_OUT_DIR} ${w} ${h})
+        set_tests_properties(nv12_gpu_${w}x${h} PROPERTIES TIMEOUT 60)
+    endforeach()
 endif()

@@ -851,6 +851,8 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
                 toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // full overwrite
                 toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
                 toDst.image = blit.image;
+                toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+                toDst.dstQueueFamilyIndex = vk.queueFamily;
                 toDst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
                 dep.pImageMemoryBarriers = &toDst;
                 vkCmdPipelineBarrier2(f.cmd, &dep);

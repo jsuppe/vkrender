@@ -10,6 +10,7 @@
 #ifdef _WIN32
 
 #include "win_service.h"
+#include "nv12_output.h"
 
 // M35: the scene view now goes out over framelink (docs/FRAMELINK.md)
 // instead of the M24 consumer protocol - the CONSUMER owns the ring.
@@ -68,6 +69,9 @@ int64_t nowNs() {
 // the channel's ready fence as a timeline semaphore and signal it inside our own
 // frame submit - flBeginSubmit/flEndSubmit exist for exactly this.
 struct SceneOut {
+    flFormat format = FL_FORMAT_BGRA8;
+    uint64_t convertValue=0;
+    Nv12Output converters[proto::kMaxPoolSize];
     flChannel* channel = nullptr;
     uint32_t width = 0, height = 0, poolSize = 0;
     VkImage images[proto::kMaxPoolSize] = {};        // imported per slot, cached
@@ -339,6 +343,7 @@ int runWinService(const WinServeOptions& options) {
         if (!so.channel) return;
         vkDeviceWaitIdle(vk.device);
         for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+            so.converters[i].destroy(vk);
             if (so.images[i]) vkDestroyImage(vk.device, so.images[i], nullptr);
             if (so.memories[i]) vkFreeMemory(vk.device, so.memories[i], nullptr);
             so.images[i] = VK_NULL_HANDLE;
@@ -370,6 +375,10 @@ int runWinService(const WinServeOptions& options) {
             flClose(ch);
             return;
         }
+        if(info.format!=FL_FORMAT_BGRA8 && info.format!=FL_FORMAT_NV12){
+            vkDestroySemaphore(vk.device,so.readySem,nullptr);so.readySem=VK_NULL_HANDLE;flClose(ch);return;
+        }
+        so.format=info.format;
         so.channel = ch;
         so.width = info.width;   // the consumer's geometry, not ours
         so.height = info.height;
@@ -644,25 +653,21 @@ int runWinService(const WinServeOptions& options) {
                 const uint32_t slot = buf.slot;
                 // Import once per slot; flImage is stable for the channel's
                 // lifetime, so the VkImage can be cached against the slot.
-                if (!sceneOut.images[slot]) {
-                    void* h = flImageSharedHandle(buf.image);
-                    if (!importWin32BlitTarget(vk, (uint64_t)(uintptr_t)h, sceneOut.width,
-                                               sceneOut.height, &sceneOut.images[slot],
-                                               &sceneOut.memories[slot])) {
-                        VKR_ERR("service: scene blit-target import failed (slot %u)", slot);
-                        sceneOut.images[slot] = VK_NULL_HANDLE;
+                const bool nv12=sceneOut.format==FL_FORMAT_NV12;
+                if(nv12 && !sceneOut.converters[slot].image){
+                    if(!sceneOut.converters[slot].init(vk,flChannelD3D11Device(sceneOut.channel),flImageD3D11(buf.image),sceneOut.width,sceneOut.height)){
+                        VKR_ERR("service: NV12 GPU processor initialization failed");teardownSceneOut(sceneOut);continue;
+                    }
+                } else if(!nv12 && !sceneOut.images[slot]){
+                    if(!importWin32BlitTarget(vk,(uint64_t)(uintptr_t)flImageSharedHandle(buf.image),sceneOut.width,sceneOut.height,&sceneOut.images[slot],&sceneOut.memories[slot])){
+                        VKR_ERR("service: scene blit-target import failed");teardownSceneOut(sceneOut);continue;
                     }
                 }
-                uint64_t value = 0;
-                if (sceneOut.images[slot] &&
-                    flBeginSubmit(sceneOut.channel, &buf, &value) == FL_OK) {
-                    sceneOut.pendingSlot = (int)slot;
-                    sceneOut.pendingValue = value;
-                    // The signal rides OUR Vulkan submit, which is the whole
-                    // reason flSubmit is unusable here.
-                    extras.blits.push_back({sceneOut.images[slot], sceneOut.width,
-                                            sceneOut.height});
-                    extras.signalSems.push_back(sceneOut.readySem);
+                uint64_t value=0;
+                if(nv12 ? (value=++sceneOut.convertValue,true) : flBeginSubmit(sceneOut.channel,&buf,&value)==FL_OK){
+                    sceneOut.pendingSlot=(int)slot;sceneOut.pendingValue=value;
+                    extras.blits.push_back({nv12?sceneOut.converters[slot].image:sceneOut.images[slot],sceneOut.width,sceneOut.height});
+                    extras.signalSems.push_back(nv12?sceneOut.converters[slot].inputReady:sceneOut.readySem);
                     extras.signalValues.push_back(value);
                 }
             }
@@ -747,9 +752,14 @@ int runWinService(const WinServeOptions& options) {
             flBuffer buf{};
             buf.slot = (uint32_t)sceneOut.pendingSlot;
             buf.image = nullptr; // only the slot matters to flEndSubmit
-            if (flEndSubmit(sceneOut.channel, &buf, sceneOut.pendingValue, nowNs()) !=
-                FL_OK)
-                teardownSceneOut(sceneOut);
+            flResult result=FL_INTERNAL;
+            if(sceneOut.format==FL_FORMAT_NV12){
+                // Wait and convert on the GPU, then signal FrameLink from that
+                // same D3D11 context. Never publish NV12 before conversion.
+                if(sceneOut.converters[buf.slot].finish(sceneOut.pendingValue))
+                    result=flSubmit(sceneOut.channel,&buf,nowNs());
+            }else result=flEndSubmit(sceneOut.channel,&buf,sceneOut.pendingValue,nowNs());
+            if(result!=FL_OK)teardownSceneOut(sceneOut);
         }
 
         if (nowNs() - fpsWindowStart > 2000000000ll) {
