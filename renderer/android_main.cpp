@@ -625,15 +625,15 @@ void android_main(android_app* app) {
             if (nActive)
                 for (int f = 0; f < 12; ++f) faceSlots[f] = active[f % nActive];
             sceneSlots.clear();sceneIds.clear();
-            bool live[24]{},keyboardEnabled[24]{};int64_t images[24];uint64_t ids[24]{};unsigned ordinal=0;
+            bool live[24]{},keyboardEnabled[24]{};int64_t images[24];uint64_t ids[24]{},generations[24]{};unsigned ordinal=0;
             std::fill(images,images+24,-1);
-            for(auto& sp:g_streams)if(sp->currentSlot>=0 && sp->controlSlot>=0){auto i=sp->controlSlot;live[i]=true;images[i]=sp->currentSlot;ids[i]=sp->sceneId;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
-            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing && flSlots[i].currentSlot>=0){live[i]=true;images[i]=flSlots[i].currentSlot;ids[i]=(1ull<<63)|i;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
+            for(auto& sp:g_streams)if(sp->currentSlot>=0 && sp->controlSlot>=0){auto i=sp->controlSlot;live[i]=true;images[i]=sp->currentSlot;ids[i]=sp->sceneId;generations[i]=sp->sceneId;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
+            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing && flSlots[i].currentSlot>=0){live[i]=true;images[i]=flSlots[i].currentSlot;ids[i]=(1ull<<63)|i;generations[i]=flSlots[i].generation;keyboardEnabled[i]=!(state.disabled&(1u<<ordinal++));}
             for(unsigned i=0;i<24;i++) {
-                if(controlGenerations[i]!=ids[i]) {
+                if(controlGenerations[i]!=generations[i]) {
                     moderation.hidden[i]=moderation.pinned[i]=false;
                     if(moderation.spotlight==(int)i)moderation.spotlight=-1;
-                    controlGenerations[i]=ids[i];
+                    controlGenerations[i]=generations[i];
                 }
                 if(live[i])moderation.ensureOrdered(i);
             }
@@ -646,7 +646,7 @@ void android_main(android_app* app) {
             for(unsigned i=0;i<24;i++)if(live[i]) {
                 if(!roster.empty())status+=",";roster.push_back(i);
                 auto* image=pool.find(images[i]);
-                status+="{\"connected\":true,\"slot\":"+std::to_string(i)+",\"generation\":\""+std::to_string(ids[i])+"\""+
+                status+="{\"connected\":true,\"slot\":"+std::to_string(i)+",\"generation\":\""+std::to_string(generations[i])+"\""+
                     ",\"width\":"+std::to_string(image?image->width:0)+",\"height\":"+std::to_string(image?image->height:0)+
                     ",\"hidden\":"+(moderation.hidden[i]?"true":"false")+",\"pinned\":"+(moderation.pinned[i]?"true":"false")+
                     ",\"spotlit\":"+(moderation.spotlight==(int)i?"true":"false")+
