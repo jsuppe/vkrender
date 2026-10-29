@@ -249,11 +249,17 @@ int ControlApi::handleRequest(mg_connection* conn) {
         // and writing one part per published frame until the client goes
         // away. Each part carries Content-Length so a reader never has to
         // scan for the boundary.
-        if (previewStreamers_.load() >= kMaxPreviewStreams) {
+        // Reserve atomically: load-then-increment lets concurrent handlers all
+        // pass the cap and exhaust the worker pool needed for control requests.
+        if (previewStreamers_.fetch_add(1) >= kMaxPreviewStreams) {
+            --previewStreamers_;
             mg_send_http_error(conn, 503, "too many preview streams");
             return 503;
         }
-        ++previewStreamers_;
+        struct Admission {
+            std::atomic<int>& count;
+            ~Admission() { --count; }
+        } admission{previewStreamers_};
         mg_printf(conn,
                   "HTTP/1.1 200 OK\r\n"
                   "Content-Type: multipart/x-mixed-replace; boundary=vkrframe\r\n"
@@ -300,7 +306,6 @@ int ControlApi::handleRequest(mg_connection* conn) {
             // Slower than a second per 40 KB frame means nobody is watching.
             if (alive && nowNs() - t0 > 1000000000ll) alive = false;
         }
-        --previewStreamers_;
         return 200;
     }
 

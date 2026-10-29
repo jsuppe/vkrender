@@ -437,6 +437,8 @@ endif()
 add_test(NAME shared_moderation COMMAND vkr_control_test)
 add_test(NAME control_http COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/control_api.py $<TARGET_FILE:vkr_control_test>)
 set_tests_properties(control_http PROPERTIES TIMEOUT 20)
+add_test(NAME control_preview_admission COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/control_preview_admission.py $<TARGET_FILE:vkr_control_test>)
+set_tests_properties(control_preview_admission PROPERTIES TIMEOUT 20)
 # Android Binder scene-generation contract is shared/header-only; exercise it
 # on desktop CI without claiming native Binder/GPU lifetime qualification.
 add_executable(vkr_android_surface_generations_test test/android_surface_generations.cpp)
