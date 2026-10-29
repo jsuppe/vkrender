@@ -47,12 +47,24 @@ public final class ControlTestService extends Service {
             surface.unlockCanvasAndPost(canvas);Thread.sleep(16);
         }
     }
+    private static boolean displayPresent(IVkRendererService api,int id)throws Exception {
+        org.json.JSONArray nativeOutputs=new JSONObject(api.getDisplayOutputsStatus()).getJSONArray("native");
+        for(int i=0;i<nativeOutputs.length();i++)if(nativeOutputs.getJSONObject(i).getInt("id")==id)return true;return false;
+    }
+    private static boolean displayPresented(IVkRendererService api,int id)throws Exception {
+        org.json.JSONArray outputs=new JSONObject(api.getDisplayOutputsStatus()).getJSONArray("native");
+        for(int i=0;i<outputs.length();i++){JSONObject o=outputs.getJSONObject(i);if(o.getInt("id")==id&&o.getLong("presented")>0)return true;}return false;
+    }
+    private static boolean displayCrop(IVkRendererService api,int id)throws Exception {
+        org.json.JSONArray outputs=new JSONObject(api.getDisplayOutputsStatus()).getJSONArray("displays");
+        for(int i=0;i<outputs.length();i++){JSONObject o=outputs.getJSONObject(i);if(o.getInt("id")==id)return Math.abs(o.getJSONArray("crop").getDouble(0)-.25)<.001;}return false;
+    }
     private void runTest(IVkRendererService api){
         Surface surface=null;Binder owner=new Binder();
         try{
             check(api.getControlVersion()==1,"version");
             JSONObject caps=new JSONObject(api.getControlCapabilities());
-            check(caps.getBoolean("moderation") && !caps.getBoolean("displays"),"capabilities");
+            check(caps.getBoolean("moderation") && caps.getBoolean("displays"),"capabilities");
             check(api.submitControl("layout",-1,"wrong")==1,"invalid layout");
             check(api.submitControl("rotate_seconds",-1,"nan")==1,"invalid duration");
             check(api.submitControl("camera",-1,"1")==2,"unsupported camera");
@@ -84,11 +96,29 @@ public final class ControlTestService extends Service {
             Thread.sleep(400);int captures=status(api).getInt("previewCaptures");Thread.sleep(400);
             check(status(api).getInt("previewCaptures")==captures,"readback stops when requests stop");
             Log.i(TAG,"PASS asynchronous bounded JPEG preview and no idle readback");
+            check(api.configureDisplayOutput(-1,true,0,0,1,1)==1,"nonexistent display rejected");
+            check(api.configureDisplayOutput(0,true,0,0,1,1)==1,"primary display rejected");
+            check(api.configureDisplayOutput(0,true,Float.NaN,0,1,1)==1,"invalid crop rejected");
+            JSONObject displays=new JSONObject(api.getDisplayOutputsStatus());check(displays.getBoolean("ready"),"display controls ready");
+            org.json.JSONArray roster=displays.getJSONArray("displays");int target=-1;
+            for(int i=0;i<roster.length();i++)if(roster.getJSONObject(i).getBoolean("eligible")){target=roster.getJSONObject(i).getInt("id");break;}
+            if(target>=0){final int displayId=target;
+                check(api.configureDisplayOutput(displayId,true,0,0,1,1)==0,"display enable queued");
+                waitFor(()->displayPresented(api,displayId),"native secondary presentation");
+                int before=status(api).getInt("previewCaptures");api.getPreviewJpeg();
+                waitFor(()->status(api).getInt("previewCaptures")>before,"preview with secondary output active");
+                check(api.configureDisplayOutput(displayId,true,.25f,.25f,.5f,.5f)==0,"display crop queued");
+                waitFor(()->displayCrop(api,displayId),"display crop applied");
+                check(api.configureDisplayOutput(displayId,false,0,0,1,1)==0,"display disable queued");
+                waitFor(()->!displayPresent(api,displayId),"display detached");
+                Log.i(TAG,"PASS Binder secondary display enable/present/crop/disable id="+displayId);
+            }else Log.i(TAG,"SKIP no eligible secondary display attached");
             startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             waitFor(()->!status(api).getBoolean("ready"),"Activity paused ready false");
             long start=SystemClock.elapsedRealtime();
             check(api.submitControl("pause",-1,"0")==3,"paused unavailable");
             check(api.getPreviewJpeg()==null,"paused preview unavailable");
+            check(api.configureDisplayOutput(-1,true,0,0,1,1)==3,"paused displays unavailable");
             check(SystemClock.elapsedRealtime()-start<500,"unavailable bounded");
             startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
             waitFor(()->status(api).getBoolean("ready"),"Activity resumed");

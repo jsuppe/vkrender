@@ -5,7 +5,7 @@ import re
 root=Path(__file__).resolve().parents[1]
 expected=['acquireInputSurface','releaseInputSurface','acquireInputSurfaceSlot','releaseInputSurfaceSlot',
           'acquireInputSurfaceWithOwner','releaseInputSurfaceWithOwner','getControlVersion',
-          'getControlCapabilities','getControlStatus','submitControl','getPreviewJpeg']
+          'getControlCapabilities','getControlStatus','submitControl','getPreviewJpeg','getDisplayOutputsStatus','configureDisplayOutput']
 files=list((root/'android').rglob('IVkRendererService.aidl'))
 assert len(files)==5,files
 canonical=None

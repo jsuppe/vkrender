@@ -4,8 +4,8 @@ The signature-protected `dev.vkrender.IVkRendererService` now appends control an
 without changing existing Surface acquisition or ownership transaction IDs:
 
 - `getControlVersion()` returns 1.
-- `getControlCapabilities()` returns JSON. Moderation is available; camera gate and
-  display routing are explicitly unsupported by this API. Preview capability is
+- `getControlCapabilities()` returns JSON. Moderation and secondary display routing are available; camera gate is
+  unsupported. Preview capability is
   negotiated from the active Vulkan format.
 - `getControlStatus()` returns last published JSON: `ready`, `pending`, `applied`
   and `state` (layout, pause, config, stream roster and visibility).
@@ -62,8 +62,8 @@ Pi, the separate-process Binder fixture passed, including 120 hidden-source
 posts without stalling and bounded unavailable response during Activity pause.
 Raw evidence: `android-control-20261029/pi-control.log`. The renderer was stopped
 and the existing virtual-camera demo task restored afterward. This device test
-qualifies Binder controls; FrameLink kick and the unavailable camera/preview/
-display operations are not relabeled as device-qualified features.
+qualifies Binder controls; FrameLink kick and the unavailable camera gate are not relabeled as
+device-qualified features. Preview/display validation is recorded below.
 
 ## On-demand preview
 
@@ -87,3 +87,27 @@ pre-fix runs) and `preview.jpg`. Direct scaled blitting from the presentable ima
 produced black on this device; a full-size GPU image copy followed by scaling
 passed. This extra copy is performed only for an actual snapshot request. Two
 full-size staging images are retained after first use, protected by frame fences.
+
+## Secondary display control
+
+`getDisplayOutputsStatus()` reports Activity readiness, actual display IDs and
+eligibility, selected state, crop and Surface readiness. Its separate `native`
+array reports created swapchain extents and actual submitted presentation counts
+(updated at most every 60 render frames). Selected is not equivalent to presented.
+
+`configureDisplayOutput(id, enabled, x, y, width, height)` queues a normalized crop
+on an eligible non-primary presentation display. Invalid/nonexistent/primary IDs
+and nonfinite/out-of-bounds crops return invalid (1); inactive Activity returns
+unavailable (3). Maximum 128 pending UI commands, with queue-full (4). Accepted
+(0) means queued, not applied. Stop/restart invalidates queued commands. UI owns
+Presentations; acquired native windows move through the render-thread registry.
+No readback is introduced by secondary outputs. Existing signature permission
+also protects these methods. Camera remains explicitly unsupported.
+
+Physical Pi combined Binder fixture passed with secondary display 4: enable,
+observe native presentation, request preview while secondary output is active,
+crop update, detach, invalid ID/crop and paused rejection. Initial test detected
+that onStop was too late to reject controls during onPause; readiness now follows
+onResume/onPause, and a lifecycle epoch rejects obsolete queued commands. Logs
+retain that failure and final pass in `android-control-20261029/pi-display-control.log`.
+The renderer was stopped and existing virtual-camera task restored after testing.

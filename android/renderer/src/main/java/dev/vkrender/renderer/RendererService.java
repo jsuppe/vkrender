@@ -51,7 +51,11 @@ public class RendererService extends Service {
     private final IVkRendererService.Stub binder = new IVkRendererService.Stub() {
         @Override public byte[] getPreviewJpeg() { return preview(); }
         @Override public int getControlVersion() { return 1; }
-        @Override public String getControlCapabilities() { return nativeControlCapabilities(); }
+        @Override public String getControlCapabilities() { return nativeControlCapabilities().replace("\"displays\":false","\"displays\":true"); }
+        @Override public String getDisplayOutputsStatus() { return MainActivity.getDisplayOutputsStatus(); }
+        @Override public int configureDisplayOutput(int id,boolean enabled,float x,float y,float width,float height) {
+            return MainActivity.configureDisplayOutputResult(id,enabled,x,y,width,height);
+        }
         @Override public String getControlStatus() { return nativeControlStatus(); }
         @Override public int submitControl(String action, int slot, String value) {
             if(action==null || value==null || action.length()>64 || value.length()>256)return 1;

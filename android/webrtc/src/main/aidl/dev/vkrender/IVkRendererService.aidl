@@ -49,4 +49,8 @@ interface IVkRendererService {
     /** Requests an asynchronous preview and returns latest JPEG (<=128 KiB),
      * or null until ready / when paused or unsupported. At most 320x180, 5 Hz. */
     byte[] getPreviewJpeg();
+    /** Display roster includes actual native presentation counters. */
+    String getDisplayOutputsStatus();
+    /** Queue secondary output/crop; same result codes as submitControl. */
+    int configureDisplayOutput(int id, boolean enabled, float x, float y, float width, float height);
 }
