@@ -1,0 +1,53 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 640x360 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('windows-stress-pixels.in.0' .. 'windows-stress-pixels.in.11')
+[INF] control: moderation API on http://127.0.0.1:8875/api/
+[INF] service: publishing scene to 'windows-stress-pixels.rgba' (160x90, ring of 4)
+[INF] service: publishing scene to 'windows-stress-pixels.nv12' (160x90, ring of 4)
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=19 640x360 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=16 640x360 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=17 640x360 (3 total, zero-copy)
+[INF] scene: 274 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 131 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.69 ms max 26.32 ms over 131
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 151 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.03 ms max 17.03 ms over 151
+[INF] scene: 297 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.54 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.73 ms max 16.99 ms over 150
+[INF] scene: 297 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.87 ms max 17.00 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.26 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 151 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.65 ms max 16.97 ms over 151
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.84 ms max 16.98 ms over 150
+[INF] scene: 297 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.92 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.47 ms max 16.98 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.81 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.78 ms max 16.98 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 151 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.82 ms max 16.97 ms over 151
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.78 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.74 ms max 16.98 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.18 ms max 16.98 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.70 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.00 ms max 16.97 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 9.08 ms max 16.98 ms over 150
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.90 ms max 17.48 ms over 150
+[INF] service: scene channel 'windows-stress-pixels.rgba' released
+[INF] service: scene channel 'windows-stress-pixels.nv12' released

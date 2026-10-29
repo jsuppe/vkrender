@@ -13,10 +13,24 @@ Resumed retained Android 13 release-83 Cuttlefish image with gfxstream, sandbox=
 
 These exercise Android AHardwareBuffer transport and CPU mappings, not Vulkan GPU output.
 
-## GPU output: BLOCKED, not passed
+## Original Android 13 GPU output: BLOCKED, not passed
 
 `vkr_gpu_output_caps` exits 1. Logcat: `no Vulkan 1.3 device with the required interop extensions`. Android `cmd gpu vkjson` reports device API 4198400 (Vulkan 1.1.0), although the loader reports 1.3. The renderer requires Vulkan 1.3 dynamic rendering/synchronization2. `VK_ANDROID_external_format_resolve` is absent, blocking the current Android native-YUV output path as well.
 
 GPU pixel/lifecycle/4K and full Activity comparison were NOT run: renderer initialization cannot succeed. No requirement bypass, CPU fallback, or emulator result substituted for GPU qualification. A newer Vulkan-1.3-capable Cuttlefish/gfxstream guest/host stack is needed for RGB; NV12 additionally requires external-format resolve support. Physical-device results remain separately documented in GPU_OUTPUT.md.
 
 Raw evidence: workspace `plans/cuttlefish-gpu-20261029/` (results.json, individual test logs, vkjson.json, logcat.txt, identity.txt, launch/stop logs). Existing host Cuttlefish pointers backed up before launch and restored after shutdown; retained VM userdata preserved.
+
+## Android 15 follow-up — GPU RGB passed
+
+A separate fresh runtime uses matching locally built Android15 host/images from `/mnt/micron/aosp`, gfxstream on RTX3090. Original Android13 images/userdata are untouched.
+
+- Renderer capability initialization succeeded.
+- BGRA and RGBA:23 patterned frames each, zero byte error, consumer recreation/resize and unsubmitted-output shutdown checks passed.
+- 4K RGBA:3 verified frames through3840x2160→3844x2164 resize, zero byte error.
+- GPU NV12 and RGB10A2:allocator rejects requested renderable buffers; exit77/unsupported, not passes.
+- **Native Vulkan SYNC_FD integration did not pass:** event-gated submission blocked before the export call and the test's15s alarm terminated it (exit142). This is retained as a failed/unsupported synchronization qualification on this graphics stack, not hidden by the RGB output passes. RGB output uses completion-gated publication, not this early export path.
+
+These are native headless GPU-output tests, not Activity/physical scanout validation. Raw logs in `cuttlefish_gpu_20261029/`; complete device vkjson/launch logs remain in workspace `plans/vkrender-roadmap-20261029/`.
+
+After the blocked event submission, normal Cuttlefish shutdown timed out; `stop_cvd` force-stopped its isolated process groups. No Cuttlefish VM remains running. Original host configuration pointers were restored, and both runtimes remain on disk. See `a15-stop.log`; this was not a clean-shutdown pass.

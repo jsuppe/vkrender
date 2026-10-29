@@ -1,0 +1,11 @@
+device=NVIDIA GeForce RTX 3090
+extension=VK_KHR_external_memory
+extension=VK_ANDROID_external_memory_android_hardware_buffer
+format=9 optimal=0x1dd83 linear=0x1dc03
+format=16 optimal=0x1dd83 linear=0x1dc03
+format=37 optimal=0x1dd83 linear=0x1dc03
+format=1000156003 optimal=0x1ecfd001 linear=0xcfd001
+AHB format=1 render=0 allocate=0 props=0 vkFormat=37 external=875708993 features=0x2c081
+AHB format=1 render=1 allocate=0 props=0 vkFormat=37 external=875708993 features=0x2c081
+AHB format=35 render=0 allocate=0 props=0 vkFormat=0 external=842094158 features=0x2c081
+AHB format=35 render=1 allocate=-2147483648
