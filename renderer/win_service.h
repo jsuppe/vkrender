@@ -20,6 +20,7 @@ namespace vkr {
 
 struct WinServeOptions {
     std::string pipeName = "vkrender";
+    std::vector<std::string> sceneOutputs; // empty: <pipeName>.scene; otherwise fan-out
     int headlessFrames = 0; // 0 = windowed
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;

@@ -69,6 +69,7 @@ int64_t nowNs() {
 // the channel's ready fence as a timeline semaphore and signal it inside our own
 // frame submit - flBeginSubmit/flEndSubmit exist for exactly this.
 struct SceneOut {
+    std::string name;
     flFormat format = FL_FORMAT_BGRA8;
     uint64_t convertValue=0;
     Nv12Output converters[proto::kMaxPoolSize];
@@ -336,8 +337,10 @@ int runWinService(const WinServeOptions& options) {
     // because the consumer owns the channel and may start after us - the
     // inverse of the old model, where we allocated the ring and the consumer
     // dialled in to collect it.
-    SceneOut sceneOut;
-    const std::string sceneChannel = options.pipeName + ".scene";
+    auto outputNames=options.sceneOutputs;
+    if(outputNames.empty())outputNames.push_back(options.pipeName+".scene");
+    std::vector<SceneOut> sceneOuts(outputNames.size());
+    for(size_t i=0;i<outputNames.size();i++)sceneOuts[i].name=outputNames[i];
 
     auto teardownSceneOut = [&](SceneOut& so) {
         if (!so.channel) return;
@@ -354,14 +357,14 @@ int runWinService(const WinServeOptions& options) {
         flClose(so.channel);
         so.channel = nullptr;
         so.pendingSlot = -1;
-        VKR_LOG("service: scene channel '%s' released", sceneChannel.c_str());
+        VKR_LOG("service: scene channel '%s' released", so.name.c_str());
     };
 
     auto attachSceneOut = [&](SceneOut& so) {
         if (so.channel || nowNs() < so.nextRetryNs) return;
         so.nextRetryNs = nowNs() + 1000000000ll; // 1 s between attempts
         flChannel* ch = nullptr;
-        if (flOpenProducer(sceneChannel.c_str(), &ch) != FL_OK)
+        if (flOpenProducer(so.name.c_str(), &ch) != FL_OK)
             return; // FL_NOT_FOUND until a consumer creates it
         flChannelInfo info{};
         flQuery(ch, &info);
@@ -383,7 +386,7 @@ int runWinService(const WinServeOptions& options) {
         so.width = info.width;   // the consumer's geometry, not ours
         so.height = info.height;
         so.poolSize = info.poolSize;
-        VKR_LOG("service: publishing scene to '%s' (%ux%u, ring of %u)", sceneChannel.c_str(),
+        VKR_LOG("service: publishing scene to '%s' (%ux%u, ring of %u)", so.name.c_str(),
                 info.width, info.height, info.poolSize);
     };
 
@@ -404,7 +407,7 @@ int runWinService(const WinServeOptions& options) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
-        attachSceneOut(sceneOut);
+        for(auto&output:sceneOuts)attachSceneOut(output);
 
         // M38: poll the framelink input slots. Non-blocking (timeout 0): a
         // slot with nothing new must cost the render thread nothing, and the
@@ -644,34 +647,39 @@ int runWinService(const WinServeOptions& options) {
                     powerWant == 1 ? "system wake" : "display wake",
                     powerWant ? "held" : "released", presenting ? "active" : "idle");
         }
-        sceneOut.pendingSlot = -1;
-        if (sceneOut.channel && presenting && cameraOn) {
-            flBuffer buf{};
-            // Non-blocking: if the consumer is behind, skip this frame rather
-            // than stall the scene. framelink's ring is the back-pressure.
-            if (flAcquireBuffer(sceneOut.channel, &buf, 0) == FL_OK) {
-                const uint32_t slot = buf.slot;
-                // Import once per slot; flImage is stable for the channel's
-                // lifetime, so the VkImage can be cached against the slot.
-                const bool nv12=sceneOut.format==FL_FORMAT_NV12;
-                if(nv12 && !sceneOut.converters[slot].image){
-                    if(!sceneOut.converters[slot].init(vk,flChannelD3D11Device(sceneOut.channel),flImageD3D11(buf.image),sceneOut.width,sceneOut.height)){
-                        VKR_ERR("service: NV12 GPU processor initialization failed");teardownSceneOut(sceneOut);continue;
+        const int64_t scenePts=nowNs();
+        for (auto& sceneOut : sceneOuts) {
+            sceneOut.pendingSlot = -1;
+            if (sceneOut.channel && presenting && cameraOn) {
+                flBuffer buf{};
+                // Non-blocking: if the consumer is behind, skip this frame rather
+                // than stall the scene. framelink's ring is the back-pressure.
+                const flResult acquired = flAcquireBuffer(sceneOut.channel, &buf, 0);
+                if (acquired == FL_DISCONNECTED) { teardownSceneOut(sceneOut); continue; }
+                if (acquired == FL_OK) {
+                    const uint32_t slot = buf.slot;
+                    // Import once per slot; flImage is stable for the channel's
+                    // lifetime, so the VkImage can be cached against the slot.
+                    const bool nv12=sceneOut.format==FL_FORMAT_NV12;
+                    if(nv12 && !sceneOut.converters[slot].image){
+                        if(!sceneOut.converters[slot].init(vk,flChannelD3D11Device(sceneOut.channel),flImageD3D11(buf.image),sceneOut.width,sceneOut.height)){
+                            VKR_ERR("service: NV12 GPU processor initialization failed");teardownSceneOut(sceneOut);continue;
+                        }
+                    } else if(!nv12 && !sceneOut.images[slot]){
+                        if(!importWin32BlitTarget(vk,(uint64_t)(uintptr_t)flImageSharedHandle(buf.image),sceneOut.width,sceneOut.height,&sceneOut.images[slot],&sceneOut.memories[slot])){
+                            VKR_ERR("service: scene blit-target import failed");teardownSceneOut(sceneOut);continue;
+                        }
                     }
-                } else if(!nv12 && !sceneOut.images[slot]){
-                    if(!importWin32BlitTarget(vk,(uint64_t)(uintptr_t)flImageSharedHandle(buf.image),sceneOut.width,sceneOut.height,&sceneOut.images[slot],&sceneOut.memories[slot])){
-                        VKR_ERR("service: scene blit-target import failed");teardownSceneOut(sceneOut);continue;
+                    uint64_t value=0;
+                    if(nv12 ? (value=++sceneOut.convertValue,true) : flBeginSubmit(sceneOut.channel,&buf,&value)==FL_OK){
+                        sceneOut.pendingSlot=(int)slot;sceneOut.pendingValue=value;
+                        extras.blits.push_back({nv12?sceneOut.converters[slot].image:sceneOut.images[slot],sceneOut.width,sceneOut.height});
+                        extras.signalSems.push_back(nv12?sceneOut.converters[slot].inputReady:sceneOut.readySem);
+                        extras.signalValues.push_back(value);
                     }
-                }
-                uint64_t value=0;
-                if(nv12 ? (value=++sceneOut.convertValue,true) : flBeginSubmit(sceneOut.channel,&buf,&value)==FL_OK){
-                    sceneOut.pendingSlot=(int)slot;sceneOut.pendingValue=value;
-                    extras.blits.push_back({nv12?sceneOut.converters[slot].image:sceneOut.images[slot],sceneOut.width,sceneOut.height});
-                    extras.signalSems.push_back(nv12?sceneOut.converters[slot].inputReady:sceneOut.readySem);
-                    extras.signalValues.push_back(value);
                 }
             }
-        }
+        } // all scene outputs share this render and timestamp
 
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
             exitCode = 1;
@@ -748,18 +756,21 @@ int runWinService(const WinServeOptions& options) {
 
         // The submit carrying the blit is queued and will signal the value we
         // reserved, so the frame can be published now.
-        if (sceneOut.pendingSlot >= 0) {
-            flBuffer buf{};
-            buf.slot = (uint32_t)sceneOut.pendingSlot;
-            buf.image = nullptr; // only the slot matters to flEndSubmit
-            flResult result=FL_INTERNAL;
-            if(sceneOut.format==FL_FORMAT_NV12){
-                // Wait and convert on the GPU, then signal FrameLink from that
-                // same D3D11 context. Never publish NV12 before conversion.
-                if(sceneOut.converters[buf.slot].finish(sceneOut.pendingValue))
-                    result=flSubmit(sceneOut.channel,&buf,nowNs());
-            }else result=flEndSubmit(sceneOut.channel,&buf,sceneOut.pendingValue,nowNs());
-            if(result!=FL_OK)teardownSceneOut(sceneOut);
+        for (auto& sceneOut : sceneOuts) {
+            if (sceneOut.pendingSlot >= 0) {
+                flBuffer buf{};
+                buf.slot = (uint32_t)sceneOut.pendingSlot;
+                buf.image = nullptr; // only the slot matters to flEndSubmit
+                flResult result=FL_INTERNAL;
+                if(sceneOut.format==FL_FORMAT_NV12){
+                    // Wait and convert on the GPU, then signal FrameLink from that
+                    // same D3D11 context. Never publish NV12 before conversion.
+                    if(sceneOut.converters[buf.slot].finish(sceneOut.pendingValue))
+                        result=flSubmit(sceneOut.channel,&buf,scenePts);
+                }else result=flEndSubmit(sceneOut.channel,&buf,sceneOut.pendingValue,scenePts);
+                if(result!=FL_OK)teardownSceneOut(sceneOut);
+            }
+
         }
 
         if (nowNs() - fpsWindowStart > 2000000000ll) {
@@ -800,7 +811,7 @@ int runWinService(const WinServeOptions& options) {
         if (s.channel) flClose(s.channel);
         s.channel = nullptr;
     }
-    teardownSceneOut(sceneOut);
+    for(auto&output:sceneOuts)teardownSceneOut(output);
     host.destroy(vk);
     pass.destroy(vk);
     pool.destroy(vk);

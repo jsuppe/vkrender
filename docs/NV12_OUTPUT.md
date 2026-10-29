@@ -89,3 +89,46 @@ Wayland frontend does not gain a new scene-output channel in this change.
 Verified 2026-10-29: all three GPU tests passed (1.30 seconds total).
 Full-service captures passed for NV12 (30/30 distinct frames, 30/30 with
 non-neutral chroma, 392040 bytes) and BGRA (30/30 distinct, 1029600 bytes).
+
+## Live side-by-side comparison (Windows)
+
+The renderer accepts repeated `--scene-output CHANNEL` options (up to eight).
+Each consumer independently creates its channel and chooses BGRA or NV12. The
+scene is rendered once and copied to each available output in that render
+submission; the outputs share a scene PTS. A slow consumer skips that output
+rather than blocking the others. Omitting this option preserves `<pipe>.scene`.
+
+Run the example from an **interactive Windows desktop**:
+
+```powershell
+./examples/framelink_compare.ps1 -RendererBuild ./build -FrameLinkBuild ../framelink/build
+```
+
+It launches an animated, textured Vulkan scene and one comparison window:
+
+- Left: scene → BGRA FrameLink channel → independent `framelinksrc` consumer.
+- Right: same scene → GPU NV12 conversion → separate NV12 FrameLink channel →
+  independent `framelinksrc` consumer → GStreamer `videoconvert` → BGRA.
+- Both decoded RGB streams go to a side-by-side GStreamer compositor and a
+  D3D11 display sink. Labels are added **after** receiving the frames.
+- A live test-pattern producer feeds the renderer's cube textures via a third
+  FrameLink channel. The backdrop, cubes and their animation are rendered by
+  Vulkan, not substituted by the comparison application.
+
+The two consumers are separate source instances in one process, not two OS
+processes. The example intentionally uses CPU-mapped GStreamer frame delivery
+and `videoconvert`; it demonstrates correctness, not zero-copy playback or a
+performance benchmark. NV12 is BT.709 limited range with 4:2:0 chroma, so colored
+edges need not be pixel-identical to RGB. Sources timestamp on receipt; the
+comparison does not enforce exact presentation synchronization.
+
+Close the video window to stop the example and its producer/renderer. Logs and
+owned process IDs are written under the renderer build directory. `-Verify`
+runs without a window, captures 60 BGRA frames from **each** consumer (the NV12
+capture is after conversion), checks byte counts and at least 30 distinct frames,
+and then stops all its processes. On Caspar both paths delivered 60/60 distinct
+frames; the live interactive desktop was also inspected.
+
+Dependencies: FrameLink GStreamer plugin and DLL, GStreamer MSVC x64 with
+`videotestsrc`, `timeoverlay`, `textoverlay`, `compositor`, `videoconvert`, and
+`d3d11videosink`. Set `GSTREAMER_1_0_ROOT_MSVC_X86_64` to the GStreamer root.

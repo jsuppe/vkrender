@@ -1,3 +1,4 @@
+#include <algorithm>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -86,6 +87,7 @@ struct FrameSync {
 
 int main(int argc, char** argv) {
     std::string pipe = "vkrender";
+    std::vector<std::string> sceneOutputs;
     std::string dumpPath = "headless.ppm";
     bool ptsPacing = false;
     bool waylandMode = false;
@@ -97,6 +99,11 @@ int main(int argc, char** argv) {
     int defaultBezel = 0;                     // M29: --bezel applies to all panels
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
+        else if (!strcmp(argv[i], "--scene-output") && i + 1 < argc) {
+            std::string name=argv[++i];
+            if(name.empty() || sceneOutputs.size()>=8 || std::find(sceneOutputs.begin(),sceneOutputs.end(),name)!=sceneOutputs.end()){fprintf(stderr,"scene output must be unique, nonempty (max 8)\n");return 1;}
+            sceneOutputs.push_back(name);
+        }
         else if (!strcmp(argv[i], "--control-port") && i + 1 < argc)
             controlPort = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dumpPath = argv[++i];
@@ -135,7 +142,7 @@ int main(int argc, char** argv) {
         } else {
             fprintf(stderr,
                     "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
-                    "[--wayland [socket]] [--serve [pipe]] "
+                    "[--wayland [socket]] [--serve [pipe]] [--scene-output channel (repeatable)] "
                     "[--window WxH+X+Y[:bezel]]... [--bezel px] "
                     "[--headless N [--dump out.ppm]]\n");
             return 1;
@@ -153,6 +160,7 @@ int main(int argc, char** argv) {
     if (serveMode) {
         vkr::WinServeOptions sopts;
         sopts.pipeName = pipe;
+        sopts.sceneOutputs = sceneOutputs;
         sopts.headlessFrames = headlessFrames;
         sopts.controlPort = controlPort;
         sopts.dumpPath = dumpPath;
