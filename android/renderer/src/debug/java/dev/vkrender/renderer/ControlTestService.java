@@ -57,6 +57,8 @@ public final class ControlTestService extends Service {
             check(api.submitControl("rotate_seconds",-1,"nan")==1,"invalid duration");
             check(api.submitControl("camera",-1,"1")==2,"unsupported camera");
             waitFor(()->status(api).getBoolean("ready"),"renderer ready");
+            check(caps.getBoolean("preview"),"preview capability");
+            check(status(api).getInt("previewCaptures")==0,"no readback without request");
             surface=api.acquireInputSurfaceWithOwner(0,owner);check(surface!=null,"surface");draw(surface,30);
             waitFor(()->slot(api,-1)!=null,"roster");int id=slot(api,-1).getInt("slot");
             check(api.submitControl("layout",-1,"wall")==0,"layout queue");
@@ -67,12 +69,26 @@ public final class ControlTestService extends Service {
             draw(surface,120);Log.i(TAG,"PASS hidden producer posted120frames without stall");
             check(api.submitControl("show",id,"")==0,"show queue");
             check(api.submitControl("spotlight",id,"")==0,"spotlight queue");
+            waitFor(()->slot(api,id).getBoolean("visible"),"shown state");
+            draw(surface,60); // allow the entry animation to finish before freezing scene motion
             check(api.submitControl("pause",-1,"1")==0,"pause queue");
             waitFor(()->status(api).getJSONObject("state").getBoolean("paused"),"pause applied");
+            waitFor(()->api.getPreviewJpeg()!=null,"preview arrives asynchronously");
+            byte[] jpeg=api.getPreviewJpeg();check(jpeg.length<=128*1024,"bounded Binder JPEG");
+            android.graphics.Bitmap preview=android.graphics.BitmapFactory.decodeByteArray(jpeg,0,jpeg.length);
+            check(preview!=null && preview.getWidth()<=320 && preview.getHeight()<=180,"preview dimensions");
+            int min=255,max=0;for(int y=0;y<preview.getHeight();y++)for(int x=0;x<preview.getWidth();x++){int c=preview.getPixel(x,y);int level=(Color.red(c)+Color.green(c)+Color.blue(c))/3;min=Math.min(min,level);max=Math.max(max,level);}
+            Log.i(TAG,"preview luminance min="+min+" max="+max+" center="+Integer.toHexString(preview.getPixel(preview.getWidth()/2,preview.getHeight()/2)));
+            try(java.io.FileOutputStream out=openFileOutput("preview.jpg",MODE_PRIVATE)){out.write(jpeg);}
+            check(max-min>20,"preview contains rendered scene");preview.recycle();
+            Thread.sleep(400);int captures=status(api).getInt("previewCaptures");Thread.sleep(400);
+            check(status(api).getInt("previewCaptures")==captures,"readback stops when requests stop");
+            Log.i(TAG,"PASS asynchronous bounded JPEG preview and no idle readback");
             startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             waitFor(()->!status(api).getBoolean("ready"),"Activity paused ready false");
             long start=SystemClock.elapsedRealtime();
             check(api.submitControl("pause",-1,"0")==3,"paused unavailable");
+            check(api.getPreviewJpeg()==null,"paused preview unavailable");
             check(SystemClock.elapsedRealtime()-start<500,"unavailable bounded");
             startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
             waitFor(()->status(api).getBoolean("ready"),"Activity resumed");

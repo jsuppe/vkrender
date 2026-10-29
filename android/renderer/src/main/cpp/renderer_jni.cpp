@@ -29,7 +29,7 @@ Java_dev_vkrender_renderer_RendererService_nativeReleaseInputSurface(JNIEnv*, jc
 
 #include <string>
 std::string vkrControlStatus();
-const char* vkrControlCapabilities();
+std::string vkrControlCapabilities();
 int vkrControl(const std::string& action,int slot,const std::string& value);
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_vkrender_renderer_RendererService_nativeControlStatus(JNIEnv* env,jclass) {
@@ -37,7 +37,7 @@ Java_dev_vkrender_renderer_RendererService_nativeControlStatus(JNIEnv* env,jclas
 }
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_vkrender_renderer_RendererService_nativeControlCapabilities(JNIEnv* env,jclass) {
-    return env->NewStringUTF(vkrControlCapabilities());
+    return env->NewStringUTF(vkrControlCapabilities().c_str());
 }
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_vkrender_renderer_RendererService_nativeControl(JNIEnv* env,jclass,jstring action,jint slot,jstring value) {
@@ -61,4 +61,16 @@ Java_dev_vkrender_renderer_DisplayOutputs_nativeSetDisplaySurface(JNIEnv* env,jc
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_vkrender_renderer_DisplayOutputs_nativeDisplayStatus(JNIEnv* env,jclass) {
     return env->NewStringUTF(vkrDisplayStatus().c_str());
+}
+
+#include "preview_mailbox.h"
+vkr::PreviewMailbox::Result vkrPreview();
+extern "C" JNIEXPORT jintArray JNICALL
+Java_dev_vkrender_renderer_RendererService_nativePreview(JNIEnv* env,jclass) {
+    auto frame=vkrPreview();if(frame.argb.empty())return nullptr;
+    const jint header[]={static_cast<jint>(frame.width),static_cast<jint>(frame.height),static_cast<jint>(frame.sequence)};
+    jintArray out=env->NewIntArray(frame.argb.size()+3);if(!out)return nullptr;
+    env->SetIntArrayRegion(out,0,3,header);
+    env->SetIntArrayRegion(out,3,frame.argb.size(),reinterpret_cast<const jint*>(frame.argb.data()));
+    return out;
 }

@@ -47,4 +47,7 @@ interface IVkRendererService {
      * stream actions hide/show/pin/unpin/spotlight/unspotlight/front/kick use
      * the control roster slot (NOT a producer's input-surface slot). */
     int submitControl(String action, int slot, String value);
+    /** Requests an asynchronous preview and returns latest JPEG (<=128 KiB),
+     * or null until ready / when paused or unsupported. At most 320x180, 5 Hz. */
+    byte[] getPreviewJpeg();
 }

@@ -1,3 +1,4 @@
+#include "android_preview.h"
 #include "android_control.h"
 #include "moderation.h"
 #include "gpu_trace.h"
@@ -91,6 +92,7 @@ std::mutex g_streamsMutex;
 std::condition_variable g_readerCv; // renderer-readiness for binder waits
 bool g_rendererReady = false;
 vkr::AndroidControl g_control;
+vkr::PreviewMailbox g_preview;
 std::vector<std::unique_ptr<InputStream>> g_streams;
 uint64_t g_nextSceneId = 1;
 std::vector<int64_t> g_pendingRelease; // stream keys to tear down on the render thread
@@ -192,13 +194,15 @@ void onAppCmd(android_app* app, int32_t cmd) {
         case APP_CMD_RESUME: state->resumed = true; break;
         case APP_CMD_PAUSE: state->resumed = false; break;
     }
-    g_control.setReady(state->initialized && state->windowReady && state->resumed && !state->destroyed);
+    bool ready=state->initialized && state->windowReady && state->resumed && !state->destroyed;
+    g_control.setReady(ready);g_preview.ready(ready);
 }
 
 } // namespace
 
-std::string vkrControlStatus(){return g_control.status();}
-const char* vkrControlCapabilities(){return vkr::AndroidControl::capabilities();}
+std::string vkrControlStatus(){auto s=g_control.status();s.pop_back();return s+",\"previewCaptures\":"+std::to_string(g_preview.captures())+"}";}
+vkr::PreviewMailbox::Result vkrPreview(){return g_preview.request();}
+std::string vkrControlCapabilities(){std::string s=vkr::AndroidControl::capabilities();if(g_preview.supported()){auto pos=s.find("\"preview\":false");s.replace(pos,15,"\"preview\":true");}return s;}
 int vkrControl(const std::string& action,int slot,const std::string& value){return g_control.submit(action,slot,value);}
 
 // Called from RendererService's binder thread (renderer_jni.cpp). Returns the
@@ -288,6 +292,7 @@ void android_main(android_app* app) {
         VKR_ERR("Vulkan init failed");
         return;
     }
+    vkr::AndroidPreview preview(g_preview);preview.supported(vk);
     vkr::VideoPass pass;
     if (!pass.init(vk, filesDir, vkr::VideoPass::Geometry::Cube)) return;
     vkr::BackgroundPass background;
@@ -300,7 +305,7 @@ void android_main(android_app* app) {
         g_rendererReady = true;
     }
     g_control.publish("{}",{},0);
-    state.initialized=true;g_control.setReady(state.windowReady && state.resumed);
+    state.initialized=true;g_control.setReady(state.windowReady && state.resumed);g_preview.ready(state.windowReady && state.resumed);
     g_readerCv.notify_all();
     VKR_LOG("renderer: stream service ready (up to %zu producers)", kMaxStreams);
 
@@ -666,6 +671,7 @@ void android_main(android_app* app) {
         vkrtrace::call("scene.wait_inflight_fence",[&]{return vkWaitForFences(vk.device,1,&f.inFlight,VK_TRUE,UINT64_MAX);});
         f.gpuTrace.prepare(vk);
         portableOutput.retire(vk,(frameIndex-1)%2);
+        preview.retire((frameIndex-1)%2);
         for(auto& slot:flSlots)while(!slot.retire.empty() && slot.retire.front().first<=frameIndex) {
             flSignalConsumedSyncFd(slot.channel,slot.retire.front().second,-1);
             slot.retire.erase(slot.retire.begin());
@@ -753,6 +759,7 @@ void android_main(android_app* app) {
             vk.swapFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,nowNs());
         displayOutputs.record(vk,f.cmd,(frameIndex-1)%2,vk.swapImages[imageIndex],vk.swapExtent,
                               submitWaits,submitStages,submitSignals);
+        preview.record(vk,(frameIndex-1)%2,f.cmd,vk.swapImages[imageIndex],vk.swapExtent,vk.swapFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         VkImageMemoryBarrier2 toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         toPresent.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -783,6 +790,7 @@ void android_main(android_app* app) {
         f.retiringStreams.swap(newlyRetiringStreams);
         f.gpuTrace.submitted(frameIndex-1);
         portableOutput.submitted((frameIndex-1)%2);
+        preview.submitted((frameIndex-1)%2);
 
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;
@@ -819,11 +827,12 @@ void android_main(android_app* app) {
     {
         std::lock_guard<std::mutex> lock(g_streamsMutex);
         g_rendererReady = false;
-        g_control.setReady(false);
+        g_control.setReady(false);g_preview.ready(false);
     }
     vkDeviceWaitIdle(vk.device);
     displayOutputs.destroy(vk);
     portableOutput.destroy(vk);
+    preview.destroy(vk);
     for (auto& f : frames) {
         f.gpuTrace.destroy(vk);
         for (AImage* retired : f.retiring) AImage_delete(retired);

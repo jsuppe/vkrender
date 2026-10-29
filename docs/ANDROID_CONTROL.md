@@ -1,11 +1,12 @@
 # Android Binder moderation control
 
-The signature-protected `dev.vkrender.IVkRendererService` now appends four methods
+The signature-protected `dev.vkrender.IVkRendererService` now appends control and preview methods
 without changing existing Surface acquisition or ownership transaction IDs:
 
 - `getControlVersion()` returns 1.
-- `getControlCapabilities()` returns JSON. Moderation is available; camera gate,
-  preview transfer and display routing are explicitly unsupported by this API.
+- `getControlCapabilities()` returns JSON. Moderation is available; camera gate and
+  display routing are explicitly unsupported by this API. Preview capability is
+  negotiated from the active Vulkan format.
 - `getControlStatus()` returns last published JSON: `ready`, `pending`, `applied`
   and `state` (layout, pause, config, stream roster and visibility).
 - `submitControl(action, slot, value)` queues a command. It never waits for Vulkan
@@ -63,3 +64,26 @@ Raw evidence: `android-control-20261029/pi-control.log`. The renderer was stoppe
 and the existing virtual-camera demo task restored afterward. This device test
 qualifies Binder controls; FrameLink kick and the unavailable camera/preview/
 display operations are not relabeled as device-qualified features.
+
+## On-demand preview
+
+`getPreviewJpeg()` requests a snapshot and immediately returns the latest JPEG
+or null when unavailable/pending. It is not a blocking screenshot call. Maximum
+size is 320x180 (aspect preserved), 128 KiB, and five captures per second.
+Readback commands run before presentation in the existing frame command buffer;
+results retire only after its existing fence. No extra GPU wait or readback occurs
+when preview is unused. Activity pause invalidates pending/results; callers must
+retry after resume. JPEG encoding runs on the Binder thread and is cached by
+capture sequence. `previewCaptures` in status reports completed snapshots.
+
+The CPU `preview_mailbox` test covers request/rate/size/epoch bounds. The debug
+Binder fixture additionally decodes a real GPU snapshot, checks scene content,
+verifies no idle readbacks and verifies paused snapshots are unavailable.
+
+Physical Pi validation passed for this path: GPU-produced scene decoded from
+JPEG (green center, luminance range 5..172), no idle captures, bounded pause and
+resume. Evidence: `android-control-20261029/pi-preview.log` (includes failed
+pre-fix runs) and `preview.jpg`. Direct scaled blitting from the presentable image
+produced black on this device; a full-size GPU image copy followed by scaling
+passed. This extra copy is performed only for an actual snapshot request. Two
+full-size staging images are retained after first use, protected by frame fences.

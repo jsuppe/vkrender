@@ -23,6 +23,22 @@ public class RendererService extends Service {
     private static native Surface nativeAcquireInputSurface(int uid, int slot);
 
     private static native void nativeReleaseInputSurface(int uid, int slot);
+    private static native int[] nativePreview();
+    private byte[] previewJpeg;
+    private int previewSequence=-1;
+    private synchronized byte[] preview() {
+        int[] frame=nativePreview();if(frame==null)return null;
+        if(frame.length<3 || frame[0]<1 || frame[0]>320 || frame[1]<1 || frame[1]>180 || frame.length!=3+frame[0]*frame[1])return null;
+        if(frame[2]!=previewSequence || previewJpeg==null) {
+            android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(frame,3,frame[0],frame[0],frame[1],android.graphics.Bitmap.Config.ARGB_8888);
+            java.io.ByteArrayOutputStream encoded=new java.io.ByteArrayOutputStream();
+            try {if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,70,encoded))return null;}
+            finally {bitmap.recycle();}
+            if(encoded.size()>128*1024)return null;
+            previewJpeg=encoded.toByteArray();previewSequence=frame[2];
+        }
+        return previewJpeg.clone();
+    }
     private static native String nativeControlStatus();
     private static native String nativeControlCapabilities();
     private static native int nativeControl(String action, int slot, String value);
@@ -33,6 +49,7 @@ public class RendererService extends Service {
     });
 
     private final IVkRendererService.Stub binder = new IVkRendererService.Stub() {
+        @Override public byte[] getPreviewJpeg() { return preview(); }
         @Override public int getControlVersion() { return 1; }
         @Override public String getControlCapabilities() { return nativeControlCapabilities(); }
         @Override public String getControlStatus() { return nativeControlStatus(); }
