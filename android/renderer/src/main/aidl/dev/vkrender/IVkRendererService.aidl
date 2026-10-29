@@ -1,5 +1,7 @@
 package dev.vkrender;
 
+import android.os.IBinder;
+
 /**
  * The renderer's producer-facing API: hands out the Surface of its
  * AImageReader. Any Surface producer (MediaCodec, camera, another app - the
@@ -27,4 +29,11 @@ interface IVkRendererService {
 
     /** Tears down the caller's stream in `slot`. */
     void releaseInputSurfaceSlot(int slot);
+
+    /** Opt-in lifetime tracking. Keep owner alive until production ends.
+     * A different owner replaces this UID/slot; legacy transaction IDs remain stable. */
+    Surface acquireInputSurfaceWithOwner(int slot, IBinder owner);
+
+    /** Only releases if owner still owns this UID/slot (stale releases are ignored). */
+    void releaseInputSurfaceWithOwner(int slot, IBinder owner);
 }

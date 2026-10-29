@@ -7,7 +7,7 @@
 #include <jni.h>
 
 // Provided by android_main.cpp: waits briefly for renderer readiness, then
-// returns the caller's stream window (creating it on first call; not owning).
+// returns the caller's stream window (creating it on first call; caller owns one reference).
 ANativeWindow* vkrAcquireStreamWindow(int uid, int slot);
 void vkrReleaseStream(int uid, int slot);
 
@@ -16,7 +16,9 @@ Java_dev_vkrender_renderer_RendererService_nativeAcquireInputSurface(JNIEnv* env
                                                                      jint uid, jint slot) {
     ANativeWindow* window = vkrAcquireStreamWindow((int)uid, (int)slot);
     if (!window) return nullptr;
-    return ANativeWindow_toSurface(env, window);
+    jobject surface = ANativeWindow_toSurface(env, window);
+    ANativeWindow_release(window);
+    return surface;
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -1,0 +1,147 @@
+10-29 20:45:10.512 23665 23681 I vkrender: renderer: device: V3D 7.1.7.0
+10-29 20:45:10.512 23665 23681 I vkrender: renderer: VK_GOOGLE_display_timing available
+10-29 20:45:10.538 23665 23681 I vkrender: renderer: stream service ready (up to 12 producers)
+10-29 20:45:10.606 23665 23681 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+10-29 20:45:15.553 23665 23681 I vkrender: renderer: 0 adoptions / 297 presents in 5s (pool 0 buffers, 0 streams)
+10-29 20:45:16.154 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:16.602 23665 23681 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+10-29 20:45:16.602 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837619275 extFmt=0x25 (1 total, zero-copy)
+10-29 20:45:16.619 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (2 total, zero-copy)
+10-29 20:45:16.640 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837919419 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:16.652 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 1
+10-29 20:45:16.652 23665 23681 I vkrender: renderer: stream generation 1 departure completed
+10-29 20:45:16.652 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:16.669 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837927579 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:16.686 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837964555 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:16.686 23665 23681 I vkrender: renderer: stream generation 1 GPU retirement (3 imports)
+10-29 20:45:16.719 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837956395 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:16.735 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 2
+10-29 20:45:16.736 23665 23681 I vkrender: renderer: stream generation 2 departure completed
+10-29 20:45:16.736 23665 23675 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:16.752 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837919419 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:16.769 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:16.769 23665 23681 I vkrender: renderer: stream generation 2 GPU retirement (3 imports)
+10-29 20:45:16.786 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837977051 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:16.819 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 3
+10-29 20:45:16.819 23665 23681 I vkrender: renderer: stream generation 3 departure completed
+10-29 20:45:16.819 23665 23687 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:16.836 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837619275 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:16.852 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:16.852 23665 23681 I vkrender: renderer: stream generation 3 GPU retirement (3 imports)
+10-29 20:45:16.869 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837956395 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:16.902 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 4
+10-29 20:45:16.902 23665 23681 I vkrender: renderer: stream generation 4 departure completed
+10-29 20:45:16.902 23665 23687 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:16.919 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837919419 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:16.936 23665 23681 I vkrender: renderer: stream generation 4 GPU retirement (3 imports)
+10-29 20:45:16.952 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (2 total, zero-copy)
+10-29 20:45:16.969 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837964555 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:16.986 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 5
+10-29 20:45:16.986 23665 23681 I vkrender: renderer: stream generation 5 departure completed
+10-29 20:45:16.987 23665 23687 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.002 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.019 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837927579 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.020 23665 23681 I vkrender: renderer: stream generation 5 GPU retirement (3 imports)
+10-29 20:45:17.052 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837981131 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.069 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 6
+10-29 20:45:17.069 23665 23681 I vkrender: renderer: stream generation 6 departure completed
+10-29 20:45:17.069 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.086 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837968891 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.102 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837997451 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.102 23665 23681 I vkrender: renderer: stream generation 6 GPU retirement (3 imports)
+10-29 20:45:17.120 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837964555 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.152 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 7
+10-29 20:45:17.152 23665 23681 I vkrender: renderer: stream generation 7 departure completed
+10-29 20:45:17.152 23665 23675 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.169 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.186 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837956395 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.186 23665 23681 I vkrender: renderer: stream generation 7 GPU retirement (3 imports)
+10-29 20:45:17.203 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.236 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 8
+10-29 20:45:17.236 23665 23681 I vkrender: renderer: stream generation 8 departure completed
+10-29 20:45:17.236 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.252 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.269 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837919419 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.269 23665 23681 I vkrender: renderer: stream generation 8 GPU retirement (3 imports)
+10-29 20:45:17.287 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837997451 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.319 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 9
+10-29 20:45:17.319 23665 23681 I vkrender: renderer: stream generation 9 departure completed
+10-29 20:45:17.320 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.336 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837968891 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.352 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837993371 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.353 23665 23681 I vkrender: renderer: stream generation 9 GPU retirement (3 imports)
+10-29 20:45:17.370 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.402 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 10
+10-29 20:45:17.402 23665 23681 I vkrender: renderer: stream generation 10 departure completed
+10-29 20:45:17.403 23665 23675 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.419 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.436 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838014027 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.436 23665 23681 I vkrender: renderer: stream generation 10 GPU retirement (3 imports)
+10-29 20:45:17.453 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.485 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 11
+10-29 20:45:17.486 23665 23681 I vkrender: renderer: stream generation 11 departure completed
+10-29 20:45:17.486 23665 23675 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.502 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837993371 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.519 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837968891 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.519 23665 23681 I vkrender: renderer: stream generation 11 GPU retirement (3 imports)
+10-29 20:45:17.536 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837989291 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.569 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 12
+10-29 20:45:17.569 23665 23681 I vkrender: renderer: stream generation 12 departure completed
+10-29 20:45:17.569 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.586 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838014027 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.602 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.602 23665 23681 I vkrender: renderer: stream generation 12 GPU retirement (3 imports)
+10-29 20:45:17.621 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838005867 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.652 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 13
+10-29 20:45:17.652 23665 23681 I vkrender: renderer: stream generation 13 departure completed
+10-29 20:45:17.653 23665 23674 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.669 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.686 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837968891 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.686 23665 23681 I vkrender: renderer: stream generation 13 GPU retirement (3 imports)
+10-29 20:45:17.704 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.736 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 14
+10-29 20:45:17.736 23665 23681 I vkrender: renderer: stream generation 14 departure completed
+10-29 20:45:17.736 23665 23674 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.752 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838014027 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.769 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838001787 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.769 23665 23681 I vkrender: renderer: stream generation 14 GPU retirement (3 imports)
+10-29 20:45:17.786 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837993371 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.819 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 15
+10-29 20:45:17.819 23665 23681 I vkrender: renderer: stream generation 15 departure completed
+10-29 20:45:17.819 23665 23674 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.836 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.852 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837931659 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.853 23665 23681 I vkrender: renderer: stream generation 15 GPU retirement (3 imports)
+10-29 20:45:17.870 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838018107 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.902 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 16
+10-29 20:45:17.902 23665 23681 I vkrender: renderer: stream generation 16 departure completed
+10-29 20:45:17.903 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:17.919 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837972971 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:17.936 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838014027 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:17.936 23665 23681 I vkrender: renderer: stream generation 16 GPU retirement (3 imports)
+10-29 20:45:17.953 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838001787 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:17.985 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 17
+10-29 20:45:17.986 23665 23681 I vkrender: renderer: stream generation 17 departure completed
+10-29 20:45:17.986 23665 23676 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:18.002 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838030347 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:18.019 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838026267 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:18.019 23665 23681 I vkrender: renderer: stream generation 17 GPU retirement (3 imports)
+10-29 20:45:18.036 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838038763 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:18.069 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 18
+10-29 20:45:18.069 23665 23681 I vkrender: renderer: stream generation 18 departure completed
+10-29 20:45:18.069 23665 23674 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:18.086 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837985211 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:18.102 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838018107 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:18.103 23665 23681 I vkrender: renderer: stream generation 18 GPU retirement (3 imports)
+10-29 20:45:18.120 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838014027 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:18.152 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 19
+10-29 20:45:18.152 23665 23681 I vkrender: renderer: stream generation 19 departure completed
+10-29 20:45:18.153 23665 23674 I vkrender: renderer: stream created for uid 10116 slot 0 (1 total)
+10-29 20:45:18.169 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2837993371 extFmt=0x25 (4 total, zero-copy)
+10-29 20:45:18.186 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838042843 extFmt=0x25 (5 total, zero-copy)
+10-29 20:45:18.186 23665 23681 I vkrender: renderer: stream generation 19 GPU retirement (3 imports)
+10-29 20:45:18.219 23665 23681 I vkrender: renderer: imported AHardwareBuffer surface key=2838038763 extFmt=0x25 (3 total, zero-copy)
+10-29 20:45:18.236 23665 23681 I vkrender: renderer: stream departing uid 10116 slot 0 generation 20
+10-29 20:45:18.236 23665 23681 I vkrender: renderer: stream generation 20 departure completed
+10-29 20:45:18.269 23665 23681 I vkrender: renderer: stream generation 20 GPU retirement (3 imports)
+10-29 20:45:19.224 23707 23725 I SurfaceLifecycleTest: PASS 20 rapid release/reacquire generations
