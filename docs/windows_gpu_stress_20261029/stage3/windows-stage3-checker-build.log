@@ -1,0 +1,12 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  fl_ipc_win32.cpp
+  fl_trace.cpp
+  framelink_slots.cpp
+  framelink_win.cpp
+  Generating Code...
+     Creating library C:/Users/jonsu/dev/vkrender-control-20261029/build-control/framelink/Release/framelink.lib and object C:/Users/jonsu/dev/vkrender-control-20261029/build-control/framelink/Release/framelink.exp
+  framelink.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\framelink.dll
+  Building Custom Rule C:/Users/jonsu/dev/vkrender-control-20261029/CMakeLists.txt
+  portable_output_check.cpp
+  vkr_portable_output_check.vcxproj -> C:\Users\jonsu\dev\vkrender-control-20261029\build-control\Release\vkr_portable_output_check.exe

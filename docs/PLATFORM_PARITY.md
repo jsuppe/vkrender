@@ -3,6 +3,34 @@
 Scope: all functional gaps across FrameLink and vkrender, not tracing alone.
 This ledger is in-progress, not a blanket parity certification.
 
+## Current qualification checkpoint
+
+The sections below retain incremental test history; this checkpoint supersedes
+older statements that the baseline stress or Binder lifecycle work is outstanding.
+
+- Baseline merged: FrameLink PR #1 (`1a46650`) and renderer PR #10 (`2c0a699`),
+  after all four renderer CI jobs passed. Final FrameLink suites: Linux 27/27,
+  Windows 28/28.
+- Linux and Windows sustained GPU output, pixel comparison, reconnect and
+  process-death evidence: `linux_gpu_stress_20261029/` and
+  `windows_gpu_stress_20261029/`. Linux recorded sequence gaps; these are not
+  drop-free or scanout-latency qualifications.
+- Integrated control/lifecycle/preview regressions: Linux 17/17. Windows stage3
+  seven targeted tests passed, plus 300 matched/distinct RGB/NV12 pairs (worst
+  YUV error 1, zero sequence gaps) and eight distinct actual GPU JPEG snapshots.
+  See `windows_gpu_stress_20261029/stage3/` for the exact tested snapshot.
+- Android Binder owner death, stale release and Surface recreation passed on
+  physical Pi; see `ANDROID_SURFACE_LIFECYCLE.md`.
+- Android opt-in secondary outputs passed physical Pi mirror/crop byte checks,
+  detach/reattach, pause/resume and buffer resize. The working path adds a
+  device-local GPU staging copy, not CPU readback. See `ANDROID_DISPLAY_OUTPUTS.md`.
+- A15 Cuttlefish RGB GPU output passed. NV12/RGB10 renderable allocation was
+  unsupported; native SYNC_FD event-gated submission timed out. These are not
+  passing qualifications. See `CUTTLEFISH_GPU_VALIDATION.md`.
+- Android preview/display Binder integration is still in progress. Android and
+  Linux virtual-camera backend support remains unavailable and is reported as
+  such. Physical Linux hotplug and optical/scanout timing remain unqualified.
+
 ## Implemented in FrameLink
 
 - Portable `flImageMapPlanes` in the core header; Linux native mapping,
