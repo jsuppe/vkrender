@@ -255,6 +255,18 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
 #endif
 
 #ifdef __ANDROID__
+    VkPhysicalDeviceExternalFormatResolveFeaturesANDROID resolveFeature{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID};
+    {
+        uint32_t count=0;vkEnumerateDeviceExtensionProperties(phys,nullptr,&count,nullptr);
+        std::vector<VkExtensionProperties> available(count);vkEnumerateDeviceExtensionProperties(phys,nullptr,&count,available.data());
+        for(auto& ext:available)if(!strcmp(ext.extensionName,VK_ANDROID_EXTERNAL_FORMAT_RESOLVE_EXTENSION_NAME)){
+            VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};query.pNext=&resolveFeature;vkGetPhysicalDeviceFeatures2(phys,&query);
+            if(resolveFeature.externalFormatResolve){devExts.push_back(VK_ANDROID_EXTERNAL_FORMAT_RESOLVE_EXTENSION_NAME);feat13.pNext=&resolveFeature;hasExternalResolve=true;
+                VkPhysicalDeviceExternalFormatResolvePropertiesANDROID rp{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID};VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};props.pNext=&rp;vkGetPhysicalDeviceProperties2(phys,&props);nullExternalResolveAttachment=rp.nullColorAttachmentWithExternalFormatResolve;
+                VKR_LOG("renderer: external format resolve available (null attachment=%d)",nullExternalResolveAttachment);
+            }
+        }
+    }
     // Optional: scheduled presents for exact video cadence.
     {
         uint32_t count = 0;

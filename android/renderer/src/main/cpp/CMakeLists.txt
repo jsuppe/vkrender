@@ -36,6 +36,7 @@ add_library(vkrender_renderer SHARED
     ${REPO}/renderer/video_pass.cpp
     ${REPO}/renderer/background_pass.cpp
     ${REPO}/renderer/portable_output.cpp
+    ${REPO}/renderer/gpu_output.cpp
     ${REPO}/renderer/android_main.cpp
     renderer_jni.cpp
     fltest_producer.cpp
@@ -63,3 +64,11 @@ target_link_libraries(vkr_portable_output_check PRIVATE framelink)
 add_executable(vkr_gpu_sync_fd_test ${REPO}/test/gpu_sync_fd.cpp ${REPO}/renderer/vk_context.cpp)
 target_include_directories(vkr_gpu_sync_fd_test PRIVATE ${REPO}/renderer ${REPO}/common)
 target_link_libraries(vkr_gpu_sync_fd_test PRIVATE framelink volk android log nativewindow)
+
+add_executable(vkr_gpu_output_caps ${REPO}/test/gpu_output_caps.cpp ${REPO}/renderer/vk_context.cpp)
+target_include_directories(vkr_gpu_output_caps PRIVATE ${REPO}/renderer ${REPO}/common)
+target_link_libraries(vkr_gpu_output_caps PRIVATE volk android log nativewindow)
+
+add_executable(vkr_gpu_output_pixels ${REPO}/test/gpu_output_pixels.cpp ${REPO}/renderer/gpu_output.cpp ${REPO}/renderer/vk_context.cpp)
+target_include_directories(vkr_gpu_output_pixels PRIVATE ${REPO}/renderer ${REPO}/common)
+target_link_libraries(vkr_gpu_output_pixels PRIVATE framelink volk android log nativewindow)

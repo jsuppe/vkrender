@@ -24,6 +24,8 @@ public class MainActivity extends NativeActivity {
             android.system.Os.setenv("VKR_LAYOUT",layout==null?"two-cubes":layout,true);
             String inputFormats=getIntent().getStringExtra("inputFormats");
             android.system.Os.setenv("VKR_INPUT_FORMATS",inputFormats==null?"":inputFormats,true);
+            String outputMode=getIntent().getStringExtra("outputMode");
+            android.system.Os.setenv("VKR_OUTPUT_MODE",outputMode==null?"cpu":outputMode,true);
             String outputs = getIntent().getStringExtra("sceneOutputs");
             android.system.Os.setenv("VKR_SCENE_OUTPUTS", outputs == null ? "" : outputs, true);
             int frames = trace ? Math.max(0, getIntent().getIntExtra("traceFrames", 0)) : 0;

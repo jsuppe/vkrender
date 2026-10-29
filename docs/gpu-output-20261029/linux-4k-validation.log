@@ -1,0 +1,6 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene output: strict GPU-only mode; unsupported imports are refused (no CPU fallback)
+[INF] GPU output 'gpu.pixel.test.1020339': imported native buffer format=4 planes=1
+[INF] GPU output 'gpu.pixel.test.1020339': imported native buffer format=4 planes=1
+format=4 frames=3 worst_byte_error=0

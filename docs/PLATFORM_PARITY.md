@@ -65,8 +65,11 @@ SELinux boundaries; renderer cross-app input uses its existing Binder Surface AP
   L/Space/B/-/=/1..9/0 keyboard controls. Multi-display/control-service parity
   remain open. FrameLink animated departure retention is now implemented;
   Binder Surface lifecycle parity still needs separate qualification.
-- Native GPU-only output parity: portable CPU fallback exists, hardware-native
-  Linux/Android NV12 output remains distinct from Windows implementation.
+- GPU-only scene outputs are now implemented on Linux and capable Android
+  devices. Linux uses compute/native plane copies; Android YUV uses external-format
+  resolve. Pi native NV12 GPU rendering remains unsupported by its current driver.
+  Windows keeps its GPU implementation; these are functionally similar, not
+  identical performance paths. See the renderer GPU_OUTPUT.md for qualification.
 - Android cross-app transport requires Binder or platform privileges; arbitrary
   cross-app Unix-socket access cannot be enabled by this library.
 
@@ -154,3 +157,14 @@ layout-switch cleanup. Pi Android presentation-mode NV12 producer submitted
 120 frames across one reconnect with zero producer timeouts; renderer logged
 departure retirement before replacement imports. This does not qualify Binder
 Surface disconnect animations or Android physical multi-display.
+
+## GPU-output follow-up
+
+Opt-in FL_GPU_RENDER allocation and strict renderer GPU output mode added.
+Linux renderer suite 9/9; FrameLink Linux25/25 and Windows28/28. Windows existing
+GPU conversion3/3 and60 distinct frames per RGB/NV12 comparison path still pass.
+Native patterned output tests include scaling, chroma, row padding and consumer
+recreation/resizing while an output is pending: Linux/tablet4 formats, Pi2 formats
+passed with zero byte error. Pi NV12 and RGB10 allocation limits are explicit.
+Tablet full Activity comparison remains unverified while screen-locked; native
+conversion/lifecycle tests passed. Broad platform integration parity is not complete.

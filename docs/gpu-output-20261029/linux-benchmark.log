@@ -1,0 +1,11 @@
+cpu wall_seconds= 22.62 exit= 0 channel version=5 format=NV12 size=1920x1080 pool=4 generation=1 adapter=0000000000000000
+consumer received=20 verified=0 pattern_gaps=0 sequence_gaps=0 timeouts=203 fps=0.88 pts_age_mean_ms=2181.682 pts_age_max_ms=2282.614
+
+gpu wall_seconds= 0.58 exit= 0 channel version=5 format=NV12 size=1920x1080 pool=4 generation=1 adapter=0000000000000000
+consumer received=20 verified=0 pattern_gaps=0 sequence_gaps=0 timeouts=2 fps=34.61 pts_age_mean_ms=34.108 pts_age_max_ms=38.155
+
+cpu wall_seconds= 22.22 exit= 0 channel version=5 format=NV12 size=1920x1080 pool=4 generation=1 adapter=0000000000000000
+consumer received=20 verified=0 pattern_gaps=0 sequence_gaps=0 timeouts=202 fps=0.90 pts_age_mean_ms=2147.108 pts_age_max_ms=2218.721
+
+gpu wall_seconds= 0.579 exit= 0 channel version=5 format=NV12 size=1920x1080 pool=4 generation=1 adapter=0000000000000000
+consumer received=20 verified=0 pattern_gaps=0 sequence_gaps=0 timeouts=2 fps=34.66 pts_age_mean_ms=34.287 pts_age_max_ms=39.141

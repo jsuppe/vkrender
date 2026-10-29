@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
 namespace vkr {
 namespace {
 int64_t now(){return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
@@ -11,6 +12,9 @@ uint8_t clamp(int v){return (uint8_t)std::clamp(v,0,255);}
 }
 void PortableOutput::configure(const std::vector<std::string>& names) {
     for(const auto& name:names)if(!name.empty())outputs_.push_back({name});
+#ifndef _WIN32
+    if(const char* mode=std::getenv("VKR_OUTPUT_MODE");mode && std::strcmp(mode,"gpu")==0){gpu_=std::make_unique<GpuOutput>();gpu_->configure(names);return;}
+#endif
     if(enabled())VKR_LOG("scene output: portable async readback/CPU conversion fallback enabled");
 }
 void PortableOutput::freeFrame(VkContext& vk, Readback& f) {
@@ -20,6 +24,9 @@ void PortableOutput::freeFrame(VkContext& vk, Readback& f) {
     f={};
 }
 void PortableOutput::retire(VkContext& vk,unsigned slot) {
+#ifndef _WIN32
+    if(gpu_){gpu_->retire(vk,slot);return;}
+#endif
     auto& f=frames_[slot%2]; if(!f.pending)return;
     f.pending=false;
     vkrtrace::Scope trace("service.output_publish");
@@ -79,6 +86,9 @@ void PortableOutput::retire(VkContext& vk,unsigned slot) {
 void PortableOutput::record(VkContext& vk,unsigned slot,VkCommandBuffer cmd,VkImage image,
         VkExtent2D extent,VkFormat format,VkImageLayout layout,int64_t pts) {
     if(!enabled())return;
+#ifndef _WIN32
+    if(gpu_){gpu_->record(vk,slot,cmd,image,extent,format,layout,pts);return;}
+#endif
     if(format!=VK_FORMAT_B8G8R8A8_UNORM && format!=VK_FORMAT_B8G8R8A8_SRGB &&
        format!=VK_FORMAT_R8G8B8A8_UNORM && format!=VK_FORMAT_R8G8B8A8_SRGB)return;
     auto& f=frames_[slot%2];
@@ -116,6 +126,9 @@ void PortableOutput::record(VkContext& vk,unsigned slot,VkCommandBuffer cmd,VkIm
     f.format=format;f.pts=pts;f.armed=true;
 }
 void PortableOutput::destroy(VkContext& vk) {
+#ifndef _WIN32
+    if(gpu_){gpu_->retire(vk,0);gpu_->retire(vk,1);gpu_->destroy(vk);gpu_.reset();outputs_.clear();return;}
+#endif
     for(unsigned i=0;i<2;i++){retire(vk,i);freeFrame(vk,frames_[i]);}
     for(auto& o:outputs_)if(o.channel)flClose(o.channel);
     outputs_.clear();

@@ -11,6 +11,8 @@ struct FrameGpuTrace {
     uint32_t validBits=0;
     double period=0;
     uint64_t frame=0;
+    const char* durationName="gpu.scene_duration";
+    uint64_t object=0;
     void collect(vkr::VkContext& vk) {
         if(!pending)return;
         uint64_t ticks[2]{};
@@ -18,7 +20,7 @@ struct FrameGpuTrace {
         if(r==VK_SUCCESS) {
             uint64_t delta=ticks[1]-ticks[0];
             if(validBits<64)delta&=(1ull<<validBits)-1;
-            vkrtrace::record({"gpu.scene_duration",vkrtrace::clockNs(),(uint64_t)(delta*period),0,frame,0,0,0,0});
+            vkrtrace::record({durationName,vkrtrace::clockNs(),(uint64_t)(delta*period),object,frame,0,0,0,0});
         }else vkrtrace::record({"gpu.scene_query_unavailable",vkrtrace::clockNs(),0,0,frame,0,0,0,r});
         pending=false;
     }

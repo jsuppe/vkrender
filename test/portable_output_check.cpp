@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -16,7 +17,7 @@ int main(int argc,char** argv){
  flChannel* ch[2]{};
  const flFormat rgbFormat=argc>2 && std::string(argv[2])=="rgb10a2"?FL_FORMAT_RGB10A2:FL_FORMAT_RGBA8;
  const unsigned w=160,h=90;
- for(unsigned p=0;p<2;p++)if(flCreateChannelEx((prefix+(p?".nv12":".rgba")).c_str(),w,h,p?FL_FORMAT_NV12:rgbFormat,4,FL_MAP_CPU,&ch[p])!=FL_OK)return 2;
+ for(unsigned p=0;p<2;p++)if(flCreateChannelEx((prefix+(p?".nv12":".rgba")).c_str(),w,h,p?FL_FORMAT_NV12:rgbFormat,4,FL_MAP_CPU|((std::getenv("VKR_OUTPUT_MODE") && std::string(std::getenv("VKR_OUTPUT_MODE"))=="gpu")?FL_GPU_RENDER:0),&ch[p])!=FL_OK)return 2;
  std::map<int64_t,Image> saved[2];std::set<uint64_t> hashes;unsigned matched=0;int worst=0;
  auto deadline=Clock::now()+std::chrono::seconds(45);
  while(Clock::now()<deadline && matched<20){
@@ -43,6 +44,10 @@ int main(int argc,char** argv){
   for(auto it=saved[0].begin();it!=saved[0].end();){
    auto other=saved[1].find(it->first);if(other==saved[1].end()){++it;continue;}
    const auto& rgb=it->second.data;const auto& nv=other->second.data;
+   if(matched==0 && std::getenv("VKR_OUTPUT_DUMP")){
+    FILE* r=fopen("gpu-check.rgba","wb");if(r){fwrite(rgb.data(),1,rgb.size(),r);fclose(r);}
+    FILE* n=fopen("gpu-check.nv12","wb");if(n){fwrite(nv.data(),1,nv.size(),n);fclose(n);}
+   }
    if(rgb.size()!=w*h*4 || nv.size()!=w*h*3/2)return 5;
    for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++){
     const auto* px=&rgb[(y*w+x)*4];
