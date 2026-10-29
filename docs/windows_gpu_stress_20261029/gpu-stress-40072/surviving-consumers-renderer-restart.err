@@ -1,0 +1,27 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('gpu-stress-40072.in.0' .. 'gpu-stress-40072.in.11')
+[INF] service: publishing scene to 'gpu-stress-40072.rgb' (1920x1080, ring of 4)
+[INF] service: publishing scene to 'gpu-stress-40072.nv12' (1920x1080, ring of 4)
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=19 1280x720 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=17 1280x720 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=16 1280x720 (3 total, zero-copy)
+[INF] scene: 274 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 119 adoptions in 5s (pool 3 slots, 1 producers) hop avg 8.51 ms max 25.43 ms over 119
+[INF] service: scene channel 'gpu-stress-40072.rgb' released
+[INF] service: scene channel 'gpu-stress-40072.nv12' released
+[INF] renderer: imported win32 surface key=18 1280x720 (4 total, zero-copy)
+[INF] scene: 295 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 4 slots, 1 producers) hop avg 9.20 ms max 16.85 ms over 150
+[INF] service: publishing scene to 'gpu-stress-40072.rgb' (640x360, ring of 4)
+[INF] service: publishing scene to 'gpu-stress-40072.nv12' (640x360, ring of 4)
+[INF] service: scene channel 'gpu-stress-40072.rgb' released
+[INF] service: scene channel 'gpu-stress-40072.nv12' released
+[INF] service: publishing scene to 'gpu-stress-40072.rgb' (1920x1080, ring of 4)
+[INF] service: publishing scene to 'gpu-stress-40072.nv12' (1920x1080, ring of 4)
+[INF] scene: 290 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 149 adoptions in 5s (pool 4 slots, 1 producers) hop avg 9.01 ms max 27.40 ms over 149
+[INF] service: scene channel 'gpu-stress-40072.rgb' released
+[INF] service: scene channel 'gpu-stress-40072.nv12' released

@@ -1,0 +1,22 @@
+[
+  {
+    "test": "a15-pixels-1-small",
+    "exit": 0
+  },
+  {
+    "test": "a15-pixels-2-small",
+    "exit": 77
+  },
+  {
+    "test": "a15-pixels-3-small",
+    "exit": 77
+  },
+  {
+    "test": "a15-pixels-4-small",
+    "exit": 0
+  },
+  {
+    "test": "a15-pixels-4-large",
+    "exit": 0
+  }
+]

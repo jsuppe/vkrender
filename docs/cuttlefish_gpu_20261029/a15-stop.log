@@ -1,0 +1,37 @@
+10-29 16:50:24.668 1095867 1095868 I stop_cvd: main.cc:124 Requesting stop
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138 Clean stop failed: 2. main.cc:126 | CleanStopInstance | 
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138 1. util.cc:161 | RunLauncherAction | 
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138  | device/google/cuttlefish/host/libs/command_util/util.cc:145
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138  | Result<void> cuttlefish::WaitForRead(SharedFD, const int)
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138  v CF_EXPECT(select_result != 0)
+10-29 16:50:29.670 1095867 1095868 E stop_cvd: main.cc:138 Timeout expired waiting for launcher monitor to respond
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089174
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089182
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089183
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089184
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089185
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089186
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089187
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089188
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089189
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089190
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089191
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089192
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089193
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089194
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089195
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089196
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089197
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089198
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089199
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089200
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089201
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089202
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089203
+10-29 16:50:29.836 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089204
+10-29 16:50:29.837 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089205
+10-29 16:50:29.837 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089206
+10-29 16:50:29.837 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089212
+10-29 16:50:29.839 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089215
+10-29 16:50:29.839 1095867 1095868 E stop_cvd: main.cc:109 Failed to kill process group 1089215: No such process
+10-29 16:50:29.839 1095867 1095868 I stop_cvd: main.cc:106 Sending SIGKILL to process group 1089221

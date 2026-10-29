@@ -1,0 +1,2 @@
+channel version=5 format=BGRA size=1280x720 pool=4 generation=1 adapter=c57d010000000000
+consumer received=300 verified=0 pattern_gaps=0 sequence_gaps=0 timeouts=23 fps=38.05 pts_age_mean_ms=1.486 pts_age_max_ms=2.928
