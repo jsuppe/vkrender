@@ -60,7 +60,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Test portable control plane
-        run: ctest --test-dir build -C Release --output-on-failure -R "^(shared_scene_layouts|shared_moderation|control_http|android_control_mailbox|android_control_aidl)$"
+        run: ctest --test-dir build -C Release --output-on-failure -R "^(shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl)$"
 
       - name: Package
         shell: pwsh
@@ -115,7 +115,7 @@ jobs:
 
       # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -R "^(ipc|shared_scene_layouts|shared_moderation|control_http|android_control_mailbox|android_control_aidl)$"
+        run: ctest --test-dir build --output-on-failure -R "^(ipc|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl)$"
 
   # The sender is a Flutter app, so it builds and tests entirely outside the
   # CMake tree and needs its own job. Ubuntu is deliberate: the suite is pure
