@@ -130,3 +130,12 @@ All 60 images in each output were distinct. The report observed ~0.977 ms
 median submit-entry-to-acquire-return latency in this particular run; this is
 a correctness demonstration under concurrent desktop load, not a controlled
 performance or logging-overhead qualification.
+
+## Android / portable parity extension
+
+The Android renderer now uses the same bounded CPU recorder and Vulkan query
+helper. Intent extras `trace`, `traceGpu`, and `traceFrames` configure a finite
+capture before native initialization; files are written to the app's private
+files directory and flushed on normal teardown. `sceneOutputs` enables the
+portable asynchronous readback/CPU-conversion path. Its CPU conversion spans
+are not GPU conversion durations. See `PLATFORM_PARITY.md` for device tests.

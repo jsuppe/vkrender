@@ -31,6 +31,9 @@ android {
             // loop misses vsync deadlines on slower devices (measured ~37Hz
             // present rate on a 60Hz panel -> judder).
             arguments += "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+            providers.gradleProperty("framelinkDir").orNull?.let {
+                arguments += "-DFRAMELINK_DIR=$it"
+            }
         }
     }
 

@@ -23,6 +23,8 @@
 #include <linux/udmabuf.h>
 
 #include <wayland-client.h>
+#include "framelink.h"
+#include "framelink_dmabuf.h"
 
 #include "linux-dmabuf-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
@@ -81,32 +83,18 @@ static const struct wl_callback_listener frameListener = {frameDone};
 
 int main(int argc, char** argv) {
     int seconds = argc > 1 ? atoi(argv[1]) : 10;
+    int nv12 = argc > 2 && !strcmp(argv[2],"nv12");
+    unsigned stride = nv12 ? WIDTH : STRIDE;
 
-    // memfd pages -> dma-buf via udmabuf (page-aligned size, sealed).
-    size_t size = ((size_t)STRIDE * HEIGHT + 4095) & ~4095ull;
-    int memfd = memfd_create("vkr-dmabuf", MFD_ALLOW_SEALING);
-    if (memfd < 0 || ftruncate(memfd, (off_t)size) != 0 ||
-        fcntl(memfd, F_ADD_SEALS, F_SEAL_SHRINK) != 0) {
-        perror("memfd");
-        return 1;
-    }
-    uint32_t* pixels = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
-    if (pixels == MAP_FAILED) {
-        perror("mmap");
-        return 1;
-    }
-    int udev = open("/dev/udmabuf", O_RDWR);
-    if (udev < 0) {
-        perror("/dev/udmabuf");
-        return 1;
-    }
-    struct udmabuf_create create = {.memfd = (uint32_t)memfd, .flags = UDMABUF_FLAGS_CLOEXEC,
-                                    .offset = 0, .size = size};
-    int buffd = ioctl(udev, UDMABUF_CREATE, &create);
-    if (buffd < 0) {
-        perror("UDMABUF_CREATE");
-        return 1;
-    }
+    // Use real driver-allocated DMA-BUFs; NVIDIA cannot import arbitrary
+    // udmabuf pages as Vulkan image memory on every driver.
+    flChannel *consumer=NULL,*producer=NULL;
+    char channel[80];snprintf(channel,sizeof(channel),"wl-test-%d",getpid());
+    if(flCreateChannelEx(channel,WIDTH,HEIGHT,nv12?FL_FORMAT_NV12:FL_FORMAT_BGRA8,1,FL_MAP_CPU,&consumer)!=FL_OK)return 1;
+    for(int i=0;i<100&&!producer;i++){flOpenProducer(channel,&producer);usleep(10000);}
+    flBuffer frameBuffer={0};
+    if(!producer || flAcquireBuffer(producer,&frameBuffer,1000)!=FL_OK)return 1;
+    flDmabuf desc={0};if(flImageDmabuf(frameBuffer.image,&desc)!=FL_OK)return 1;
 
     struct wl_display* display = wl_display_connect(NULL);
     if (!display) {
@@ -133,10 +121,11 @@ int main(int argc, char** argv) {
     }
 
     struct zwp_linux_buffer_params_v1* params = zwp_linux_dmabuf_v1_create_params(dmabuf);
-    zwp_linux_buffer_params_v1_add(params, buffd, 0, 0, STRIDE, (uint32_t)(MOD_LINEAR >> 32),
-                                   (uint32_t)MOD_LINEAR);
+    for(unsigned plane=0;plane<desc.planes;plane++)
+        zwp_linux_buffer_params_v1_add(params,desc.fd[plane],plane,desc.offset[plane],desc.stride[plane],
+            (uint32_t)(desc.modifier>>32),(uint32_t)desc.modifier);
     struct wl_buffer* buffer = zwp_linux_buffer_params_v1_create_immed(
-        params, WIDTH, HEIGHT, FOURCC_ARGB8888, 0);
+        params, WIDTH, HEIGHT, nv12 ? 0x3231564eu : FOURCC_ARGB8888, 0);
     zwp_linux_buffer_params_v1_destroy(params);
 
     fprintf(stderr, "dmabuf client: streaming %dx%d ARGB LINEAR for %ds\n", WIDTH, HEIGHT,
@@ -150,13 +139,23 @@ int main(int argc, char** argv) {
         if (now.tv_sec - start.tv_sec >= seconds) break;
         if (frameDue) {
             frameDue = 0;
-            for (int y = 0; y < HEIGHT; ++y)
+            if(frame==0) { // Immutable fixture: never overwrite an in-flight wl_buffer.
+            flMappedImage mapped={0};if(flImageMapPlanes(frameBuffer.image,&mapped)!=FL_OK)return 1;
+            if(nv12) {
+                for(unsigned y=0;y<HEIGHT;y++)memset((char*)mapped.plane[0].pixels+y*mapped.plane[0].stride,81+frame%40,WIDTH);
+                for(unsigned y=0;y<HEIGHT/2;y++)for(unsigned x=0;x<WIDTH;x+=2){
+                    unsigned char* uv=(unsigned char*)mapped.plane[1].pixels+y*mapped.plane[1].stride+x;
+                    uv[0]=90;uv[1]=240;
+                }
+            } else for (int y = 0; y < HEIGHT; ++y)
                 for (int x = 0; x < WIDTH; ++x) {
                     uint8_t r = (uint8_t)(x + frame * 2);
                     uint8_t g = (uint8_t)(y + frame);
                     uint8_t b = (uint8_t)(x + y);
-                    pixels[y * WIDTH + x] = 0xFF000000u | (r << 16) | (g << 8) | b;
+                    ((uint32_t*)((char*)mapped.plane[0].pixels+y*mapped.plane[0].stride))[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
                 }
+            flImageUnmap(frameBuffer.image);
+            }
             ++frame;
             struct wl_callback* cb = wl_surface_frame(surface);
             wl_callback_add_listener(cb, &frameListener, NULL);
@@ -169,5 +168,6 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "dmabuf client: sent %u frames\n", frame);
     wl_display_disconnect(display);
+    flClose(producer);flClose(consumer);
     return 0;
 }

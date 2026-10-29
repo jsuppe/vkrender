@@ -243,6 +243,17 @@ bool VkContext::init(uint32_t width, uint32_t height, const char* title, bool he
     std::vector<const char*> devExts(kDeviceExtensions,
                                      kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(char*));
     if (!headless || canDisplay) devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+#ifndef _WIN32
+    {
+        uint32_t count=0;vkEnumerateDeviceExtensionProperties(phys,nullptr,&count,nullptr);
+        std::vector<VkExtensionProperties> available(count);
+        vkEnumerateDeviceExtensionProperties(phys,nullptr,&count,available.data());
+        for(const auto& item:available)if(!strcmp(item.extensionName,VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME)) {
+            devExts.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);hasSyncFd=true;break;
+        }
+    }
+#endif
+
 #ifdef __ANDROID__
     // Optional: scheduled presents for exact video cadence.
     {

@@ -111,7 +111,8 @@ set(VKR_SHADERS
     ${CMAKE_SOURCE_DIR}/renderer/shaders/cube.vert
     ${CMAKE_SOURCE_DIR}/renderer/shaders/vaporwave.frag
     ${CMAKE_SOURCE_DIR}/renderer/shaders/video_ycbcr.frag
-    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag)
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_planar.frag
+    ${CMAKE_SOURCE_DIR}/renderer/shaders/nv12_cube.frag)
 set(VKR_SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${VKR_SHADER_OUT_DIR})
 set(VKR_SHADER_OUTPUTS "")
@@ -134,6 +135,8 @@ add_executable(vkrenderer
     renderer/video_pass.cpp
     renderer/background_pass.cpp
     renderer/nv12_output.cpp
+    renderer/portable_output.cpp
+    renderer/portable_input.cpp
     renderer/dump_util.cpp
     renderer/scene_host.cpp)
 target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
@@ -316,6 +319,7 @@ if(NOT WIN32)
             list(APPEND VKR_WL_CLIENT_GEN ${_chdr} ${VKR_WL_GEN_DIR}/${_pname}-protocol.c)
         endforeach()
         add_executable(vkr_wl_dmabuf_client test/wayland_dmabuf_client.c ${VKR_WL_CLIENT_GEN})
+        target_link_libraries(vkr_wl_dmabuf_client PRIVATE framelink)
         target_include_directories(vkr_wl_dmabuf_client PRIVATE ${VKR_WL_GEN_DIR})
         target_link_libraries(vkr_wl_dmabuf_client PRIVATE PkgConfig::WLCLIENT)
     endif()
@@ -367,3 +371,29 @@ if(WIN32)
         set_tests_properties(nv12_gpu_${w}x${h} PROPERTIES TIMEOUT 60)
     endforeach()
 endif()
+
+# Integration driver: run alongside a renderer publishing <prefix>.rgba/.nv12.
+add_executable(vkr_portable_output_check test/portable_output_check.cpp)
+target_link_libraries(vkr_portable_output_check PRIVATE framelink)
+
+if(UNIX AND NOT ANDROID AND TARGET vkr_wl_dmabuf_client)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    enable_testing()
+    add_test(NAME mixed_rgb_nv12_input COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/mixed_formats.py ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(mixed_rgb_nv12_input PROPERTIES TIMEOUT 30)
+endif()
+
+if(UNIX AND NOT ANDROID)
+    add_executable(vkr_gpu_sync_fd_test test/gpu_sync_fd.cpp renderer/vk_context.cpp)
+    target_include_directories(vkr_gpu_sync_fd_test PRIVATE renderer common)
+    target_link_libraries(vkr_gpu_sync_fd_test PRIVATE framelink volk glfw)
+    add_test(NAME vulkan_sync_fd_contract COMMAND vkr_gpu_sync_fd_test)
+    set_tests_properties(vulkan_sync_fd_contract PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77)
+endif()
+
+add_executable(vkr_scene_layout_test test/scene_layout.cpp)
+target_include_directories(vkr_scene_layout_test PRIVATE renderer common)
+target_link_libraries(vkr_scene_layout_test PRIVATE volk)
+enable_testing()
+add_test(NAME shared_scene_layouts COMMAND vkr_scene_layout_test)

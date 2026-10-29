@@ -12,6 +12,7 @@
 
 #include "win_service.h"
 #include "nv12_output.h"
+#include "portable_input.h"
 
 // M35: the scene view now goes out over framelink (docs/FRAMELINK.md)
 // instead of the M24 consumer protocol - the CONSUMER owns the ring.
@@ -288,7 +289,8 @@ int runWinService(const WinServeOptions& options) {
         // discrete GPU is not the one our Vulkan device is on - and then every
         // import of these buffers fails.
         if (flCreateChannelOnAdapter(s.name.c_str(), kInDefaultW, kInDefaultH,
-                                     FL_FORMAT_BGRA8, kInPool, FL_GPU_SYNC,
+                                     inputFormat(i,FL_FORMAT_BGRA8), kInPool,
+                                     inputFormat(i,FL_FORMAT_BGRA8)==FL_FORMAT_BGRA8?FL_GPU_SYNC:FL_DEFER_RELEASE,
                                      vk.luidValid ? vk.deviceLUID : nullptr,
                                      &s.channel) != FL_OK) {
             VKR_ERR("service: input channel '%s' creation failed", s.name.c_str());
@@ -325,8 +327,8 @@ int runWinService(const WinServeOptions& options) {
         s.departing = false;
         s.generation = 0;
         s.currentSlot = -1;
-        if (flCreateChannelOnAdapter(s.name.c_str(), kInDefaultW, kInDefaultH, FL_FORMAT_BGRA8,
-                                     kInPool, FL_GPU_SYNC,
+        if (flCreateChannelOnAdapter(s.name.c_str(), kInDefaultW, kInDefaultH, inputFormat(i,FL_FORMAT_BGRA8),
+                                     kInPool, inputFormat(i,FL_FORMAT_BGRA8)==FL_FORMAT_BGRA8?FL_GPU_SYNC:FL_DEFER_RELEASE,
                                      vk.luidValid ? vk.deviceLUID : nullptr,
                                      &s.channel) != FL_OK) {
             VKR_ERR("service: could not recreate '%s' after kick", s.name.c_str());
@@ -379,7 +381,7 @@ int runWinService(const WinServeOptions& options) {
             flClose(ch);
             return;
         }
-        if(info.format!=FL_FORMAT_BGRA8 && info.format!=FL_FORMAT_NV12){
+        if(info.format!=FL_FORMAT_BGRA8 && info.format!=FL_FORMAT_NV12 && info.format!=FL_FORMAT_RGBA8 && info.format!=FL_FORMAT_RGB10A2){
             vkDestroySemaphore(vk.device,so.readySem,nullptr);so.readySem=VK_NULL_HANDLE;flClose(ch);return;
         }
         so.format=info.format;
@@ -462,6 +464,10 @@ int runWinService(const WinServeOptions& options) {
                 continue;
             }
             const uint32_t key = (s.uid << 4) | f.slot;
+            if(now.format!=FL_FORMAT_BGRA8) {
+                if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {flRelease(s.channel,&f);continue;}
+                passNeedsBind=false;s.imported[f.slot]=true;
+            }
             if (!s.imported[f.slot]) {
                 void* h = flImageSharedHandle(f.image);
                 if (!pool.addSurfaceWin32(vk, key, (uint64_t)(uintptr_t)h, s.width, s.height)) {
@@ -669,7 +675,8 @@ int runWinService(const WinServeOptions& options) {
                             VKR_ERR("service: NV12 GPU processor initialization failed");teardownSceneOut(sceneOut);continue;
                         }
                     } else if(!nv12 && !sceneOut.images[slot]){
-                        if(!importWin32BlitTarget(vk,(uint64_t)(uintptr_t)flImageSharedHandle(buf.image),sceneOut.width,sceneOut.height,&sceneOut.images[slot],&sceneOut.memories[slot])){
+                        if(!importWin32BlitTarget(vk,(uint64_t)(uintptr_t)flImageSharedHandle(buf.image),sceneOut.width,sceneOut.height,&sceneOut.images[slot],&sceneOut.memories[slot],
+                            sceneOut.format==FL_FORMAT_RGBA8?VK_FORMAT_R8G8B8A8_UNORM:sceneOut.format==FL_FORMAT_RGB10A2?VK_FORMAT_A2B10G10R10_UNORM_PACK32:VK_FORMAT_B8G8R8A8_UNORM)){
                             VKR_ERR("service: scene blit-target import failed");teardownSceneOut(sceneOut);continue;
                         }
                     }
