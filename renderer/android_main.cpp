@@ -150,6 +150,7 @@ struct FlSlotIn {
     uint64_t generation = 0;
     uint32_t width = 0, height = 0;
     uint64_t lastReady=0;
+    bool departing=false;
     std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
     bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
     uint32_t keys[8] = {};
@@ -356,15 +357,14 @@ void android_main(android_app* app) {
                 }
                 s.currentSlot = -1;
                 s.generation = info.generation;
-                s.retire.clear();s.lastReady=0;
+                s.retire.clear();s.lastReady=0;s.departing=false;
                 s.width = info.width;
                 s.height = info.height;
             }
             flFrame fr{};
             const flResult r = flAcquireFrame(s.channel, &fr, 0);
             if (r == FL_DISCONNECTED) {
-                if(s.currentSlot>=0 && s.lastReady)s.retire.push_back({frameIndex+2,s.lastReady});
-                s.currentSlot = -1; // no exit animation on Android; tile pops
+                if(s.currentSlot>=0)s.departing=true; // retain image through presentation exit
                 continue;
             }
             if (r != FL_OK) continue;
@@ -411,6 +411,7 @@ void android_main(android_app* app) {
                 s.keys[fr.slot] = key;
             }
             // The monotonic release: everything BEFORE this frame is free.
+            s.departing=false;
             s.lastReady=fr._readyValue;
             if(fr._readyValue>1)s.retire.push_back({frameIndex+2,fr._readyValue-1});
             flRelease(s.channel,&fr); // bookkeeping; retire after the existing GPU fence
@@ -573,7 +574,7 @@ void android_main(android_app* app) {
                 ++ordinal;
             };
             for(auto& sp:g_streams)addScene((uint64_t)sp->key,sp->currentSlot);
-            for(size_t i=0;i<flSlots.size();i++)addScene((1ull<<63)|i,flSlots[i].currentSlot);
+            for(size_t i=0;i<flSlots.size();i++)if(!flSlots[i].departing)addScene((1ull<<63)|i,flSlots[i].currentSlot);
             streamCount = g_streams.size();
             for (FlSlotIn& fs : flSlots)
                 if (fs.currentSlot >= 0) ++streamCount;
@@ -630,6 +631,14 @@ void android_main(android_app* app) {
         std::vector<int64_t> faces;
         float aspect=(float)vk.swapExtent.width/vk.swapExtent.height;
         vkr::buildScene(state.layout,tSec,aspect,dt,sceneSlots,sceneIds,pool,motion,tileSlots,models,faces);
+        for(size_t i=0;i<flSlots.size();++i) {
+            auto& slot=flSlots[i];
+            if(slot.departing && !motion.has((1ull<<63)|i)) {
+                if(slot.lastReady)slot.retire.push_back({frameIndex+2,slot.lastReady});
+                slot.currentSlot=-1;slot.departing=false;
+                VKR_LOG("renderer: departure retired '%s'",slot.name.c_str());
+            }
+        }
         if(!passBound){models.clear();faces.clear();}
         std::vector<float> mvps(models.size()*16);
         auto projection=vkr::matPerspective(0.7854f,aspect,0.1f,100.0f);

@@ -14,6 +14,7 @@ inline void buildScene(SceneLayout layout_, float t, float canvasAspect_, double
     std::vector<std::pair<uint64_t,int64_t>>& tileSlots_,
     std::vector<Mat4>& models, std::vector<int64_t>& faceSlots) {
     models.clear(); faceSlots.clear();
+    if (layout_ != SceneLayout::Presentation) { motion_.clear(); tileSlots_.clear(); }
     const bool wide = canvasAspect_ >= 1.0f;
     auto cycleFaces = [&](size_t faces) {
         for (size_t fIdx = 0; fIdx < faces; ++fIdx)
@@ -60,7 +61,6 @@ inline void buildScene(SceneLayout layout_, float t, float canvasAspect_, double
             //   (one up top, two below), 4 -> quad (2x2). Extra streams
             //   beyond 4 wait off-scene until a slot frees.
             size_t n = std::min(enabled.size(), (size_t)4);
-            if (n == 0) break;
             struct Region {
                 float cx, cy, hw, hh;
             };
@@ -135,7 +135,7 @@ inline void buildScene(SceneLayout layout_, float t, float canvasAspect_, double
             };
 
             Region regs[4];
-            float best = -1.0f;
+            float best = n == 0 ? 0.0f : -1.0f;
             for (const Arrangement& a : candidates) {
                 const size_t count = a.triangle ? 3 : (size_t)(a.cols * a.rows);
                 if (count != n) continue;

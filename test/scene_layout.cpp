@@ -17,6 +17,13 @@ int main(){
   if(layout==vkr::SceneLayout::Presentation){
    CHECK(std::abs(models[0].m[0]/models[0].m[5]-1920.0f/1080)<.001f);
    CHECK(std::abs(models[1].m[0]/models[1].m[5]-720.0f/1280)<.001f);
+   vkr::buildScene(layout,1,aspect,1.0/60,{}, {},pool,motion,cache,models,faces);
+   CHECK(motion.has(1));CHECK(!models.empty()); // retain last texture while leaving
+   for(int i=0;i<180;i++)vkr::buildScene(layout,1,aspect,1.0/60,{}, {},pool,motion,cache,models,faces);
+   CHECK(motion.count()==0);CHECK(cache.empty());CHECK(models.empty());
+   vkr::buildScene(layout,1,aspect,1.0/60,slots,ids,pool,motion,cache,models,faces);
+   vkr::buildScene(vkr::SceneLayout::Wall,1,aspect,1.0/60,{}, {},pool,motion,cache,models,faces);
+   CHECK(motion.count()==0);CHECK(cache.empty()); // no stale textures after layout switch
   }
  }
  puts("Shared desktop/Android layouts: all four layouts, portrait/wide canvas, mixed source aspect ratios passed");

@@ -63,7 +63,8 @@ SELinux boundaries; renderer cross-app input uses its existing Binder Surface AP
   exported Vulkan SYNC_FD semaphores gated by real queued event waits.
 - Android now shares all four layout calculations with desktop, and supports
   L/Space/B/-/=/1..9/0 keyboard controls. Multi-display/control-service parity
-  and animated departure resource retention remain open.
+  remain open. FrameLink animated departure retention is now implemented;
+  Binder Surface lifecycle parity still needs separate qualification.
 - Native GPU-only output parity: portable CPU fallback exists, hardware-native
   Linux/Android NV12 output remains distinct from Windows implementation.
 - Android cross-app transport requires Binder or platform privileges; arbitrary
@@ -140,3 +141,16 @@ departure paths retire their final retained frame after GPU reads complete.
 - Linux CPU-fallback 640x360 integration exceeded its 15-second test timeout;
   the passing reconnect fixture used 128x72 input. This is not a throughput
   qualification. Long-running GPU/process-death stress remains outstanding.
+
+### Android FrameLink departure animation
+
+Presentation tiles retain their imported buffer during exit motion, then signal
+final consumption after the existing GPU frame fence. Other layouts retire
+immediately behind the fence. Switching layouts clears stale motion/cache entries.
+The shared layout now advances exits when the last live stream disappears.
+
+Validation: Linux and Windows shared-layout tests cover last-stream exit and
+layout-switch cleanup. Pi Android presentation-mode NV12 producer submitted
+120 frames across one reconnect with zero producer timeouts; renderer logged
+departure retirement before replacement imports. This does not qualify Binder
+Surface disconnect animations or Android physical multi-display.
