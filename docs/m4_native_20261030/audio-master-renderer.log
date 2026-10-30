@@ -1,0 +1,21 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: validation layer enabled
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('av-smoke.in.0' .. 'av-smoke.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=av-smoke (up to 12 streams)
+[INF] control: moderation API on http://127.0.0.1:34901/api/
+[INF] renderer: stream header 160x90 fmt=44, awaiting dma-buf surfaces
+[INF] renderer: imported dma-buf surface key=1 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=2 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=3 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=4 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=5 modifier=0x0 (5 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=6 modifier=0x0 (6 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=7 modifier=0x0 (7 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=8 modifier=0x0 (8 total, zero-copy)
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] compositor: 167 adoptions in 5s (pool 8 slots, 0 wayland + 1 framelink)
+AV_RENDER due_decisions=222 hold_checks=143 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":true,"video_received":0,"video_late":0,"latency_ns":100000000}

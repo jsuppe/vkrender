@@ -1,0 +1,21 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: validation layer enabled
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('m4.in.0' .. 'm4.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=m4 (up to 12 streams)
+[INF] control: moderation API on http://127.0.0.1:18875/api/
+[INF] renderer: stream header 160x90 fmt=44, awaiting dma-buf surfaces
+[INF] renderer: created owned surface key=1 160x90 (shm upload path, 1 total)
+[INF] renderer: created owned surface key=2 160x90 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=3 160x90 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=4 160x90 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=5 160x90 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=6 160x90 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=7 160x90 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=8 160x90 (shm upload path, 8 total)
+[INF] scene: 168 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] compositor: 91 adoptions in 5s (pool 8 slots, 0 wayland + 0 framelink)
+AV_RENDER presented=113 hold_checks=11 late_drops=52 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"latency_ns":100000000}

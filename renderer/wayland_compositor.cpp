@@ -1,3 +1,5 @@
+#include <deque>
+#include "av_input.h"
 #include "control_api.h"
 #include "moderation.h"
 #include "perf_trace.h"
@@ -786,6 +788,7 @@ bool hasContentChild(Ctx& ctx, Stream* s) {
 // said so. True for CPU producers (flImageMap writers - all of today's
 // receivers), true for a GPU producer only if it flushed.
 struct FlSlotIn {
+    std::deque<flFrame> pending;
     flChannel* channel = nullptr;
     std::string name;
     uint64_t uid = 0;        // scene stream id
@@ -805,6 +808,7 @@ struct FlSlotIn {
 constexpr uint32_t kFlSlots = 12;
 
 void flDropRing(Ctx& ctx, FlSlotIn& s) {
+    s.pending.clear();
     for (uint32_t i = 0; i < 8; ++i) {
         if (!s.imported[i]) continue;
         ctx.slotsToRemove.push_back(s.keys[i]);
@@ -813,7 +817,7 @@ void flDropRing(Ctx& ctx, FlSlotIn& s) {
     s.currentSlot = -1;
 }
 
-void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
+void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost& host, uint64_t* hopSamples,
                  uint64_t* hopTotalUs, uint64_t* hopMaxUs) {
     for (FlSlotIn& s : slots) {
         if (!s.channel) continue;
@@ -834,7 +838,18 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         }
 
         flFrame f{};
-        const flResult r = flAcquireFrame(s.channel, &f, 0);
+        const bool scheduled=(&s==&slots.front() && av.active());
+            flResult r=FL_TIMEOUT;
+            if(scheduled){
+                // Bookkeeping release does NOT recycle deferred/GPU-sync storage.
+                // This permits a bounded timestamp queue without blocking acquire.
+                if(s.pending.size()<6){flFrame next{};
+                    r=flAcquireFrame(s.channel,&next,0);
+                    if(r==FL_OK){s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                }
+                if(!s.pending.empty()){f=s.pending.front();r=FL_OK;}
+            }else r=flAcquireFrame(s.channel,&f,0);
+            auto releaseFrame=[&]{if(!scheduled)flRelease(s.channel,&f);};
         if (r == FL_DISCONNECTED) {
             if (!s.departing && s.currentSlot >= 0) {
                 s.departing = true;
@@ -850,25 +865,37 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         flChannelInfo now{};
         flQuery(s.channel, &now);
         if (now.generation != s.generation || f.slot >= 8) {
-            flRelease(s.channel, &f);
+            releaseFrame();
             continue;
         }
 
+        if(&s==&slots.front() && av.active()) {
+            auto decision=av.decide(f.ptsNs);
+            if(decision==AvSchedule::Decision::Hold){continue;}
+            s.pending.pop_front();av.schedule.queued=s.pending.size();
+            if(decision!=AvSchedule::Decision::Present){
+                // Stop sampling before retiring ALL values through the dropped
+                // frame. Existing frame fences still protect previous draws.
+                host.forgetStream(s.uid);s.currentSlot=-1;
+                s.retire.push_back({ctx.frameCounter+2,f._readyValue});
+                releaseFrame();continue;
+            }
+        }
         if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
-            flRelease(s.channel, &f);
+            releaseFrame();
             continue;
         }
         if(now.format!=FL_FORMAT_BGRA8) {
             if(!s.imported[f.slot])s.keys[f.slot]=ctx.nextSlotKey++;
             if(!uploadFrame(*ctx.vk,*ctx.pool,*ctx.pass,ctx.passBound,f.image,s.keys[f.slot],now)) {
-                flRelease(s.channel,&f);continue;
+                releaseFrame();continue;
             }
             ctx.passNeedsBind=false;s.imported[f.slot]=true;
         }
         if (!s.imported[f.slot]) {
             flDmabuf db{};
             if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < 1) {
-                flRelease(s.channel, &f);
+                releaseFrame();
                 continue;
             }
             proto::SurfaceDescMsg desc{};
@@ -892,7 +919,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
                         "mod 0x%llx)",
                         s.name.c_str(), f.slot, (unsigned long long)db.modifier);
                 if (dupFd >= 0) close(dupFd);
-                flRelease(s.channel, &f);
+                releaseFrame();
                 continue;
             }
             s.imported[f.slot] = true;
@@ -909,7 +936,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, uint64_t* hopSamples,
         // ever announce a newer one.
         s.lastReady=f._readyValue;
         if(f._readyValue>1)s.retire.push_back({ctx.frameCounter+2,f._readyValue-1});
-        flRelease(s.channel,&f); // bookkeeping only; storage stays pinned
+        releaseFrame(); // bookkeeping only; storage stays pinned
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
         s.lastAdoptNs=nowNs();if(!s.firstAdoptNs)s.firstAdoptNs=s.lastAdoptNs;++s.adopted;
@@ -1011,6 +1038,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     const int64_t headlessDeadline = nowNs() + 60ll * 1000000000ll;
     int64_t rateWindowStart = nowNs();
     int exitCode = 0;
+    AvInput avInput(options.avOptions);
     bool quit = false;
     constexpr size_t controlSlots=kFlSlots+kMaxStreams;
     ModerationPolicy<controlSlots> moderation;
@@ -1024,6 +1052,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     if(options.controlPort>0 && !controlUp){exitCode=1;quit=true;}
 
     while (!quit) {
+        if(options.avExitOnEnd && avInput.finished.load()){exitCode=avInput.succeeded?0:1;break;}
         vkrtrace::Scope loopTrace("service.iteration");
         if (headless) {
             if (finite && ctx.videoFramesSeen >= options.headlessFrames) break;
@@ -1061,7 +1090,19 @@ int runWaylandCompositor(const WaylandOptions& options) {
         }
 
         adoptStreams(ctx);
-        flPollSlots(ctx, flSlots, &hopSamples, &hopTotalUs, &hopMaxUs);
+        avInput.service([&](const AvInput::Request& request){
+            auto& s=flSlots.front();
+            vkDeviceWaitIdle(vk.device); // session boundary only, never per frame
+            host.forgetStream(s.uid);flDropRing(ctx,s);
+            if(s.channel)flClose(s.channel);s.channel=nullptr;
+            s.generation=0;s.retire.clear();s.lastReady=0;
+            if(!request.end){s.name=request.name;
+                if(flCreateChannelEx(s.name.c_str(),request.config.video.width,request.config.video.height,
+                    (flFormat)request.config.video.format,8,FL_MAP_CPU|FL_DEFER_RELEASE,&s.channel)!=FL_OK)
+                    throw std::runtime_error("A/V video channel creation failed");
+            }
+        });
+        flPollSlots(ctx, flSlots, avInput, host, &hopSamples, &hopTotalUs, &hopMaxUs);
         // Stable slots while each Wayland surface lives; FrameLink owns 0..11.
         for(size_t i=kFlSlots;i<controlSlots;i++)if(owners[i]) {
             auto it=std::find(ctx.streams.begin(),ctx.streams.end(),owners[i]);
@@ -1080,7 +1121,8 @@ int runWaylandCompositor(const WaylandOptions& options) {
                 else if(c.str=="presentation")host.setLayout(SceneLayout::Presentation);
                 else if(c.str=="single-cube")host.setLayout(SceneLayout::SingleCube);
                 else host.setLayout(SceneLayout::TwoCubes);
-            } else if(c.type==T::Pause)host.setPaused(c.i!=0);
+            } else if(c.type==T::AudioMute)avInput.muted=c.i!=0;
+            else if(c.type==T::Pause)host.setPaused(c.i!=0);
             else if(c.type==T::Config){if(c.i>0)moderation.maxVisible=c.i;if(c.d>=1)moderation.rotateSeconds=c.d;}
             else if(c.type==T::Unspotlight)moderation.spotlight=-1;
             else if(c.type==T::Display)host.setDisplayActive(vk,c.slot,c.i!=0);
@@ -1155,6 +1197,10 @@ int runWaylandCompositor(const WaylandOptions& options) {
             ControlSnapshot snap=initial;
             const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
             switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
+            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();
+            snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
+            snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;
+            snap.avLate=avInput.schedule.late;snap.avInvalid=avInput.schedule.invalid;snap.avErrorNs=avInput.schedule.lastErrorNs;
             snap.paused=host.paused();snap.maxVisible=moderation.maxVisible;
             snap.rotateSeconds=moderation.rotateSeconds;snap.spotlightSlot=moderation.spotlight;
             for(size_t i=0;i<controlSlots;i++)if(live[i] || moderation.hidden[i] || moderation.pinned[i]) {
@@ -1232,6 +1278,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
     if (finite && exitCode == 0 && ctx.videoFramesSeen >= options.headlessFrames)
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
+    avInput.shutdown();
     for (FlSlotIn& s : flSlots) {
         if (s.channel) flClose(s.channel);
         s.channel = nullptr;

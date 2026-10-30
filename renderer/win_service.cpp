@@ -1,3 +1,5 @@
+#include <deque>
+#include "av_input.h"
 #include "moderation.h"
 #include "perf_trace.h"
 // M14/M15: Windows renderer service - see win_service.h for the architecture.
@@ -98,6 +100,7 @@ struct SceneOut {
 // is not allowed to add. We wait and signal both fences inside our own submit
 // instead, exactly as the client rings do.
 struct SlotIn {
+    std::deque<flFrame> pending;
     flChannel* channel = nullptr;
     std::string name;
     uint32_t uid = 0;        // scene stream id; stable for the slot's lifetime
@@ -195,6 +198,7 @@ int runWinService(const WinServeOptions& options) {
     // generation moves, which on Windows means either a reallocation or a new
     // producer - both hand out new shared handles AND a new fence pair.
     auto dropRing = [&](SlotIn& s) {
+        s.pending.clear();
         if (!s.readySem && s.currentSlot < 0 && s.generation == 0) return;
         vkDeviceWaitIdle(vk.device);
         if(s.consumedSem && s.currentReady>s.lastConsumedSignal) {
@@ -344,8 +348,10 @@ int runWinService(const WinServeOptions& options) {
                 info.width, info.height, info.poolSize);
     };
 
+    AvInput avInput(options.avOptions);
     bool quit = false;
     while (!quit) {
+        if(options.avExitOnEnd && avInput.finished.load()){exitCode=avInput.succeeded?0:1;break;}
         vkrtrace::Scope loopTrace("service.iteration");
         if (headless) {
             if (finite && videoFramesSeen >= options.headlessFrames) break;
@@ -367,6 +373,17 @@ int runWinService(const WinServeOptions& options) {
         // M38: poll the framelink input slots. Non-blocking (timeout 0): a
         // slot with nothing new must cost the render thread nothing, and the
         // ready fence is waited on by the GPU, not here.
+        avInput.service([&](const AvInput::Request& request){
+            auto& s=inSlots.front();host.forgetStream(s.uid);dropRing(s);
+            if(s.channel)flClose(s.channel);s.channel=nullptr;s.generation=0;
+            if(!request.end){s.name=request.name;
+                if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
+                    (flFormat)request.config.video.format,8,
+                    request.config.video.format==FL_FORMAT_BGRA8?FL_GPU_SYNC:FL_DEFER_RELEASE,
+                    vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
+                    throw std::runtime_error("A/V video channel creation failed");
+            }
+        });
         for (SlotIn& s : inSlots) {
             if (!s.channel) continue;
 
@@ -387,7 +404,18 @@ int runWinService(const WinServeOptions& options) {
             }
 
             flFrame f{};
-            const flResult r = flAcquireFrame(s.channel, &f, 0);
+            const bool scheduled=(&s==&inSlots.front() && avInput.active());
+            flResult r=FL_TIMEOUT;
+            if(scheduled){
+                // Bookkeeping release does NOT recycle deferred/GPU-sync storage.
+                // This permits a bounded timestamp queue without blocking acquire.
+                if(s.pending.size()<6){flFrame next{};
+                    r=flAcquireFrame(s.channel,&next,0);
+                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                }
+                if(!s.pending.empty()){f=s.pending.front();r=FL_OK;}
+            }else r=flAcquireFrame(s.channel,&f,0);
+            auto releaseFrame=[&]{if(!scheduled)flRelease(s.channel,&f);};
             if (r == FL_DISCONNECTED) {
                 // M31 again: hold the ring so the scene's exit animation has
                 // something to sample. The slot itself stays; the next
@@ -406,24 +434,33 @@ int runWinService(const WinServeOptions& options) {
             flChannelInfo now{};
             flQuery(s.channel, &now);
             if (now.generation != s.generation) {
-                flRelease(s.channel, &f);
+                releaseFrame();
                 continue;
             }
 
+            if(&s==&inSlots.front() && avInput.active()){
+                auto decision=avInput.decide(f.ptsNs);
+                if(decision==AvSchedule::Decision::Hold){continue;}
+                s.pending.pop_front();avInput.schedule.queued=s.pending.size();
+            if(decision!=AvSchedule::Decision::Present){
+                    host.forgetStream(s.uid);s.currentSlot=-1;s.pendingConsumed=f._readyValue;
+                    releaseFrame();continue;
+                }
+            }
             if (!ensurePool()) {
-                flRelease(s.channel, &f);
+                releaseFrame();
                 continue;
             }
             const uint32_t key = (s.uid << 4) | f.slot;
             if(now.format!=FL_FORMAT_BGRA8) {
-                if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {flRelease(s.channel,&f);continue;}
+                if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {releaseFrame();continue;}
                 passNeedsBind=false;s.imported[f.slot]=true;
             }
             if (!s.imported[f.slot]) {
                 void* h = flImageSharedHandle(f.image);
                 if (!pool.addSurfaceWin32(vk, key, (uint64_t)(uintptr_t)h, s.width, s.height)) {
                     VKR_ERR("service: '%s' slot %u import failed", s.name.c_str(), f.slot);
-                    flRelease(s.channel, &f);
+                    releaseFrame();
                     continue;
                 }
                 if (passNeedsBind) {
@@ -431,7 +468,7 @@ int runWinService(const WinServeOptions& options) {
                     passNeedsBind = false;
                 } else if (!pass.addSlot(vk, pool, key)) {
                     VKR_ERR("service: '%s' slot %u bind failed", s.name.c_str(), f.slot);
-                    flRelease(s.channel, &f);
+                    releaseFrame();
                     continue;
                 }
                 s.imported[f.slot] = true;
@@ -461,7 +498,7 @@ int runWinService(const WinServeOptions& options) {
             }
             // Bookkeeping only under FL_GPU_SYNC - it signals nothing. The
             // real release is the consumed-fence signal in our submit below.
-            flRelease(s.channel, &f);
+            releaseFrame();
         }
 
         // M42: apply the moderator's commands before deciding what is shown.
@@ -475,6 +512,7 @@ int runWinService(const WinServeOptions& options) {
                     else if (c.str == "single-cube") host.setLayout(SceneLayout::SingleCube);
                     else if (c.str == "wall") host.setLayout(SceneLayout::Wall);
                     break;
+                case T::AudioMute: avInput.muted=c.i!=0;break;
                 case T::Pause: host.setPaused(c.i != 0); break;
                 case T::Config:
                     if (c.i >= 1 && c.i <= (int)kInSlots) mod.maxVisible = (uint32_t)c.i;
@@ -509,6 +547,12 @@ int runWinService(const WinServeOptions& options) {
         bool live[kInSlots] = {};
         for (SlotIn& s : inSlots) {
             const size_t idx = (size_t)(&s - inSlots.data());
+            if (s.pendingConsumed && s.consumedSem) {
+                extras.signalSems.push_back(s.consumedSem);
+                extras.signalValues.push_back(s.pendingConsumed);
+                s.lastConsumedSignal = s.pendingConsumed;
+                s.pendingConsumed = 0;
+            }
             if (s.currentSlot < 0) continue;
             const bool expired =
                 s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
@@ -521,12 +565,6 @@ int runWinService(const WinServeOptions& options) {
             if (s.departing) continue;
             live[idx] = true;
             mod.ensureOrdered((uint32_t)idx);
-            if (s.pendingConsumed && s.consumedSem) {
-                extras.signalSems.push_back(s.consumedSem);
-                extras.signalValues.push_back(s.pendingConsumed);
-                s.lastConsumedSignal = s.pendingConsumed;
-                s.pendingConsumed = 0;
-            }
         }
         // Selection: spotlight, then pinned, then the carousel over the rest
         // (see Moderation::select). Only the SELECTED streams reach the layout
@@ -662,6 +700,10 @@ int runWinService(const WinServeOptions& options) {
                 case SceneLayout::Wall: snap.layout = "wall"; break;
                 default: snap.layout = "?"; break;
             }
+            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();
+            snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
+            snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;
+            snap.avLate=avInput.schedule.late;snap.avInvalid=avInput.schedule.invalid;snap.avErrorNs=avInput.schedule.lastErrorNs;
             snap.paused = host.paused();
             snap.maxVisible = mod.maxVisible;
             snap.rotateSeconds = mod.rotateSeconds;
@@ -760,6 +802,7 @@ int runWinService(const WinServeOptions& options) {
         vkrDumpTarget(vk, host.commandPool(), options.dumpPath.c_str());
 
     if (controlUp) control.stop();
+    avInput.shutdown();
     for (SlotIn& s : inSlots) {
         dropRing(s);
         if (s.channel) flClose(s.channel);

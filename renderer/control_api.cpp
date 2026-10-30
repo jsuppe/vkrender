@@ -176,6 +176,17 @@ int ControlApi::handleRequest(mg_connection* conn) {
                      }(),
                      (unsigned)s.streams.size());
             j = buf;
+            j.pop_back();j += ",\"av\":{\"active\":"+std::string(s.avActive?"true":"false")+
+                ",\"audio_master\":"+(s.avAudioMaster?"true":"false")+
+                ",\"muted\":"+(s.avMuted?"true":"false")+
+                ",\"due_decisions\":"+std::to_string(s.avPresented)+
+                ",\"sequence_gaps\":"+std::to_string(s.avSkipped)+
+                ",\"queue_depth\":"+std::to_string(s.avQueued)+
+                ",\"max_queue_depth\":"+std::to_string(s.avMaxQueued)+
+                ",\"hold_checks\":"+std::to_string(s.avHeld)+
+                ",\"late_drops\":"+std::to_string(s.avLate)+
+                ",\"invalid_pts\":"+std::to_string(s.avInvalid)+
+                ",\"schedule_error_ns\":"+std::to_string(s.avErrorNs)+"}}";
         } else if (uri == "/api/displays") {
             j = "[";
             for (size_t i = 0; i < s.displays.size(); ++i) {
@@ -329,6 +340,7 @@ int ControlApi::handleRequest(mg_connection* conn) {
         c.str = param(conn, "name");
         ok = c.str=="presentation" || c.str=="two-cubes" || c.str=="single-cube" || c.str=="wall";
     } else if (uri == "/api/pause") {
+        if(current.avActive){mg_send_http_error(conn,409,"coordinated A/V pause unavailable");return 409;}
         c.type = ControlCommand::Type::Pause;
         ok = toggle(c.i);
     } else if (uri == "/api/config") {
@@ -352,11 +364,15 @@ int ControlApi::handleRequest(mg_connection* conn) {
         else if (action == "unspotlight") c.type = ControlCommand::Type::Unspotlight;
         else if (action == "front") c.type = ControlCommand::Type::Front;
         else ok = false;
+        if(current.avActive && c.type==ControlCommand::Type::Kick && c.slot==0){mg_send_http_error(conn,409,"stop selected A/V session instead of kicking its video track");return 409;}
         if(c.type!=ControlCommand::Type::Unspotlight) {
             ok=ok && validSlot;
             bool known=false;for(const auto& stream:current.streams)if((int)stream.slot==c.slot)known=true;
             ok=ok && known;
         }
+    } else if (uri == "/api/audio") {
+        if(!current.avActive){mg_send_http_error(conn,501,"no selected A/V session");return 501;}
+        c.type=ControlCommand::Type::AudioMute;ok=toggle(c.i);
     } else if (uri == "/api/camera") {
         if(!current.cameraAvailable){mg_send_http_error(conn,501,"camera unavailable");return 501;}
         c.type = ControlCommand::Type::Camera;

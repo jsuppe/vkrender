@@ -68,6 +68,9 @@ struct ControlDisplayInfo {
 };
 
 struct ControlSnapshot {
+    bool avActive=false,avAudioMaster=false,avMuted=false;
+    uint64_t avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;
+    int64_t avErrorNs=0;
     std::string layout;
     bool paused = false;
     uint32_t maxVisible = 4;
@@ -85,6 +88,7 @@ struct ControlSnapshot {
 
 struct ControlCommand {
     enum class Type {
+        AudioMute, // i=0/1; one selected negotiated session (slot0)
         Layout,     // str = layout name
         Pause,      // i = 0/1
         Config,     // i = maxVisible (-1 = unchanged), d = rotateSeconds (<0 = unchanged)
