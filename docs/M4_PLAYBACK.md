@@ -96,3 +96,22 @@ Windows qualification update: `docs/m4_windows_20261030/README.md` records nativ
 BGRA/NV12, pause/reconnect, selected-session switching and four CPU/control tests
 passing on Caspar. This supersedes the initial checkpoint's Windows-not-tested
 statement. Lossless full-rate rendering and physical lip sync are not claimed.
+
+## Live audio diagnostics (M4 integration)
+
+`/api/status.av` now subscribes to the receiver's `onMetrics` callback on both
+Linux and Windows. `audio_metrics_valid` becomes true after the first sample and
+resets at each new session. Audio block/sample counters, receiver queue depths,
+sampled peak depths, empty/full queue events, late audio blocks and signed
+`audio_arrival_drift_ns` are exposed. Arrival drift means decoded-PCM admission
+elapsed time minus media-PTS elapsed time; it includes jitter and backpressure,
+not oscillator drift. Queue empty events include startup/EOS, not device underruns.
+`session_generation` identifies the negotiated generation within a session;
+`session_resets` counts local setup/end boundaries, not protocol generations.
+
+`estimated_av_offset_ns`, `device_underruns`, and `clock_drift_ppm` are explicitly
+JSON null: those measurements are not currently available. `schedule_error_ns`
+is a video scheduler deadline error and must not be presented as A/V skew or
+physical lip-sync. A successful transport-offset test does not fill those fields.
+The live smoke test requires populated metrics; the CPU HTTP test checks signed
+values and null unknowns through a real request rather than string matching.

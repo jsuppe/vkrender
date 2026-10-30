@@ -34,6 +34,8 @@ try:
   assert samples and any(s['av']['due_decisions']>20 for s in samples)
   assert all(s['av']['max_queue_depth']<=6 for s in samples)
   assert all(s['av']['invalid_pts']==0 for s in samples)
+  assert any(s['av']['audio_metrics_valid'] and s['av']['audio_blocks']>20 and s['av']['audio_samples']>0 for s in samples)
+  assert all(s['av']['estimated_av_offset_ns'] is None and s['av']['device_underruns'] is None for s in samples)
   assert muted and unmuted
   assert any(s['av']['audio_master']==a.audio_master and s['av']['due_decisions']>20 for s in samples)
   print('PASS native renderer A/V, format='+a.format+', evidence='+root)

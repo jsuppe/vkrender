@@ -31,6 +31,7 @@ public:
     std::unique_lock<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
     base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    metrics_={};metricsValid_=false;
     request_=std::make_unique<Request>(Request{c,n,false});
     cv_.wait(l,[this]{return !request_||stop.load();});
    };
@@ -42,6 +43,7 @@ public:
     if(clock_){gst_object_unref(clock_);clock_=nullptr;}audio_=false;
     request_=std::make_unique<Request>();request_->end=true;
     cv_.wait(l,[this]{return !request_||stop.load();});};
+   cb.onMetrics=[this](const av::PlaybackMetrics& m){std::lock_guard<std::mutex> l(m_);metrics_=m;metricsValid_=true;};
    cb.onStatus=[this](const std::string& s){std::lock_guard<std::mutex> l(m_);status_=s;};
    std::string error;bool ok=av::runPlayback(options,cb,stop,error);
    std::lock_guard<std::mutex> l(m_);status_=ok?"ended":error;succeeded=ok;finished=true;
@@ -72,8 +74,11 @@ public:
   return schedule.decide(pts,gst_clock_get_time(clock_),base_,latency_);
  }
  std::string status(){std::lock_guard<std::mutex> l(m_);return status_;}
+ struct MetricsSnapshot {av::PlaybackMetrics audio;bool valid=false;};
+ MetricsSnapshot metrics(){std::lock_guard<std::mutex> l(m_);return {metrics_,metricsValid_};}
  bool audioMaster(){std::lock_guard<std::mutex> l(m_);return audio_;}
 private:
+ av::PlaybackMetrics metrics_{};bool metricsValid_=false;
  av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;
  std::thread worker_;std::mutex m_;std::condition_variable cv_;std::unique_ptr<Request> request_;
  GstClock* clock_=nullptr;uint64_t base_=0,latency_=0;bool active_=false,audio_=false;std::string status_="connecting";

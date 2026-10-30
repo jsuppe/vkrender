@@ -188,7 +188,20 @@ int ControlApi::handleRequest(mg_connection* conn) {
                 ",\"hold_checks\":"+std::to_string(s.avHeld)+
                 ",\"late_drops\":"+std::to_string(s.avLate)+
                 ",\"invalid_pts\":"+std::to_string(s.avInvalid)+
-                ",\"schedule_error_ns\":"+std::to_string(s.avErrorNs)+"}}";
+                ",\"schedule_error_ns\":"+std::to_string(s.avErrorNs)+
+                ",\"session_generation\":"+std::to_string(s.avGeneration)+
+                ",\"estimated_av_offset_ns\":null,\"device_underruns\":null,\"clock_drift_ppm\":null"+
+                ",\"audio_metrics_valid\":"+(s.avAudioMetricsValid?"true":"false")+
+                ",\"audio_blocks\":"+std::to_string(s.avAudioBlocks)+
+                ",\"audio_samples\":"+std::to_string(s.avAudioSamples)+
+                ",\"audio_queue_buffers\":"+std::to_string(s.avAudioQueueBuffers)+
+                ",\"audio_queue_ns\":"+std::to_string(s.avAudioQueueNs)+
+                ",\"audio_peak_queue_buffers\":"+std::to_string(s.avAudioPeakQueueBuffers)+
+                ",\"audio_peak_queue_ns\":"+std::to_string(s.avAudioPeakQueueNs)+
+                ",\"audio_queue_empty_events\":"+std::to_string(s.avAudioQueueEmpty)+
+                ",\"audio_queue_full_events\":"+std::to_string(s.avAudioQueueFull)+
+                ",\"late_audio_blocks\":"+std::to_string(s.avAudioLate)+
+                ",\"audio_arrival_drift_ns\":"+std::to_string(s.avAudioArrivalDriftNs)+"}}";
         } else if (uri == "/api/displays") {
             j = "[";
             for (size_t i = 0; i < s.displays.size(); ++i) {

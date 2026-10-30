@@ -1200,6 +1200,15 @@ int runWaylandCompositor(const WaylandOptions& options) {
             switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
             snap.avConfigured=avInput.configured();snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
             snap.avResets=avInput.schedule.resets;
+            snap.avGeneration=avInput.schedule.generation;
+            const auto audioMetrics=avInput.metrics();
+            snap.avAudioMetricsValid=audioMetrics.valid;
+            const auto& am=audioMetrics.audio;
+            snap.avAudioBlocks=am.audioBlocks;snap.avAudioSamples=am.audioSamples;
+            snap.avAudioQueueNs=am.queueTimeNs;snap.avAudioPeakQueueNs=am.peakQueueTimeNs;
+            snap.avAudioQueueBuffers=am.queueBuffers;snap.avAudioPeakQueueBuffers=am.peakQueueBuffers;
+            snap.avAudioQueueEmpty=am.queueEmptyEvents;snap.avAudioQueueFull=am.queueFullEvents;
+            snap.avAudioLate=am.lateAudioBlocks;snap.avAudioArrivalDriftNs=am.arrivalDriftNs;
             snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
             snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;
             snap.avLate=avInput.schedule.late;snap.avInvalid=avInput.schedule.invalid;snap.avErrorNs=avInput.schedule.lastErrorNs;

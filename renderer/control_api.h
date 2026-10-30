@@ -70,7 +70,10 @@ struct ControlDisplayInfo {
 struct ControlSnapshot {
     bool avConfigured=false,avActive=false,avAudioMaster=false,avMuted=false,avPaused=false;
     uint64_t avResets=0,avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;
-    int64_t avErrorNs=0;
+    int64_t avErrorNs=0, avAudioArrivalDriftNs=0;
+    bool avAudioMetricsValid=false;
+    uint64_t avGeneration=0,avAudioBlocks=0,avAudioSamples=0,avAudioQueueNs=0,avAudioPeakQueueNs=0;
+    uint64_t avAudioQueueBuffers=0,avAudioPeakQueueBuffers=0,avAudioQueueEmpty=0,avAudioQueueFull=0,avAudioLate=0;
     std::string layout;
     bool paused = false;
     uint32_t maxVisible = 4;
