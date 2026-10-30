@@ -17,7 +17,7 @@ struct AvSchedule {
     void reset(uint64_t gen) {generation=gen;lastErrorNs=0;lastSequence=0;queued=0;++resets;}
     Decision decide(int64_t pts, uint64_t now, uint64_t base, uint64_t latency,
                     uint64_t lead=0, uint64_t lateLimit=50000000) {
-        const auto max=std::numeric_limits<uint64_t>::max();
+        const auto max=(std::numeric_limits<uint64_t>::max)();
         if(pts<0 || base>max-latency || uint64_t(pts)>max-base-latency || now>max-lead) {
             ++invalid;return Decision::Invalid;
         }
