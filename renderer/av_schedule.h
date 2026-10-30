@@ -6,6 +6,7 @@ namespace vkr {
 // latest-frame policy; their PTS may be an unrelated absolute monotonic epoch.
 struct AvSchedule {
     enum class Decision { Hold, Present, Drop, Invalid };
+    uint64_t importFailures=0;
     uint64_t presented=0, held=0, late=0, invalid=0, resets=0, skipped=0;
     uint64_t lastSequence=0;unsigned queued=0,maxQueued=0;
     void enqueue(uint64_t sequence,unsigned depth){

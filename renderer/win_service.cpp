@@ -447,20 +447,37 @@ int runWinService(const WinServeOptions& options) {
                     releaseFrame();continue;
                 }
             }
-            if (!ensurePool()) {
+            auto failedAdoption=[&]{
+                if(scheduled){
+                    ++avInput.schedule.importFailures;
+                    // Forget retained sampling before releasing through this
+                    // frame; existing GPU reads retire through the same fence
+                    // path as a deliberately dropped scheduled frame.
+                    host.forgetStream(s.uid);s.currentSlot=-1;
+                    s.pendingConsumed=f._readyValue;
+                }
                 releaseFrame();
+            };
+            // Diagnostic-only failure of 40 consecutive adoption attempts,
+            // longer than the eight-slot ring, after initial valid sampling.
+            static const bool failAdoption=getenv("VKR_TEST_AV_IMPORT_FAILURES")!=nullptr;
+            if(scheduled && failAdoption && avInput.schedule.presented>=20 && avInput.schedule.presented<60){
+                failedAdoption();continue;
+            }
+            if (!ensurePool()) {
+                failedAdoption();
                 continue;
             }
             const uint32_t key = (s.uid << 4) | f.slot;
             if(now.format!=FL_FORMAT_BGRA8) {
-                if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {releaseFrame();continue;}
+                if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {failedAdoption();continue;}
                 passNeedsBind=false;s.imported[f.slot]=true;
             }
             if (!s.imported[f.slot]) {
                 void* h = flImageSharedHandle(f.image);
                 if (!pool.addSurfaceWin32(vk, key, (uint64_t)(uintptr_t)h, s.width, s.height)) {
                     VKR_ERR("service: '%s' slot %u import failed", s.name.c_str(), f.slot);
-                    releaseFrame();
+                    failedAdoption();
                     continue;
                 }
                 if (passNeedsBind) {
@@ -468,7 +485,7 @@ int runWinService(const WinServeOptions& options) {
                     passNeedsBind = false;
                 } else if (!pass.addSlot(vk, pool, key)) {
                     VKR_ERR("service: '%s' slot %u bind failed", s.name.c_str(), f.slot);
-                    releaseFrame();
+                    failedAdoption();
                     continue;
                 }
                 s.imported[f.slot] = true;
@@ -702,7 +719,7 @@ int runWinService(const WinServeOptions& options) {
                 default: snap.layout = "?"; break;
             }
             snap.avConfigured=avInput.configured();snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
-            snap.avResets=avInput.schedule.resets;
+            snap.avResets=avInput.schedule.resets;snap.avImportFailures=avInput.schedule.importFailures;
             snap.avGeneration=avInput.schedule.generation;
             const auto audioMetrics=avInput.metrics();
             snap.avAudioMetricsValid=audioMetrics.valid;

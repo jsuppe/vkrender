@@ -3,9 +3,11 @@
 import argparse,json,os,socket,subprocess,tempfile,time,urllib.request,urllib.error
 p=argparse.ArgumentParser();p.add_argument('renderer');p.add_argument('producer');p.add_argument('plugin')
 p.add_argument('--format',choices=['BGRA','NV12'],default='BGRA');p.add_argument('--audio-sink',default='fakesink');p.add_argument('--audio-master',action='store_true')
+p.add_argument('--import-failures',action='store_true')
 a=p.parse_args();root=tempfile.mkdtemp(prefix='vkr-av-render-');os.chmod(root,0o700)
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
 env=dict(os.environ,XDG_RUNTIME_DIR=root)
+if a.import_failures:env['VKR_TEST_AV_IMPORT_FAILURES']='1'
 original_runtime=os.environ.get('XDG_RUNTIME_DIR','')
 if original_runtime and os.path.exists(original_runtime+'/pulse/native'):
  env.setdefault('PULSE_SERVER','unix:'+original_runtime+'/pulse/native')
@@ -36,6 +38,10 @@ try:
   assert all(s['av']['invalid_pts']==0 for s in samples)
   assert any(s['av']['audio_metrics_valid'] and s['av']['audio_blocks']>20 and s['av']['audio_samples']>0 for s in samples)
   assert all(s['av']['estimated_av_offset_ns'] is None and s['av']['device_underruns'] is None for s in samples)
+  if a.import_failures:
+   assert max(s['av']['import_failures'] for s in samples)==40,samples[-1]
+   assert max(s['av']['due_decisions'] for s in samples)>80,samples[-1]
+  else:assert all(s['av']['import_failures']==0 for s in samples)
   assert muted and unmuted
   assert any(s['av']['audio_master']==a.audio_master and s['av']['due_decisions']>20 for s in samples)
   print('PASS native renderer A/V, format='+a.format+', evidence='+root)

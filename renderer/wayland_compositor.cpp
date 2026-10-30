@@ -881,21 +881,38 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                 releaseFrame();continue;
             }
         }
+            auto failedAdoption=[&]{
+                if(scheduled){
+                    ++av.schedule.importFailures;
+                    // Forget retained sampling before releasing through this
+                    // frame; existing GPU reads retire through the same fence
+                    // path as a deliberately dropped scheduled frame.
+                    host.forgetStream(s.uid);s.currentSlot=-1;
+                    s.retire.push_back({ctx.frameCounter+2,f._readyValue});
+                }
+                releaseFrame();
+            };
+            // Diagnostic-only failure of 40 consecutive adoption attempts,
+            // longer than the eight-slot ring, after initial valid sampling.
+            static const bool failAdoption=getenv("VKR_TEST_AV_IMPORT_FAILURES")!=nullptr;
+            if(scheduled && failAdoption && av.schedule.presented>=20 && av.schedule.presented<60){
+                failedAdoption();continue;
+            }
         if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
-            releaseFrame();
+            failedAdoption();
             continue;
         }
         if(now.format!=FL_FORMAT_BGRA8) {
             if(!s.imported[f.slot])s.keys[f.slot]=ctx.nextSlotKey++;
             if(!uploadFrame(*ctx.vk,*ctx.pool,*ctx.pass,ctx.passBound,f.image,s.keys[f.slot],now)) {
-                releaseFrame();continue;
+                failedAdoption();continue;
             }
             ctx.passNeedsBind=false;s.imported[f.slot]=true;
         }
         if (!s.imported[f.slot]) {
             flDmabuf db{};
             if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < 1) {
-                releaseFrame();
+                failedAdoption();
                 continue;
             }
             proto::SurfaceDescMsg desc{};
@@ -919,7 +936,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                         "mod 0x%llx)",
                         s.name.c_str(), f.slot, (unsigned long long)db.modifier);
                 if (dupFd >= 0) close(dupFd);
-                releaseFrame();
+                failedAdoption();
                 continue;
             }
             s.imported[f.slot] = true;
@@ -1199,7 +1216,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
             const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
             switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
             snap.avConfigured=avInput.configured();snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
-            snap.avResets=avInput.schedule.resets;
+            snap.avResets=avInput.schedule.resets;snap.avImportFailures=avInput.schedule.importFailures;
             snap.avGeneration=avInput.schedule.generation;
             const auto audioMetrics=avInput.metrics();
             snap.avAudioMetricsValid=audioMetrics.valid;

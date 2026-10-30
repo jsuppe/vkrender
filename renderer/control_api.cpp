@@ -187,6 +187,7 @@ int ControlApi::handleRequest(mg_connection* conn) {
                 ",\"max_queue_depth\":"+std::to_string(s.avMaxQueued)+
                 ",\"hold_checks\":"+std::to_string(s.avHeld)+
                 ",\"late_drops\":"+std::to_string(s.avLate)+
+                ",\"import_failures\":"+std::to_string(s.avImportFailures)+
                 ",\"invalid_pts\":"+std::to_string(s.avInvalid)+
                 ",\"schedule_error_ns\":"+std::to_string(s.avErrorNs)+
                 ",\"session_generation\":"+std::to_string(s.avGeneration)+
