@@ -80,3 +80,14 @@ Linux validation after this change: scheduler/clock/control tests 4/4 passed;
 300-frame BGRA smoke selected the virtual PulseAudio clock; the new
 `test/av_renderer_pause.py` passed pause, native drain, producer restart, resume,
 new clock/session, unmute and normal completion. No physical playback claim.
+
+Runtime selection: `POST /api/audio/select?session=URL_ENCODED_PRIVATE_DIRECTORY`
+selects a different authenticated A/V session using the startup offer/plugin.
+Only one selected session's audio plays; ordinary video slots are unaffected.
+The old receiver is cancelled, native slot zero is drained on the render thread,
+and the new receiver negotiates a fresh shared epoch. Switching does not mix clocks
+or reuse old frames. Mute state persists across selection. A configured A/V plugin
+is required; a missing peer is a bounded connection failure, not silent fallback.
+Linux `test/av_renderer_select.py` passed two live producers, selection, independent
+session teardown, mute/unmute and new-session completion. This selects the paired
+A/V session in slot zero, not an audio-only mixer for arbitrary legacy video slots.

@@ -28,12 +28,14 @@ try:
    if av.get('due_decisions',0)>20 and not muted:
     assert post('/api/audio?on=1')==200;muted=True
     assert post('/api/pause?on=1')==200;pause_at=time.monotonic()
-    procs[0].terminate();procs[0].wait(timeout=5)
-   if pause_at and time.monotonic()-pause_at>0.5 and not resumed:
+   if pause_at and time.monotonic()-pause_at>0.5 and not resumed and not av.get('active'):
     assert av.get('paused')
-    assert not av.get('active'), 'native session did not drain on pause'
+    if procs[0].poll() is None:
+     procs[0].terminate();procs[0].wait(timeout=5)
     procs[0]=subprocess.Popen([a.producer,a.plugin,'--session',session,'--format',a.format,'--frames','300','--timeout-ms','15000'],stdout=pl,stderr=pl,env=env)
     assert post('/api/pause?on=0')==200;resumed=True
+   if pause_at and not resumed:
+    assert time.monotonic()-pause_at<5, 'native session did not drain within pause bound'
    if resumed and av.get('active') and av.get('muted') and not unmuted:
     assert post('/api/audio?on=0')==200;unmuted=True
   for proc in procs:proc.wait(timeout=5)

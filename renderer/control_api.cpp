@@ -371,8 +371,12 @@ int ControlApi::handleRequest(mg_connection* conn) {
             bool known=false;for(const auto& stream:current.streams)if((int)stream.slot==c.slot)known=true;
             ok=ok && known;
         }
+    } else if (uri == "/api/audio/select") {
+        if(!current.avConfigured){mg_send_http_error(conn,501,"A/V plugin not configured");return 501;}
+        c.type=ControlCommand::Type::AudioSelect;c.str=param(conn,"session");
+        ok=!c.str.empty() && c.str.size()<=1024;
     } else if (uri == "/api/audio") {
-        if(!current.avActive){mg_send_http_error(conn,501,"no selected A/V session");return 501;}
+        if(!current.avConfigured){mg_send_http_error(conn,501,"no selected A/V session");return 501;}
         c.type=ControlCommand::Type::AudioMute;ok=toggle(c.i);
     } else if (uri == "/api/camera") {
         if(!current.cameraAvailable){mg_send_http_error(conn,501,"camera unavailable");return 501;}

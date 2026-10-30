@@ -351,7 +351,7 @@ int runWinService(const WinServeOptions& options) {
     AvInput avInput(options.avOptions);
     bool quit = false;
     while (!quit) {
-        if(options.avExitOnEnd && avInput.finished.load()){exitCode=avInput.succeeded?0:1;break;}
+        if(options.avExitOnEnd && avInput.done()){exitCode=avInput.succeeded?0:1;break;}
         vkrtrace::Scope loopTrace("service.iteration");
         if (headless) {
             if (finite && videoFramesSeen >= options.headlessFrames) break;
@@ -512,6 +512,7 @@ int runWinService(const WinServeOptions& options) {
                     else if (c.str == "single-cube") host.setLayout(SceneLayout::SingleCube);
                     else if (c.str == "wall") host.setLayout(SceneLayout::Wall);
                     break;
+                case T::AudioSelect: avInput.selectSession(c.str);break;
                 case T::AudioMute: avInput.muted=c.i!=0;break;
                 case T::Pause: avInput.paused=c.i!=0;host.setPaused(c.i != 0); break;
                 case T::Config:
@@ -700,7 +701,7 @@ int runWinService(const WinServeOptions& options) {
                 case SceneLayout::Wall: snap.layout = "wall"; break;
                 default: snap.layout = "?"; break;
             }
-            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
+            snap.avConfigured=avInput.configured();snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
             snap.avResets=avInput.schedule.resets;
             snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
             snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;

@@ -14,7 +14,15 @@ public:
  struct Request {flSessionConfig config{};std::string name;bool end=false;};
  std::atomic<bool> stop{false}, muted{false}, paused{false}, finished{false}, succeeded{false};
  AvSchedule schedule;
- explicit AvInput(av::PlaybackOptions options) {
+ explicit AvInput(av::PlaybackOptions options):options_(options) {start(options);}
+ bool configured() const{return !options_.plugin.empty();}
+ bool done() const{return finished.load() && !switching_;}
+ void selectSession(const std::string& session){
+  if(!configured() || session.empty())return;
+  switching_=true;nextSession_=session;stop=true;cv_.notify_all();
+ }
+ void start(av::PlaybackOptions options) {
+  stop=false;finished=false;succeeded=false;
   options.mute=&muted;options.paused=&paused;
   if(options.session.empty())return;
   worker_=std::thread([this,options]{
@@ -46,7 +54,15 @@ public:
    (unsigned long long)schedule.late,(unsigned long long)schedule.invalid,status().c_str());
  }}
  template<class F> void service(F fn) {
-  std::lock_guard<std::mutex> l(m_);if(!request_)return;
+  std::unique_lock<std::mutex> l(m_);
+  if(switching_ && (finished.load() || !worker_.joinable())){
+   if(worker_.joinable())worker_.join();
+   Request end{};end.end=true;fn(end);schedule.reset(0);active_=false;
+   if(clock_){gst_object_unref(clock_);clock_=nullptr;}audio_=false;request_.reset();
+   options_.session=nextSession_;nextSession_.clear();switching_=false;
+   status_="connecting";l.unlock();start(options_);return;
+  }
+  if(!request_)return;
   fn(*request_);schedule.reset(request_->config.generation);active_=!request_->end;
   request_.reset();cv_.notify_all();
  }
@@ -58,6 +74,7 @@ public:
  std::string status(){std::lock_guard<std::mutex> l(m_);return status_;}
  bool audioMaster(){std::lock_guard<std::mutex> l(m_);return audio_;}
 private:
+ av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;
  std::thread worker_;std::mutex m_;std::condition_variable cv_;std::unique_ptr<Request> request_;
  GstClock* clock_=nullptr;uint64_t base_=0,latency_=0;bool active_=false,audio_=false;std::string status_="connecting";
 };

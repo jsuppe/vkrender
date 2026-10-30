@@ -68,7 +68,7 @@ struct ControlDisplayInfo {
 };
 
 struct ControlSnapshot {
-    bool avActive=false,avAudioMaster=false,avMuted=false,avPaused=false;
+    bool avConfigured=false,avActive=false,avAudioMaster=false,avMuted=false,avPaused=false;
     uint64_t avResets=0,avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;
     int64_t avErrorNs=0;
     std::string layout;
@@ -88,6 +88,7 @@ struct ControlSnapshot {
 
 struct ControlCommand {
     enum class Type {
+        AudioSelect, // str=protected session directory; switch both tracks atomically
         AudioMute, // i=0/1; one selected negotiated session (slot0)
         Layout,     // str = layout name
         Pause,      // i = 0/1
