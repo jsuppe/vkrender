@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "consumer_stalls": 3,
+  "producer_restarts": 1,
+  "max_queue": 6,
+  "max_late_drops": 19,
+  "max_session_resets": 4,
+  "scope": "process stalls, not forced GPU execution delay"
+}

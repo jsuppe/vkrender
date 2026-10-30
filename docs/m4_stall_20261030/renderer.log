@@ -1,0 +1,209 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[Vulkan Loader] LAYER:          Searching for implicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:          Searching for implicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:          Searching for explicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_INTEL_nullhw.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_gfxreconstruct.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_screenshot.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_shader_object.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_api_dump.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_monitor.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_synchronization2.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_crash_diagnostic.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_profiles.json
+[Vulkan Loader] LAYER:          Searching for implicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:          Searching for implicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:          Searching for explicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_INTEL_nullhw.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_gfxreconstruct.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_screenshot.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_shader_object.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_api_dump.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_monitor.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_synchronization2.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_crash_diagnostic.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_profiles.json
+[INF] renderer: validation layer enabled
+[Vulkan Loader] LAYER:          Searching for implicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/implicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:          Searching for explicit layer manifest files
+[Vulkan Loader] LAYER:             In following locations:
+[Vulkan Loader] LAYER:                /home/melchior/.config/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/xdg/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /etc/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /home/melchior/.local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/gnome/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/local/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:                /var/lib/snapd/desktop/vulkan/explicit_layer.d
+[Vulkan Loader] LAYER:             Found the following files:
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_INTEL_nullhw.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_gfxreconstruct.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_screenshot.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_shader_object.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_api_dump.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_monitor.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_synchronization2.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_crash_diagnostic.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json
+[Vulkan Loader] LAYER:                /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_profiles.json
+[Vulkan Loader] WARNING | LAYER: env var 'VK_INSTANCE_LAYERS' defined and adding layers "VK_LAYER_KHRONOS_validation"
+[Vulkan Loader] WARNING | LAYER: env var 'VK_INSTANCE_LAYERS' defined and adding layers "VK_LAYER_KHRONOS_validation"
+[Vulkan Loader] DEBUG | LAYER:  Loading layer library libVkLayer_khronos_validation.so
+[Vulkan Loader] INFO | LAYER:   Insert instance layer "VK_LAYER_KHRONOS_validation" (libVkLayer_khronos_validation.so)
+[Vulkan Loader] DEBUG | LAYER:  Loading layer library libVkLayer_MESA_device_select.so
+[Vulkan Loader] INFO | LAYER:   Insert instance layer "VK_LAYER_MESA_device_select" (libVkLayer_MESA_device_select.so)
+[Vulkan Loader] LAYER:          vkCreateInstance layer callstack setup to:
+[Vulkan Loader] LAYER:             <Application>
+[Vulkan Loader] LAYER:               ||
+[Vulkan Loader] LAYER:             <Loader>
+[Vulkan Loader] LAYER:               ||
+[Vulkan Loader] LAYER:             VK_LAYER_MESA_device_select
+[Vulkan Loader] LAYER:                     Type: Implicit
+[Vulkan Loader] LAYER:                     Enabled By: Implicit Layer
+[Vulkan Loader] LAYER:                         Disable Env Var:  NODEVICE_SELECT
+[Vulkan Loader] LAYER:                     Manifest: /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[Vulkan Loader] LAYER:                     Library:  libVkLayer_MESA_device_select.so
+[Vulkan Loader] LAYER:               ||
+[Vulkan Loader] LAYER:             VK_LAYER_KHRONOS_validation
+[Vulkan Loader] LAYER:                     Type: Explicit
+[Vulkan Loader] LAYER:                     Enabled By: Environment Variable VK_INSTANCE_LAYERS
+[Vulkan Loader] LAYER:                     Manifest: /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[Vulkan Loader] LAYER:                     Library:  libVkLayer_khronos_validation.so
+[Vulkan Loader] LAYER:               ||
+[Vulkan Loader] LAYER:             <Drivers>
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[Vulkan Loader] INFO | LAYER:   Inserted device layer "VK_LAYER_KHRONOS_validation" (libVkLayer_khronos_validation.so)
+[Vulkan Loader] INFO | LAYER:   Failed to find vkGetDeviceProcAddr in layer "libVkLayer_MESA_device_select.so"
+[Vulkan Loader] DRIVER:         vkCreateDevice layer callstack setup to:
+[Vulkan Loader] DRIVER:            <Application>
+[Vulkan Loader] DRIVER:              ||
+[Vulkan Loader] DRIVER:            <Loader>
+[Vulkan Loader] DRIVER:              ||
+[Vulkan Loader] LAYER:             VK_LAYER_KHRONOS_validation
+[Vulkan Loader] LAYER:                     Type: Explicit
+[Vulkan Loader] LAYER:                     Enabled By: Environment Variable VK_INSTANCE_LAYERS
+[Vulkan Loader] LAYER:                     Manifest: /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[Vulkan Loader] LAYER:                     Library:  libVkLayer_khronos_validation.so
+[Vulkan Loader] LAYER:               ||
+[Vulkan Loader] DRIVER:            <Device>
+[Vulkan Loader] DRIVER:                Using "NVIDIA GeForce RTX 3090" with driver: "libGLX_nvidia.so.0"
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('m4-stall.in.0' .. 'm4-stall.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=m4-stall (up to 12 streams)
+[INF] control: moderation API on http://127.0.0.1:49943/api/
+[INF] renderer: stream header 160x90 fmt=44, awaiting dma-buf surfaces
+[INF] renderer: imported dma-buf surface key=1 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=2 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=3 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=4 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=5 modifier=0x0 (5 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=6 modifier=0x0 (6 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=7 modifier=0x0 (7 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=8 modifier=0x0 (8 total, zero-copy)
+[INF] scene: 262 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] compositor: 53 adoptions in 5s (pool 8 slots, 0 wayland + 0 framelink)
+[INF] renderer: imported dma-buf surface key=9 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=10 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=11 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=12 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=13 modifier=0x0 (5 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=14 modifier=0x0 (6 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=15 modifier=0x0 (7 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=16 modifier=0x0 (8 total, zero-copy)
+[INF] scene: 296 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] compositor: 159 adoptions in 5s (pool 8 slots, 0 wayland + 1 framelink)
+AV_RENDER due_decisions=272 hold_checks=114 late_drops=19 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":250,"audio_samples":240000,"latency_ns":100000000}
+[Vulkan Loader] DEBUG | LAYER:  Unloading layer library libVkLayer_MESA_device_select.so
+[Vulkan Loader] DEBUG | LAYER:  Unloading layer library libVkLayer_khronos_validation.so
