@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Repeated authenticated native ring generation stress in one renderer process."""
-import argparse,json,os,socket,subprocess,tempfile,time,urllib.request,urllib.error,urllib.parse
+import argparse,json,os,re,socket,subprocess,tempfile,time,urllib.request,urllib.error,urllib.parse
 p=argparse.ArgumentParser();p.add_argument('renderer');p.add_argument('producer');p.add_argument('plugin')
 p.add_argument('--format',choices=['BGRA','NV12'],default='BGRA');p.add_argument('--audio-sink',default='fakesink');p.add_argument('--audio-master',action='store_true')
-p.add_argument('--switches',type=int,default=5)
+p.add_argument('--switches',type=int,default=5);p.add_argument('--gpu-gate-ms',type=int,default=0)
 a=p.parse_args();assert 1<=a.switches<=20;root=tempfile.mkdtemp(prefix='vkr-av-render-');os.chmod(root,0o700)
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
 env=dict(os.environ,XDG_RUNTIME_DIR=root)
+if a.gpu_gate_ms:
+ assert 1<=a.gpu_gate_ms<=1000
+ env['VKR_TEST_GPU_GATE_MS']=str(a.gpu_gate_ms)
 original_runtime=os.environ.get('XDG_RUNTIME_DIR','')
 if original_runtime and os.path.exists(original_runtime+'/pulse/native'):
  env.setdefault('PULSE_SERVER','unix:'+original_runtime+'/pulse/native')
@@ -41,6 +44,13 @@ try:
   assert muted and unmuted and selected and switches==a.switches, switches
   assert any(s['av'].get('session_resets',0)>=2*a.switches+1 and s['av']['active'] for s in samples)
   assert any(s['av']['audio_master']==a.audio_master and s['av']['due_decisions']>20 for s in samples)
+  if a.gpu_gate_ms:
+   log=open(root+'/renderer.log').read()
+   assert 'validation layer enabled' in log, 'GPU gate qualification requires VK_LAYER_KHRONOS_validation'
+   gates=re.findall(r'gpu-test-gate: pre-release fence=(\d+) counter=(\d+) target=(\d+)',log)
+   assert len(gates)>=a.switches, gates
+   assert all(f=='1' and int(c)<int(t) for f,c,t in gates), gates
+   assert 'Validation Error' not in log and 'VUID-' not in log, log
   print('PASS native renderer '+str(switches)+' generation switches, format='+a.format+', evidence='+root)
 finally:
  procs.extend(retired)

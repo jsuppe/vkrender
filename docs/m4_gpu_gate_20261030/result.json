@@ -1,0 +1,23 @@
+{
+  "switches": 5,
+  "gpu_gate_ms": 100,
+  "gate_count": 91,
+  "all_fences_pending": true,
+  "all_timeline_unsatisfied": true,
+  "validation_errors": 0,
+  "final_av": {
+    "active": false,
+    "audio_master": false,
+    "muted": false,
+    "paused": false,
+    "session_resets": 12,
+    "due_decisions": 215,
+    "sequence_gaps": 59,
+    "queue_depth": 0,
+    "max_queue_depth": 6,
+    "hold_checks": 169,
+    "late_drops": 128,
+    "invalid_pts": 0,
+    "schedule_error_ns": 0
+  }
+}

@@ -1,0 +1,153 @@
+[INF] renderer: headless without a window system - display outputs unavailable
+[INF] renderer: validation layer enabled
+[INF] renderer: device: NVIDIA GeForce RTX 3090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] compositor: advertising 7 NV12 modifiers, 7 ARGB modifiers
+[INF] compositor: 12 framelink input slots ready ('av-smoke.in.0' .. 'av-smoke.in.11')
+[INF] compositor: listening on WAYLAND_DISPLAY=av-smoke (up to 12 streams)
+[INF] control: moderation API on http://127.0.0.1:45869/api/
+[INF] gpu-test-gate: pre-release fence=1 counter=0 target=1 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=0 target=1 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=1 target=2 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=1 target=2 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=2 target=3 delay_ms=100
+[INF] renderer: stream header 160x90 fmt=44, awaiting dma-buf surfaces
+[INF] renderer: imported dma-buf surface key=1 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=2 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=3 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=4 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=5 modifier=0x0 (5 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=2 target=3 delay_ms=100
+[INF] renderer: imported dma-buf surface key=6 modifier=0x0 (6 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=3 target=4 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=3 target=4 delay_ms=100
+[INF] renderer: imported dma-buf surface key=7 modifier=0x0 (7 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=4 target=5 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=4 target=5 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=5 target=6 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=5 target=6 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=6 target=7 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=6 target=7 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=7 target=8 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=7 target=8 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=8 target=9 delay_ms=100
+[INF] renderer: imported dma-buf surface key=8 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=9 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=10 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=11 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=12 modifier=0x0 (5 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=8 target=9 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=9 target=10 delay_ms=100
+[INF] renderer: imported dma-buf surface key=13 modifier=0x0 (6 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=9 target=10 delay_ms=100
+[INF] renderer: imported dma-buf surface key=14 modifier=0x0 (7 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=10 target=11 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=10 target=11 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=11 target=12 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=11 target=12 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=12 target=13 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=12 target=13 delay_ms=100
+[INF] scene: 190 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] gpu-test-gate: pre-release fence=1 counter=13 target=14 delay_ms=100
+[INF] compositor: 42 adoptions in 5s (pool 0 slots, 0 wayland + 0 framelink)
+[INF] gpu-test-gate: pre-release fence=1 counter=13 target=14 delay_ms=100
+[INF] renderer: imported dma-buf surface key=15 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=16 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=17 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=18 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=19 modifier=0x0 (5 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=14 target=15 delay_ms=100
+[INF] renderer: imported dma-buf surface key=20 modifier=0x0 (6 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=14 target=15 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=15 target=16 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=15 target=16 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=16 target=17 delay_ms=100
+[INF] renderer: imported dma-buf surface key=21 modifier=0x0 (7 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=16 target=17 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=17 target=18 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=17 target=18 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=18 target=19 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=18 target=19 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=19 target=20 delay_ms=100
+[INF] renderer: imported dma-buf surface key=22 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=23 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=24 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=25 modifier=0x0 (4 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=19 target=20 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=20 target=21 delay_ms=100
+[INF] renderer: imported dma-buf surface key=26 modifier=0x0 (5 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=27 modifier=0x0 (6 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=20 target=21 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=21 target=22 delay_ms=100
+[INF] renderer: imported dma-buf surface key=28 modifier=0x0 (7 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=21 target=22 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=22 target=23 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=22 target=23 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=23 target=24 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=23 target=24 delay_ms=100
+[INF] renderer: imported dma-buf surface key=29 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=30 modifier=0x0 (2 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=24 target=25 delay_ms=100
+[INF] renderer: imported dma-buf surface key=31 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=32 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=33 modifier=0x0 (5 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=34 modifier=0x0 (6 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=35 modifier=0x0 (7 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=24 target=25 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=25 target=26 delay_ms=100
+[INF] renderer: imported dma-buf surface key=36 modifier=0x0 (8 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=25 target=26 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=26 target=27 delay_ms=100
+[INF] scene: 188 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] gpu-test-gate: pre-release fence=1 counter=26 target=27 delay_ms=100
+[INF] compositor: 62 adoptions in 5s (pool 8 slots, 0 wayland + 1 framelink)
+[INF] gpu-test-gate: pre-release fence=1 counter=27 target=28 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=27 target=28 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=28 target=29 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=28 target=29 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=29 target=30 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=29 target=30 delay_ms=100
+[INF] renderer: imported dma-buf surface key=37 modifier=0x0 (1 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=38 modifier=0x0 (2 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=39 modifier=0x0 (3 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=40 modifier=0x0 (4 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=41 modifier=0x0 (5 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=30 target=31 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=30 target=31 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=31 target=32 delay_ms=100
+[INF] renderer: imported dma-buf surface key=42 modifier=0x0 (6 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=31 target=32 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=32 target=33 delay_ms=100
+[INF] renderer: imported dma-buf surface key=43 modifier=0x0 (7 total, zero-copy)
+[INF] renderer: imported dma-buf surface key=44 modifier=0x0 (8 total, zero-copy)
+[INF] gpu-test-gate: pre-release fence=1 counter=32 target=33 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=33 target=34 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=33 target=34 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=34 target=35 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=34 target=35 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=35 target=36 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=35 target=36 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=36 target=37 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=36 target=37 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=37 target=38 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=37 target=38 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=38 target=39 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=38 target=39 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=39 target=40 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=39 target=40 delay_ms=100
+[INF] scene: 188 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] gpu-test-gate: pre-release fence=1 counter=40 target=41 delay_ms=100
+[INF] compositor: 76 adoptions in 5s (pool 8 slots, 0 wayland + 1 framelink)
+[INF] gpu-test-gate: pre-release fence=1 counter=40 target=41 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=41 target=42 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=41 target=42 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=42 target=43 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=42 target=43 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=43 target=44 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=43 target=44 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=44 target=45 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=44 target=45 delay_ms=100
+[INF] gpu-test-gate: pre-release fence=1 counter=45 target=46 delay_ms=100
+AV_RENDER due_decisions=215 hold_checks=169 late_drops=128 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":300,"audio_samples":288000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":6000000000,"video_end_ns":6000000000}
