@@ -23,6 +23,7 @@
 #include "portable_output.h"
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <volk.h>
@@ -194,6 +195,9 @@ private:
     static constexpr uint32_t kFramesInFlight = 2;
     struct FrameSync {
         VkFence inFlight = VK_NULL_HANDLE;
+        VkSemaphore testGate = VK_NULL_HANDLE;
+        uint64_t testGateValue = 0;
+        std::thread testRelease;
         FrameGpuTrace gpuTrace;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window

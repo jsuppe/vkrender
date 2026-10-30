@@ -406,6 +406,10 @@ bool SceneHost::resizeFrameSync(VkContext& vk) {
     vkDeviceWaitIdle(vk.device);
     const size_t windowCount = 1 + extra_.size();
     for (auto& f : frames_) {
+        if (f.testRelease.joinable()) f.testRelease.join();
+        if (f.testGate) vkDestroySemaphore(vk.device, f.testGate, nullptr);
+        f.testGate = VK_NULL_HANDLE;
+        f.testGateValue = 0;
         for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
         for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
         f.acquireSems.assign(windowCount, VK_NULL_HANDLE);
@@ -573,6 +577,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     const int64_t tFrameStart = kTiming ? nowNs() : 0;
 
     vkrtrace::call("scene.wait_inflight_fence", [&]{return vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);});
+    if (f.testRelease.joinable()) f.testRelease.join();
     f.gpuTrace.prepare(vk);
     portableOutput_.retire(vk,(frameIndex_-1)%kFramesInFlight);
     const int64_t tAfterFence = kTiming ? nowNs() : 0;
@@ -608,6 +613,23 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         }
     }
     const int64_t tAfterAcquire = kTiming ? nowNs() : 0;
+    // Opt-in native ownership stress: the command buffer genuinely waits on
+    // a host-signaled timeline semaphore. Sleeping only on CPU would not delay GPU reads.
+    static const unsigned gateMs = [] {
+        const char* value = getenv("VKR_TEST_GPU_GATE_MS");
+        return value ? unsigned(std::clamp(std::atoi(value), 0, 1000)) : 0u;
+    }();
+    const bool gated = vk.headless && gateMs && frameIndex_ % 7 == 0;
+    if (gated) {
+        if (!f.testGate) {
+            VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+            type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+            VkSemaphoreCreateInfo ci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+            ci.pNext = &type;
+            if (vkCreateSemaphore(vk.device, &ci, nullptr, &f.testGate) != VK_SUCCESS) return false;
+        }
+        ++f.testGateValue;
+    }
     vkResetFences(vk.device, 1, &f.inFlight);
 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -616,6 +638,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     vkrtrace::Scope recording("scene.record_commands_cpu");
     vkBeginCommandBuffer(f.cmd, &bi);
     f.gpuTrace.begin(f.cmd);
+
 
     for (size_t w = 0; w < windowCount; ++w) {
         VkImage image = w == 0 ? vk.swapImages[imageIndex[0]] : extra_[w - 1].images[imageIndex[w]];
@@ -762,6 +785,11 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         signalValues.push_back(extras.signalValues[i]);
     }
 
+    if (gated) {
+        waitSems.push_back(f.testGate);
+        waitValues.push_back(f.testGateValue);
+        waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    }
     VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
     timeline.waitSemaphoreValueCount = (uint32_t)waitValues.size();
     timeline.pWaitSemaphoreValues = waitValues.data();
@@ -777,6 +805,21 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     si.pCommandBuffers = &f.cmd;
     si.signalSemaphoreCount = (uint32_t)signalSems.size();
     si.pSignalSemaphores = signalSems.data();
+    if (gated) {
+        // Start before submit: some drivers can block submission on external waits.
+        f.testRelease = std::thread([device=vk.device, gate=f.testGate, value=f.testGateValue,
+                                     fence=f.inFlight, delay=gateMs] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+            auto status = vkGetFenceStatus(device, fence);
+            uint64_t counter=0;
+            vkGetSemaphoreCounterValue(device,gate,&counter);
+            VKR_LOG("gpu-test-gate: pre-release fence=%d counter=%llu target=%llu delay_ms=%u",
+                    int(status), (unsigned long long)counter, (unsigned long long)value, delay);
+            VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+            signal.semaphore=gate; signal.value=value;
+            vkSignalSemaphore(device,&signal);
+        });
+    }
     if (vkrtrace::call("scene.queue_submit_cpu", [&]{return vkQueueSubmit(vk.queue, 1, &si, f.inFlight);}) != VK_SUCCESS) {
         VKR_ERR("scene: submit failed");
         return false;
@@ -872,6 +915,10 @@ void SceneHost::destroy(VkContext& vk) {
     vkDeviceWaitIdle(vk.device);
     portableOutput_.destroy(vk);
     for (auto& f : frames_) {
+        if (f.testRelease.joinable()) f.testRelease.join();
+        if (f.testGate) vkDestroySemaphore(vk.device, f.testGate, nullptr);
+        f.testGate = VK_NULL_HANDLE;
+        f.testGateValue = 0;
         for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
         for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
         f.gpuTrace.destroy(vk);

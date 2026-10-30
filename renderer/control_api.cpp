@@ -176,6 +176,33 @@ int ControlApi::handleRequest(mg_connection* conn) {
                      }(),
                      (unsigned)s.streams.size());
             j = buf;
+            j.pop_back();j += ",\"av\":{\"active\":"+std::string(s.avActive?"true":"false")+
+                ",\"audio_master\":"+(s.avAudioMaster?"true":"false")+
+                ",\"muted\":"+(s.avMuted?"true":"false")+
+                ",\"paused\":"+(s.avPaused?"true":"false")+
+                ",\"session_resets\":"+std::to_string(s.avResets)+
+                ",\"due_decisions\":"+std::to_string(s.avPresented)+
+                ",\"sequence_gaps\":"+std::to_string(s.avSkipped)+
+                ",\"queue_depth\":"+std::to_string(s.avQueued)+
+                ",\"max_queue_depth\":"+std::to_string(s.avMaxQueued)+
+                ",\"hold_checks\":"+std::to_string(s.avHeld)+
+                ",\"late_drops\":"+std::to_string(s.avLate)+
+                ",\"import_failures\":"+std::to_string(s.avImportFailures)+
+                ",\"invalid_pts\":"+std::to_string(s.avInvalid)+
+                ",\"schedule_error_ns\":"+std::to_string(s.avErrorNs)+
+                ",\"session_generation\":"+std::to_string(s.avGeneration)+
+                ",\"estimated_av_offset_ns\":null,\"device_underruns\":null,\"clock_drift_ppm\":null"+
+                ",\"audio_metrics_valid\":"+(s.avAudioMetricsValid?"true":"false")+
+                ",\"audio_blocks\":"+std::to_string(s.avAudioBlocks)+
+                ",\"audio_samples\":"+std::to_string(s.avAudioSamples)+
+                ",\"audio_queue_buffers\":"+std::to_string(s.avAudioQueueBuffers)+
+                ",\"audio_queue_ns\":"+std::to_string(s.avAudioQueueNs)+
+                ",\"audio_peak_queue_buffers\":"+std::to_string(s.avAudioPeakQueueBuffers)+
+                ",\"audio_peak_queue_ns\":"+std::to_string(s.avAudioPeakQueueNs)+
+                ",\"audio_queue_empty_events\":"+std::to_string(s.avAudioQueueEmpty)+
+                ",\"audio_queue_full_events\":"+std::to_string(s.avAudioQueueFull)+
+                ",\"late_audio_blocks\":"+std::to_string(s.avAudioLate)+
+                ",\"audio_arrival_drift_ns\":"+std::to_string(s.avAudioArrivalDriftNs)+"}}";
         } else if (uri == "/api/displays") {
             j = "[";
             for (size_t i = 0; i < s.displays.size(); ++i) {
@@ -352,11 +379,19 @@ int ControlApi::handleRequest(mg_connection* conn) {
         else if (action == "unspotlight") c.type = ControlCommand::Type::Unspotlight;
         else if (action == "front") c.type = ControlCommand::Type::Front;
         else ok = false;
+        if(current.avActive && c.type==ControlCommand::Type::Kick && c.slot==0){mg_send_http_error(conn,409,"stop selected A/V session instead of kicking its video track");return 409;}
         if(c.type!=ControlCommand::Type::Unspotlight) {
             ok=ok && validSlot;
             bool known=false;for(const auto& stream:current.streams)if((int)stream.slot==c.slot)known=true;
             ok=ok && known;
         }
+    } else if (uri == "/api/audio/select") {
+        if(!current.avConfigured){mg_send_http_error(conn,501,"A/V plugin not configured");return 501;}
+        c.type=ControlCommand::Type::AudioSelect;c.str=param(conn,"session");
+        ok=!c.str.empty() && c.str.size()<=1024;
+    } else if (uri == "/api/audio") {
+        if(!current.avConfigured){mg_send_http_error(conn,501,"no selected A/V session");return 501;}
+        c.type=ControlCommand::Type::AudioMute;ok=toggle(c.i);
     } else if (uri == "/api/camera") {
         if(!current.cameraAvailable){mg_send_http_error(conn,501,"camera unavailable");return 501;}
         c.type = ControlCommand::Type::Camera;

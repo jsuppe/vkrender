@@ -15,11 +15,14 @@
 #include <vector>
 
 #include "scene_host.h"
+#include "av_playback.h"
 
 namespace vkr {
 
 struct WinServeOptions {
     std::string pipeName = "vkrender";
+    av::PlaybackOptions avOptions;
+    bool avExitOnEnd=false;
     std::vector<std::string> sceneOutputs; // empty: <pipeName>.scene; otherwise fan-out
     int headlessFrames = 0; // 0 = windowed
     std::string dumpPath = "headless.ppm";

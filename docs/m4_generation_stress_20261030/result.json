@@ -1,0 +1,23 @@
+{
+  "renderer_revision": "12196b9",
+  "framelink_revision": "687eb73",
+  "switches": 10,
+  "samples": 182,
+  "final_av": {
+    "active": false,
+    "audio_master": false,
+    "muted": false,
+    "paused": false,
+    "session_resets": 22,
+    "due_decisions": 497,
+    "sequence_gaps": 13,
+    "queue_depth": 0,
+    "max_queue_depth": 6,
+    "hold_checks": 249,
+    "late_drops": 0,
+    "invalid_pts": 0,
+    "schedule_error_ns": 0
+  },
+  "all_queue_bounded": true,
+  "all_invalid_pts_zero": true
+}

@@ -20,10 +20,13 @@
 #include <vector>
 
 #include "scene_host.h"
+#include "av_playback.h"
 
 namespace vkr {
 
 struct WaylandOptions {
+    av::PlaybackOptions avOptions;
+    bool avExitOnEnd=false;
     std::vector<std::string> sceneOutputs;
     std::string socketName = "vkrender-0";
     int controlPort = 8875;

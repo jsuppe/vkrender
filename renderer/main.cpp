@@ -86,6 +86,8 @@ struct FrameSync {
 } // namespace
 
 int main(int argc, char** argv) {
+    bool avExitOnEnd=false;
+    av::PlaybackOptions avOptions;avOptions.externalVideo=true;
     std::string pipe = "vkrender";
     std::vector<std::string> sceneOutputs;
     std::string dumpPath = "headless.ppm";
@@ -103,6 +105,24 @@ int main(int argc, char** argv) {
             std::string name=argv[++i];
             if(name.empty() || sceneOutputs.size()>=8 || std::find(sceneOutputs.begin(),sceneOutputs.end(),name)!=sceneOutputs.end()){fprintf(stderr,"scene output must be unique, nonempty (max 8)\n");return 1;}
             sceneOutputs.push_back(name);
+        }
+        else if (!strcmp(argv[i], "--av-exit-on-end")) avExitOnEnd=true;
+        else if (!strcmp(argv[i], "--av-session") && i+1<argc) avOptions.session=argv[++i];
+        else if (!strcmp(argv[i], "--av-plugin") && i+1<argc) avOptions.plugin=argv[++i];
+        else if (!strcmp(argv[i], "--av-audio-sink") && i+1<argc) avOptions.audioSink=argv[++i];
+        else if (!strcmp(argv[i], "--av-format") && i+1<argc) avOptions.format=argv[++i];
+        else if ((!strcmp(argv[i],"--av-width") || !strcmp(argv[i],"--av-height") ||
+                  !strcmp(argv[i],"--av-fps") || !strcmp(argv[i],"--av-rate") ||
+                  !strcmp(argv[i],"--av-channels") || !strcmp(argv[i],"--av-latency-ms")) && i+1<argc) {
+            std::string option=argv[i];char* end=nullptr;
+            unsigned long n=std::strtoul(argv[++i],&end,10);
+            if(!end || *end || !n || n>192000){fprintf(stderr,"invalid A/V numeric option\n");return 1;}
+            if(option=="--av-width")avOptions.width=n;
+            else if(option=="--av-height")avOptions.height=n;
+            else if(option=="--av-fps")avOptions.fps=n;
+            else if(option=="--av-rate")avOptions.rate=n;
+            else if(option=="--av-channels")avOptions.channels=n;
+            else avOptions.latencyMs=n;
         }
         else if (!strcmp(argv[i], "--control-port") && i + 1 < argc)
             controlPort = atoi(argv[++i]);
@@ -141,7 +161,7 @@ int main(int argc, char** argv) {
             else if (mode != "latest") { fprintf(stderr, "bad --pacing\n"); return 1; }
         } else {
             fprintf(stderr,
-                    "usage: vkrenderer [--pipe name] [--pacing latest|pts] "
+                    "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
                     "[--wayland [socket]] [--serve [pipe]] [--scene-output channel (repeatable)] "
                     "[--window WxH+X+Y[:bezel]]... [--bezel px] "
                     "[--headless N [--dump out.ppm]]\n");
@@ -157,8 +177,10 @@ int main(int argc, char** argv) {
         fprintf(stderr, "--wayland is Linux-only\n");
         return 1;
     }
+    if (!avOptions.session.empty() && !serveMode && !waylandMode){fprintf(stderr,"A/V requires --serve or --wayland\n");return 1;}
     if (serveMode) {
         vkr::WinServeOptions sopts;
+        sopts.avOptions=avOptions;sopts.avExitOnEnd=avExitOnEnd;
         sopts.pipeName = pipe;
         sopts.sceneOutputs = sceneOutputs;
         sopts.headlessFrames = headlessFrames;
@@ -175,6 +197,7 @@ int main(int argc, char** argv) {
     }
     if (waylandMode) {
         vkr::WaylandOptions wopts;
+        wopts.avOptions=avOptions;wopts.avExitOnEnd=avExitOnEnd;
         wopts.socketName = waylandSocket;
         wopts.controlPort = controlPort;
         wopts.sceneOutputs = sceneOutputs;

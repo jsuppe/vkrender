@@ -1,0 +1,68 @@
+Start testing: Oct 30 11:41 Eastern Daylight Time
+----------------------------------------------------------
+6/14 Testing: control_http
+6/14 Test: control_http
+Command: "C:/Users/jonsu/AppData/Local/Microsoft/WindowsApps/python3.13.exe" "C:/Users/jonsu/dev/vkrender-m4-20261030/test/control_api.py" "C:/Users/jonsu/dev/vkrender-m4-20261030/build/Release/vkr_control_test.exe"
+Directory: C:/Users/jonsu/dev/vkrender-m4-20261030/build
+"control_http" start time: Oct 30 11:41 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[INF] control: moderation API on http://127.0.0.1:55617/api/
+control HTTP validation and shared moderation passed
+<end of output>
+Test time =   0.26 sec
+----------------------------------------------------------
+Test Passed.
+"control_http" end time: Oct 30 11:41 Eastern Daylight Time
+"control_http" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/14 Testing: control_preview_admission
+7/14 Test: control_preview_admission
+Command: "C:/Users/jonsu/AppData/Local/Microsoft/WindowsApps/python3.13.exe" "C:/Users/jonsu/dev/vkrender-m4-20261030/test/control_preview_admission.py" "C:/Users/jonsu/dev/vkrender-m4-20261030/build/Release/vkr_control_test.exe"
+Directory: C:/Users/jonsu/dev/vkrender-m4-20261030/build
+"control_preview_admission" start time: Oct 30 11:41 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[INF] control: moderation API on http://127.0.0.1:55641/api/
+PASS 8 concurrent admission batches: exactly3 streams,5 rejections, responsive commands, leases reclaimed
+<end of output>
+Test time =   1.47 sec
+----------------------------------------------------------
+Test Passed.
+"control_preview_admission" end time: Oct 30 11:41 Eastern Daylight Time
+"control_preview_admission" time elapsed: 00:00:01
+----------------------------------------------------------
+
+13/14 Testing: av_schedule
+13/14 Test: av_schedule
+Command: "C:/Users/jonsu/dev/vkrender-m4-20261030/build/Release/vkr_av_schedule_test.exe"
+Directory: C:/Users/jonsu/dev/vkrender-m4-20261030/build
+"av_schedule" start time: Oct 30 11:41 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"av_schedule" end time: Oct 30 11:41 Eastern Daylight Time
+"av_schedule" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/14 Testing: av_clock_contract
+14/14 Test: av_clock_contract
+Command: "C:/Users/jonsu/dev/vkrender-m4-20261030/build/Release/vkr_av_clock_contract_test.exe"
+Directory: C:/Users/jonsu/dev/vkrender-m4-20261030/build
+"av_clock_contract" start time: Oct 30 11:41 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Independent segment/shared-epoch/latency/clock-drift/late-boundary/pause policy fixtures passed; physical playback not tested
+<end of output>
+Test time =   0.07 sec
+----------------------------------------------------------
+Test Passed.
+"av_clock_contract" end time: Oct 30 11:41 Eastern Daylight Time
+"av_clock_contract" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 30 11:41 Eastern Daylight Time

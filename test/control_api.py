@@ -24,7 +24,8 @@ try:
     for path in ['layout?name=presentation','pause?on=1','config?max_visible=2&rotate_seconds=3','stream?slot=0&action=hide','stream?action=unspotlight']:
         assert request(path,True)[0]==200,path
     time.sleep(.05)
-    s=json.loads(request('status')[1]);assert s['layout']=='presentation' and s['paused'] and s['maxVisible']==2 and s['rotateSeconds']==3,s
+    s=json.loads(request('status')[1]);assert s['av']['audio_metrics_valid'] and s['av']['audio_blocks']==17 and s['av']['audio_samples']==16320 and s['av']['audio_arrival_drift_ns']==-420000 and s['av']['session_generation']==3 and s['av']['audio_queue_empty_events']==9,s;assert s['av']['estimated_av_offset_ns'] is None and s['av']['device_underruns'] is None and s['av']['clock_drift_ppm'] is None,s;assert s['layout']=='presentation' and s['paused'] and s['maxVisible']==2 and s['rotateSeconds']==3,s
     print('control HTTP validation and shared moderation passed')
 finally:
     p.terminate();p.wait(timeout=5)
+
