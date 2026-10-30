@@ -1,0 +1,22 @@
+{"event":"session-ready","instance":"ff843c5d277df4e1dced83a78fb4c6b2","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0}
+{"event":"media-progress","instance":"ff843c5d277df4e1dced83a78fb4c6b2","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1}
+{"event":"media-progress","instance":"ff843c5d277df4e1dced83a78fb4c6b2","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25}
+pipeline error: Could not write to resource. (../gst/gio/gstgiobasesink.c(361): gst_gio_base_sink_render (): /GstPipeline:pipeline0/GstGioStreamSink:audioio:
+Could not write to stream: Error sending data: An established connection was aborted by the software in your host machine.)
+FAIL: video send failed
+{"event":"session-ready","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":50,"audio_blocks":50}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":75,"audio_blocks":75}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":100,"audio_blocks":100}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":125,"audio_blocks":125}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":150,"audio_blocks":150}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":175,"audio_blocks":175}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":200,"audio_blocks":200}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":225,"audio_blocks":225}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":250,"audio_blocks":250}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":275,"audio_blocks":275}
+{"event":"media-progress","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":300,"audio_blocks":300}
+{"event":"session-complete","instance":"c617c440289fc5e279cd7fc8e1c12f51","generation":1,"format":"BGRA","video_frames":300,"audio_blocks":300}
+{"role":"producer","ok":true,"sessions":1,"video_frames":300,"audio_blocks":300,"errors":0,"disconnects":0}

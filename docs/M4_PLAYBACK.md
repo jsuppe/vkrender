@@ -91,3 +91,8 @@ is required; a missing peer is a bounded connection failure, not silent fallback
 Linux `test/av_renderer_select.py` passed two live producers, selection, independent
 session teardown, mute/unmute and new-session completion. This selects the paired
 A/V session in slot zero, not an audio-only mixer for arbitrary legacy video slots.
+
+Windows qualification update: `docs/m4_windows_20261030/README.md` records native
+BGRA/NV12, pause/reconnect, selected-session switching and four CPU/control tests
+passing on Caspar. This supersedes the initial checkpoint's Windows-not-tested
+statement. Lossless full-rate rendering and physical lip sync are not claimed.

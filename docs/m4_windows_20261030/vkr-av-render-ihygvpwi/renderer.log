@@ -1,0 +1,29 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('av-smoke.in.0' .. 'av-smoke.in.11')
+[INF] control: moderation API on http://127.0.0.1:55425/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=23 160x90 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=17 160x90 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=18 160x90 (3 total, zero-copy)
+[INF] renderer: imported win32 surface key=19 160x90 (4 total, zero-copy)
+[INF] renderer: imported win32 surface key=20 160x90 (5 total, zero-copy)
+[INF] renderer: imported win32 surface key=21 160x90 (6 total, zero-copy)
+[INF] renderer: imported win32 surface key=22 160x90 (7 total, zero-copy)
+[INF] renderer: imported win32 surface key=16 160x90 (8 total, zero-copy)
+[INF] service: display wake released (presentation idle)
+[INF] renderer: imported win32 surface key=23 160x90 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=17 160x90 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=18 160x90 (3 total, zero-copy)
+[INF] renderer: imported win32 surface key=19 160x90 (4 total, zero-copy)
+[INF] renderer: imported win32 surface key=20 160x90 (5 total, zero-copy)
+[INF] renderer: imported win32 surface key=21 160x90 (6 total, zero-copy)
+[INF] renderer: imported win32 surface key=22 160x90 (7 total, zero-copy)
+[INF] renderer: imported win32 surface key=16 160x90 (8 total, zero-copy)
+[INF] scene: 273 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 100 adoptions in 5s (pool 8 slots, 1 producers)
+[INF] service: display wake released (presentation idle)
+AV_RENDER due_decisions=271 hold_checks=127 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":300,"audio_samples":288000,"latency_ns":100000000}

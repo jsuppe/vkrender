@@ -1,0 +1,19 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('av-smoke.in.0' .. 'av-smoke.in.11')
+[INF] control: moderation API on http://127.0.0.1:55350/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: created owned surface key=23 160x90 (shm upload path, 1 total)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=16 160x90 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=17 160x90 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=18 160x90 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=19 160x90 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=20 160x90 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=21 160x90 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=22 160x90 (shm upload path, 8 total)
+[INF] scene: 274 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 160 adoptions in 5s (pool 8 slots, 1 producers)
+[INF] service: display wake released (presentation idle)
+AV_RENDER due_decisions=247 hold_checks=107 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":300,"audio_samples":288000,"latency_ns":100000000}
