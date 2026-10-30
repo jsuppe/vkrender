@@ -65,3 +65,18 @@ invalidPTS0. Evidence `audio-master-*`. Preserve `PULSE_SERVER` when isolating
 Wayland's XDG_RUNTIME_DIR; otherwise autoaudiosink may fall back, accurately reported
 as audio_master=false. Sequence gaps are now reported separately from late drops.
 Strict reproducer: `test/av_renderer_smoke.py RENDERER PRODUCER PLUGIN --audio-sink autoaudiosink --audio-master`.
+
+## Resume checkpoint: coordinated suspension
+
+`POST /api/pause?on=1` now suspends the selected live A/V session. Video scheduling
+holds immediately; the receiver stops audio and the render thread drains the native
+ring. Resume reconnects with a fresh authenticated session/clock, rather than
+replaying stale live data or shifting only video timestamps. The producer must be
+available for another session (or be restarted). This is live suspension, not a
+lossless seekable-media pause. Muting does not reset timing. Status includes
+`av.paused` and `av.session_resets` (setup/end boundaries).
+
+Linux validation after this change: scheduler/clock/control tests 4/4 passed;
+300-frame BGRA smoke selected the virtual PulseAudio clock; the new
+`test/av_renderer_pause.py` passed pause, native drain, producer restart, resume,
+new clock/session, unmute and normal completion. No physical playback claim.

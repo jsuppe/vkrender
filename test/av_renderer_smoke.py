@@ -27,8 +27,6 @@ try:
    samples.append(sample);av=sample.get('av',{})
    if av.get('due_decisions',0)>20 and not muted:
     assert post('/api/audio?on=1')==200;muted=True
-    try:post('/api/pause?on=1');raise AssertionError('uncoordinated pause accepted')
-    except urllib.error.HTTPError as e:assert e.code==409
    if muted and av.get('muted') and not unmuted:
     assert post('/api/audio?on=0')==200;unmuted=True
   for proc in procs:proc.wait(timeout=5)

@@ -179,6 +179,8 @@ int ControlApi::handleRequest(mg_connection* conn) {
             j.pop_back();j += ",\"av\":{\"active\":"+std::string(s.avActive?"true":"false")+
                 ",\"audio_master\":"+(s.avAudioMaster?"true":"false")+
                 ",\"muted\":"+(s.avMuted?"true":"false")+
+                ",\"paused\":"+(s.avPaused?"true":"false")+
+                ",\"session_resets\":"+std::to_string(s.avResets)+
                 ",\"due_decisions\":"+std::to_string(s.avPresented)+
                 ",\"sequence_gaps\":"+std::to_string(s.avSkipped)+
                 ",\"queue_depth\":"+std::to_string(s.avQueued)+
@@ -340,7 +342,6 @@ int ControlApi::handleRequest(mg_connection* conn) {
         c.str = param(conn, "name");
         ok = c.str=="presentation" || c.str=="two-cubes" || c.str=="single-cube" || c.str=="wall";
     } else if (uri == "/api/pause") {
-        if(current.avActive){mg_send_http_error(conn,409,"coordinated A/V pause unavailable");return 409;}
         c.type = ControlCommand::Type::Pause;
         ok = toggle(c.i);
     } else if (uri == "/api/config") {

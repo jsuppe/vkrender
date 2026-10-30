@@ -513,7 +513,7 @@ int runWinService(const WinServeOptions& options) {
                     else if (c.str == "wall") host.setLayout(SceneLayout::Wall);
                     break;
                 case T::AudioMute: avInput.muted=c.i!=0;break;
-                case T::Pause: host.setPaused(c.i != 0); break;
+                case T::Pause: avInput.paused=c.i!=0;host.setPaused(c.i != 0); break;
                 case T::Config:
                     if (c.i >= 1 && c.i <= (int)kInSlots) mod.maxVisible = (uint32_t)c.i;
                     if (c.d >= 1.0) mod.rotateSeconds = c.d;
@@ -700,7 +700,8 @@ int runWinService(const WinServeOptions& options) {
                 case SceneLayout::Wall: snap.layout = "wall"; break;
                 default: snap.layout = "?"; break;
             }
-            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();
+            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
+            snap.avResets=avInput.schedule.resets;
             snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
             snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;
             snap.avLate=avInput.schedule.late;snap.avInvalid=avInput.schedule.invalid;snap.avErrorNs=avInput.schedule.lastErrorNs;

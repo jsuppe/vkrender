@@ -68,8 +68,8 @@ struct ControlDisplayInfo {
 };
 
 struct ControlSnapshot {
-    bool avActive=false,avAudioMaster=false,avMuted=false;
-    uint64_t avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;
+    bool avActive=false,avAudioMaster=false,avMuted=false,avPaused=false;
+    uint64_t avResets=0,avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;
     int64_t avErrorNs=0;
     std::string layout;
     bool paused = false;

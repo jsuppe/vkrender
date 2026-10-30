@@ -12,10 +12,10 @@ namespace vkr {
 class AvInput {
 public:
  struct Request {flSessionConfig config{};std::string name;bool end=false;};
- std::atomic<bool> stop{false}, muted{false}, finished{false}, succeeded{false};
+ std::atomic<bool> stop{false}, muted{false}, paused{false}, finished{false}, succeeded{false};
  AvSchedule schedule;
  explicit AvInput(av::PlaybackOptions options) {
-  options.mute=&muted;
+  options.mute=&muted;options.paused=&paused;
   if(options.session.empty())return;
   worker_=std::thread([this,options]{
    av::PlaybackCallbacks cb;
@@ -31,6 +31,7 @@ public:
     base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
    };
    cb.onEnd=[this]{std::unique_lock<std::mutex> l(m_);if(stop)return;
+    if(clock_){gst_object_unref(clock_);clock_=nullptr;}audio_=false;
     request_=std::make_unique<Request>();request_->end=true;
     cv_.wait(l,[this]{return !request_||stop.load();});};
    cb.onStatus=[this](const std::string& s){std::lock_guard<std::mutex> l(m_);status_=s;};
@@ -51,7 +52,7 @@ public:
  }
  bool active() const{return active_;}
  AvSchedule::Decision decide(int64_t pts){std::lock_guard<std::mutex> l(m_);
-  if(!clock_)return AvSchedule::Decision::Hold;
+  if(paused.load() || !clock_)return AvSchedule::Decision::Hold;
   return schedule.decide(pts,gst_clock_get_time(clock_),base_,latency_);
  }
  std::string status(){std::lock_guard<std::mutex> l(m_);return status_;}

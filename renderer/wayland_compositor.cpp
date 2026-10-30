@@ -1122,7 +1122,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
                 else if(c.str=="single-cube")host.setLayout(SceneLayout::SingleCube);
                 else host.setLayout(SceneLayout::TwoCubes);
             } else if(c.type==T::AudioMute)avInput.muted=c.i!=0;
-            else if(c.type==T::Pause)host.setPaused(c.i!=0);
+            else if(c.type==T::Pause){avInput.paused=c.i!=0;host.setPaused(c.i!=0);}
             else if(c.type==T::Config){if(c.i>0)moderation.maxVisible=c.i;if(c.d>=1)moderation.rotateSeconds=c.d;}
             else if(c.type==T::Unspotlight)moderation.spotlight=-1;
             else if(c.type==T::Display)host.setDisplayActive(vk,c.slot,c.i!=0);
@@ -1197,7 +1197,8 @@ int runWaylandCompositor(const WaylandOptions& options) {
             ControlSnapshot snap=initial;
             const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
             switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
-            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();
+            snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
+            snap.avResets=avInput.schedule.resets;
             snap.avPresented=avInput.schedule.presented;snap.avHeld=avInput.schedule.held;
             snap.avSkipped=avInput.schedule.skipped;snap.avQueued=avInput.schedule.queued;snap.avMaxQueued=avInput.schedule.maxQueued;
             snap.avLate=avInput.schedule.late;snap.avInvalid=avInput.schedule.invalid;snap.avErrorNs=avInput.schedule.lastErrorNs;
