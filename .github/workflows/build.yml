@@ -9,7 +9,7 @@ on:
 
 # Match the renderer API to a reproducible FrameLink revision.
 env:
-  FRAMELINK_REF: a722a5b2a2fb1defffffa3f1c940ae11a9e6c0a0
+  FRAMELINK_REF: ea6f530b19efd64a479af4b4870a2c7d8adb6854
 
 jobs:
   windows:
