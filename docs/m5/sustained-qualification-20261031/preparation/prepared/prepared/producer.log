@@ -1,0 +1,5 @@
+{"event":"session-ready","instance":"bb36bc1abffc6848ea0e7175721e28f5","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1417085473175000}
+{"event":"video-transport-summary","received":180,"submitted":180,"dropped":0,"ring_full_drops":0}
+{"event":"session-complete","instance":"bb36bc1abffc6848ea0e7175721e28f5","generation":1,"format":"NV12","video_frames":180,"audio_blocks":180,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":180,"audio_blocks":180,"errors":0,"disconnects":0}

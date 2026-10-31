@@ -1,0 +1,33 @@
+[INF] renderer: validation layer enabled
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] swapchain: primary selected_present_mode=fifo(2) requested=default-fifo images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('prepare-prepared.in.0' .. 'prepare-prepared.in.11')
+[INF] control: moderation API on http://127.0.0.1:57625/api/
+[INF] service: display input sent=1 thread=50020
+[INF] service: display wake held (presentation active, timed_session=1)
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: created owned surface key=16 1920x1080 (shm upload path, 1 total)
+[INF] renderer: created owned surface key=17 1920x1080 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=18 1920x1080 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=19 1920x1080 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=20 1920x1080 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=21 1920x1080 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=22 1920x1080 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=23 1920x1080 (shm upload path, 8 total)
+[INF] renderer: created owned surface key=24 1920x1080 (shm upload path, 9 total)
+[INF] renderer: created owned surface key=25 1920x1080 (shm upload path, 10 total)
+[INF] renderer: created owned surface key=26 1920x1080 (shm upload path, 11 total)
+[INF] renderer: created owned surface key=27 1920x1080 (shm upload path, 12 total)
+AV_NATIVE_PREPARED slots=12 generation=2 format=2
+AV_RING_CONFIG ring_slots=12 pending_slots=6 common_latency_ns=100000000
+[INF] service: display wake released (presentation idle, timed_session=0)
+AV_RENDER due_decisions=180 hold_checks=189 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-clock","policy":"producer","system_now_ns":1417085423331500,"selected_now_ns":1417085423331400,"device_now_ns":0,"mapped_producer_base_ns":1417085473174350,"playback_base_ns":1417085473174350,"latency_ns":100000000,"resample_slaves":1}
+{"event":"video-schedule-summary","received":0,"scheduled":0,"handed_off":0,"late":0,"overflow":0,"peak_pending":0,"pending_limit":9,"peak_bytes":0,"byte_limit":134217728}
+{"event":"playback-metrics","peak_queue_buffers":4,"peak_queue_ns":66666667,"queue_empty_events":4,"queue_full_events":175,"late_audio_blocks":0,"arrival_drift_ns":-5084467}
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":180,"audio_samples":144000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":3000000000,"video_end_ns":3000000000}

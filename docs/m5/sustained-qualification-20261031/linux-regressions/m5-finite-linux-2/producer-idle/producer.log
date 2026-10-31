@@ -1,0 +1,3 @@
+{"event":"session-ready","instance":"f5e679a7f232b79cb2824b345b13040a","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":264999709540723}
+{"event":"media-progress","instance":"f5e679a7f232b79cb2824b345b13040a","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}

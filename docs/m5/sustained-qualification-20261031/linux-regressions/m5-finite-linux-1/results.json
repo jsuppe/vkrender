@@ -1,0 +1,49 @@
+[
+  {
+    "case": "longer-than-setup",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "elapsed_seconds": 4.325555529969279
+  },
+  {
+    "case": "missing-peer",
+    "exit_codes": [
+      1
+    ],
+    "elapsed_seconds": 2.0199387640459463
+  },
+  {
+    "case": "mismatch",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.06583892198977992
+  },
+  {
+    "case": "legacy-peer",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.06398534501204267
+  },
+  {
+    "case": "early-eos",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.8162414079997689
+  },
+  {
+    "case": "producer-idle",
+    "exit_codes": [
+      -9,
+      1
+    ],
+    "elapsed_seconds": 2.322026581969112
+  }
+]

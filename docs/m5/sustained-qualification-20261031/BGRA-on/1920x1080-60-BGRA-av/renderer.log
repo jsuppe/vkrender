@@ -1,0 +1,57 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] swapchain: primary selected_present_mode=fifo(2) requested=default-fifo images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('1920x1080-60-BGRA-av.in.0' .. '1920x1080-60-BGRA-av.in.11')
+[INF] control: moderation API on http://127.0.0.1:57102/api/
+[INF] service: display input sent=1 thread=38836
+[INF] service: display wake held (presentation active, timed_session=1)
+AV_NATIVE_PREPARED slots=12 generation=2 format=1
+AV_RING_CONFIG ring_slots=12 pending_slots=6 common_latency_ns=100000000
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=16 1920x1080 (1 total, zero-copy)
+[INF] renderer: imported win32 surface key=17 1920x1080 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=18 1920x1080 (3 total, zero-copy)
+[INF] renderer: imported win32 surface key=19 1920x1080 (4 total, zero-copy)
+[INF] renderer: imported win32 surface key=20 1920x1080 (5 total, zero-copy)
+[INF] renderer: imported win32 surface key=21 1920x1080 (6 total, zero-copy)
+[INF] renderer: imported win32 surface key=22 1920x1080 (7 total, zero-copy)
+[INF] renderer: imported win32 surface key=23 1920x1080 (8 total, zero-copy)
+[INF] renderer: imported win32 surface key=24 1920x1080 (9 total, zero-copy)
+[INF] scene: 560 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 237 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 301 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 300 adoptions in 5s (pool 9 slots, 1 producers)
+[INF] service: display wake released (presentation idle, timed_session=0)
+AV_RENDER due_decisions=4200 hold_checks=4209 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-clock","policy":"producer","system_now_ns":1417124770053200,"selected_now_ns":1417124770053000,"device_now_ns":0,"mapped_producer_base_ns":1417124819902950,"playback_base_ns":1417124819902950,"latency_ns":100000000,"resample_slaves":1}
+{"event":"video-schedule-summary","received":0,"scheduled":0,"handed_off":0,"late":0,"overflow":0,"peak_pending":0,"pending_limit":9,"peak_bytes":0,"byte_limit":134217728}
+{"event":"playback-metrics","peak_queue_buffers":4,"peak_queue_ns":66666667,"queue_empty_events":4,"queue_full_events":4195,"late_audio_blocks":0,"arrival_drift_ns":375633}
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":4200,"audio_samples":3360000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":70000000000,"video_end_ns":70000000000}

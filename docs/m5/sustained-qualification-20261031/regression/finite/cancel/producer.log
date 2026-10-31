@@ -1,0 +1,6 @@
+{"event":"session-ready","instance":"83e51be3a1c1a532b2ba0d1e29bfd540","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1417075690635800}
+{"event":"media-progress","instance":"83e51be3a1c1a532b2ba0d1e29bfd540","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+pipeline error: Could not write to resource. (../gst/gio/gstgiobasesink.c(361): gst_gio_base_sink_render (): /GstPipeline:pipeline0/GstGioStreamSink:audioio:
+Could not write to stream: Error sending data: An established connection was aborted by the software in your host machine.)
+FAIL: video send failed

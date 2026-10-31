@@ -1,0 +1,2 @@
+FAIL: audio EOS before finite completion
+{"event":"playback-clock","policy":"producer","system_now_ns":264966634703040,"selected_now_ns":264966634702944,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":264966684653515,"playback_base_ns":264966684653515,"latency_ns":100000000,"resample_slaves":0}

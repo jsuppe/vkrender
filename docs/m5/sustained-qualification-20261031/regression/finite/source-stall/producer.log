@@ -1,0 +1,3 @@
+{"event":"session-ready","instance":"e1635974a3b56645ffade4cf9cc1a849","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+FAIL media idle deadline
+{"event":"startup-released","epoch_ns":1417066409807800}

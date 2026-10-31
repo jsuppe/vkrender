@@ -1,0 +1,814 @@
+{
+  "BGRA-on": {
+    "present_errors": 0,
+    "peak_pending_frames": 6,
+    "aggregate_steady_interval_s": 67.98690310004167,
+    "case": {
+      "case": "1920x1080-60-BGRA-av",
+      "trace": "on",
+      "wall_s": 71.89011539984494,
+      "exit_codes": [
+        0,
+        0
+      ],
+      "native": true,
+      "media_run_ms": 70000,
+      "commands": [
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink_av_producer.exe",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-on\\1920x1080-60-BGRA-av\\session",
+          "--format",
+          "BGRA",
+          "--frames",
+          "4200",
+          "--width",
+          "1920",
+          "--height",
+          "1080",
+          "--fps",
+          "60",
+          "--input-pipeline",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-on\\1920x1080-60-BGRA-av\\source.pipeline",
+          "--timeout-ms",
+          "15000",
+          "--media-run-ms",
+          "70000"
+        ],
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe",
+          "--serve",
+          "1920x1080-60-BGRA-av",
+          "--control-port",
+          "57102",
+          "--av-exit-on-end",
+          "--av-session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-on\\1920x1080-60-BGRA-av\\session",
+          "--av-plugin",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--av-format",
+          "BGRA",
+          "--av-width",
+          "1920",
+          "--av-height",
+          "1080",
+          "--av-fps",
+          "60",
+          "--av-audio-sink",
+          "autoaudiosink",
+          "--av-clock",
+          "producer",
+          "--av-timeout-ms",
+          "15000",
+          "--av-media-run-ms",
+          "70000"
+        ]
+      ]
+    },
+    "aggregate_transport": {
+      "event": "video-transport-summary",
+      "received": 4200,
+      "submitted": 4200,
+      "dropped": 0,
+      "ring_full_drops": 0
+    },
+    "playback_complete": {
+      "event": "playback-complete",
+      "audio_master": false,
+      "video_received": 0,
+      "video_late": 0,
+      "audio_blocks": 4200,
+      "audio_samples": 3360000,
+      "latency_ns": 100000000
+    },
+    "playback_timing": {
+      "event": "playback-timing",
+      "audio_first_running_pts_ns": 0,
+      "video_first_running_pts_ns": 18446744073709551615,
+      "audio_end_ns": 70000000000,
+      "video_end_ns": 70000000000
+    },
+    "audio_metrics": {
+      "event": "playback-metrics",
+      "peak_queue_buffers": 4,
+      "peak_queue_ns": 66666667,
+      "queue_empty_events": 4,
+      "queue_full_events": 4195,
+      "late_audio_blocks": 0,
+      "arrival_drift_ns": 375633
+    },
+    "steady_cpu_percent_one_core": {
+      "producer_cpu_s": 40.63515781898684,
+      "renderer_cpu_s": 4.576342052053413
+    },
+    "aggregate_active_interval_s": 69.98690310004167,
+    "sampled_schedule_error_ms": {
+      "min": -83.39635,
+      "max": 8.254084
+    },
+    "cadence": {
+      "source": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 69.9827587,
+          "fps": 60.00049266420244,
+          "gap_ms": {
+            "min": 14.4866,
+            "median": 16.5313,
+            "p99": 18.5226,
+            "max": 19.0397
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.9836245,
+          "fps": 59.982239157320706,
+          "gap_ms": {
+            "min": 15.0147,
+            "median": 16.5376,
+            "p99": 17.6875,
+            "max": 18.0416
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.9821547,
+          "fps": 60.00104024358028,
+          "gap_ms": {
+            "min": 14.4866,
+            "median": 16.5307,
+            "p99": 18.5226,
+            "max": 19.0397
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 0.9824455,
+          "fps": 60.05422183724186,
+          "gap_ms": {
+            "min": 15.013,
+            "median": 16.5534,
+            "p99": 17.5228,
+            "max": 17.5239
+          }
+        }
+      },
+      "present": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 69.9832646,
+          "fps": 60.000058928374145,
+          "gap_ms": {
+            "min": 8.2726,
+            "median": 16.6706,
+            "p99": 16.7962,
+            "max": 25.0115
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.9751501,
+          "fps": 60.50350607562876,
+          "gap_ms": {
+            "min": 8.2891,
+            "median": 16.6702,
+            "p99": 25.0016,
+            "max": 25.0097
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.991199,
+          "fps": 59.99305880750831,
+          "gap_ms": {
+            "min": 8.3287,
+            "median": 16.6707,
+            "p99": 16.7884,
+            "max": 25.0115
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 0.9836154,
+          "fps": 59.98279408801448,
+          "gap_ms": {
+            "min": 8.2726,
+            "median": 16.6701,
+            "p99": 16.7413,
+            "max": 25.0026
+          }
+        }
+      },
+      "gpu": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 70.0117595,
+          "fps": 59.97563880679217,
+          "gap_ms": {
+            "min": 7.8417,
+            "median": 16.6707,
+            "p99": 17.9064,
+            "max": 44.9115
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.975196,
+          "fps": 60.500658329197414,
+          "gap_ms": {
+            "min": 8.2782,
+            "median": 16.6707,
+            "p99": 25.0406,
+            "max": 25.0532
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.9914008,
+          "fps": 59.99288074676644,
+          "gap_ms": {
+            "min": 7.8417,
+            "median": 16.6703,
+            "p99": 17.8801,
+            "max": 25.0816
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 1.0118285,
+          "fps": 58.3102768898089,
+          "gap_ms": {
+            "min": 8.7875,
+            "median": 16.6768,
+            "p99": 24.506,
+            "max": 44.9115
+          }
+        }
+      }
+    },
+    "source_to_stage_ms": {
+      "present": {
+        "min": 105.8863,
+        "median": 111.7138,
+        "p99": 116.0775,
+        "max": 116.5862
+      },
+      "gpu": {
+        "min": 114.3977,
+        "median": 120.6953,
+        "p99": 125.1305,
+        "max": 153.5061
+      }
+    },
+    "trace_footers": [
+      {
+        "file": "gst.31968.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 12600
+      },
+      {
+        "file": "renderer.34488.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 216022
+      },
+      {
+        "file": "transport.31968.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 33603
+      },
+      {
+        "file": "transport.34488.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 102525
+      }
+    ],
+    "identity_proof": true,
+    "call_max_ms": {
+      "scene.present_call_cpu": 22.8797,
+      "scene.queue_submit_cpu": 0.1544,
+      "service.input_cpu_map": 0,
+      "d3d11.signal_ready": 1.2312
+    }
+  },
+  "BGRA-off": {
+    "present_errors": 0,
+    "peak_pending_frames": 6,
+    "aggregate_steady_interval_s": 67.96102460008115,
+    "case": {
+      "case": "1920x1080-60-BGRA-av",
+      "trace": "off",
+      "wall_s": 71.6688602999784,
+      "exit_codes": [
+        0,
+        0
+      ],
+      "native": true,
+      "media_run_ms": 70000,
+      "commands": [
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink_av_producer.exe",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-off\\1920x1080-60-BGRA-av\\session",
+          "--format",
+          "BGRA",
+          "--frames",
+          "4200",
+          "--width",
+          "1920",
+          "--height",
+          "1080",
+          "--fps",
+          "60",
+          "--input-pipeline",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-off\\1920x1080-60-BGRA-av\\source.pipeline",
+          "--timeout-ms",
+          "15000",
+          "--media-run-ms",
+          "70000"
+        ],
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe",
+          "--serve",
+          "1920x1080-60-BGRA-av",
+          "--control-port",
+          "62167",
+          "--av-exit-on-end",
+          "--av-session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-BGRA-off\\1920x1080-60-BGRA-av\\session",
+          "--av-plugin",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--av-format",
+          "BGRA",
+          "--av-width",
+          "1920",
+          "--av-height",
+          "1080",
+          "--av-fps",
+          "60",
+          "--av-audio-sink",
+          "autoaudiosink",
+          "--av-clock",
+          "producer",
+          "--av-timeout-ms",
+          "15000",
+          "--av-media-run-ms",
+          "70000"
+        ]
+      ]
+    },
+    "aggregate_transport": {
+      "event": "video-transport-summary",
+      "received": 4200,
+      "submitted": 4200,
+      "dropped": 0,
+      "ring_full_drops": 0
+    },
+    "playback_complete": {
+      "event": "playback-complete",
+      "audio_master": false,
+      "video_received": 0,
+      "video_late": 0,
+      "audio_blocks": 4200,
+      "audio_samples": 3360000,
+      "latency_ns": 100000000
+    },
+    "playback_timing": {
+      "event": "playback-timing",
+      "audio_first_running_pts_ns": 0,
+      "video_first_running_pts_ns": 18446744073709551615,
+      "audio_end_ns": 70000000000,
+      "video_end_ns": 70000000000
+    },
+    "audio_metrics": {
+      "event": "playback-metrics",
+      "peak_queue_buffers": 4,
+      "peak_queue_ns": 66666667,
+      "queue_empty_events": 4,
+      "queue_full_events": 4195,
+      "late_audio_blocks": 0,
+      "arrival_drift_ns": 11433
+    },
+    "steady_cpu_percent_one_core": {
+      "producer_cpu_s": 38.90183427424074,
+      "renderer_cpu_s": 4.163945596474024
+    },
+    "aggregate_active_interval_s": 69.96102460008115,
+    "sampled_schedule_error_ms": {
+      "min": -50.0392,
+      "max": 8.370167
+    },
+    "identity_proof": false
+  },
+  "BGRA-cpu-on-minus-off-pp": {
+    "producer_cpu_s": 1.7333235447460993,
+    "renderer_cpu_s": 0.41239645557938864
+  },
+  "NV12-on": {
+    "present_errors": 0,
+    "peak_pending_frames": 6,
+    "aggregate_steady_interval_s": 67.96667310013436,
+    "case": {
+      "case": "1920x1080-60-NV12-av",
+      "trace": "on",
+      "wall_s": 71.97746880003251,
+      "exit_codes": [
+        0,
+        0
+      ],
+      "native": true,
+      "media_run_ms": 70000,
+      "commands": [
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink_av_producer.exe",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-on\\1920x1080-60-NV12-av\\session",
+          "--format",
+          "NV12",
+          "--frames",
+          "4200",
+          "--width",
+          "1920",
+          "--height",
+          "1080",
+          "--fps",
+          "60",
+          "--input-pipeline",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-on\\1920x1080-60-NV12-av\\source.pipeline",
+          "--timeout-ms",
+          "15000",
+          "--media-run-ms",
+          "70000"
+        ],
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe",
+          "--serve",
+          "1920x1080-60-NV12-av",
+          "--control-port",
+          "54247",
+          "--av-exit-on-end",
+          "--av-session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-on\\1920x1080-60-NV12-av\\session",
+          "--av-plugin",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--av-format",
+          "NV12",
+          "--av-width",
+          "1920",
+          "--av-height",
+          "1080",
+          "--av-fps",
+          "60",
+          "--av-audio-sink",
+          "autoaudiosink",
+          "--av-clock",
+          "producer",
+          "--av-timeout-ms",
+          "15000",
+          "--av-media-run-ms",
+          "70000"
+        ]
+      ]
+    },
+    "aggregate_transport": {
+      "event": "video-transport-summary",
+      "received": 4200,
+      "submitted": 4200,
+      "dropped": 0,
+      "ring_full_drops": 0
+    },
+    "playback_complete": {
+      "event": "playback-complete",
+      "audio_master": false,
+      "video_received": 0,
+      "video_late": 0,
+      "audio_blocks": 4200,
+      "audio_samples": 3360000,
+      "latency_ns": 100000000
+    },
+    "playback_timing": {
+      "event": "playback-timing",
+      "audio_first_running_pts_ns": 0,
+      "video_first_running_pts_ns": 18446744073709551615,
+      "audio_end_ns": 70000000000,
+      "video_end_ns": 70000000000
+    },
+    "audio_metrics": {
+      "event": "playback-metrics",
+      "peak_queue_buffers": 4,
+      "peak_queue_ns": 66666667,
+      "queue_empty_events": 3,
+      "queue_full_events": 4195,
+      "late_audio_blocks": 0,
+      "arrival_drift_ns": 179433
+    },
+    "steady_cpu_percent_one_core": {
+      "producer_cpu_s": 46.05271273481069,
+      "renderer_cpu_s": 28.317127560715267
+    },
+    "aggregate_active_interval_s": 69.96667310013436,
+    "sampled_schedule_error_ms": {
+      "min": -91.74585,
+      "max": 8.38285
+    },
+    "cadence": {
+      "source": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 69.9835985,
+          "fps": 59.99977266101857,
+          "gap_ms": {
+            "min": 14.3599,
+            "median": 16.5287,
+            "p99": 18.5151,
+            "max": 19.0406
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.9840345,
+          "fps": 59.957247433906026,
+          "gap_ms": {
+            "min": 14.526,
+            "median": 16.7215,
+            "p99": 18.0271,
+            "max": 18.5446
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.9837839,
+          "fps": 59.99960234634718,
+          "gap_ms": {
+            "min": 14.3599,
+            "median": 16.5283,
+            "p99": 18.5151,
+            "max": 19.0406
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 0.9827586,
+          "fps": 60.03508898319485,
+          "gap_ms": {
+            "min": 15.5071,
+            "median": 16.5422,
+            "p99": 17.1482,
+            "max": 17.5146
+          }
+        }
+      },
+      "present": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 69.9833732,
+          "fps": 59.99996582045291,
+          "gap_ms": {
+            "min": 8.2634,
+            "median": 16.671,
+            "p99": 16.7427,
+            "max": 25.083
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.9752418,
+          "fps": 60.49781705419107,
+          "gap_ms": {
+            "min": 8.2634,
+            "median": 16.6725,
+            "p99": 24.9987,
+            "max": 25.083
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.9912647,
+          "fps": 59.993000836179476,
+          "gap_ms": {
+            "min": 8.2813,
+            "median": 16.671,
+            "p99": 16.7417,
+            "max": 25.0331
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 0.9835446,
+          "fps": 59.98711192151327,
+          "gap_ms": {
+            "min": 16.6037,
+            "median": 16.669,
+            "p99": 16.7381,
+            "max": 16.7392
+          }
+        }
+      },
+      "gpu": {
+        "all": {
+          "count": 4200,
+          "measured_interval_s": 70.0059281,
+          "fps": 59.980634697135024,
+          "gap_ms": {
+            "min": 8.3601,
+            "median": 16.6699,
+            "p99": 17.5188,
+            "max": 40.0289
+          }
+        },
+        "startup": {
+          "count": 60,
+          "measured_interval_s": 0.9750105,
+          "fps": 60.512168843309894,
+          "gap_ms": {
+            "min": 8.3601,
+            "median": 16.6614,
+            "p99": 25.0066,
+            "max": 28.8113
+          }
+        },
+        "steady": {
+          "count": 4080,
+          "measured_interval_s": 67.9905702,
+          "fps": 59.99361364379322,
+          "gap_ms": {
+            "min": 8.3621,
+            "median": 16.6701,
+            "p99": 17.5064,
+            "max": 27.539
+          }
+        },
+        "drain": {
+          "count": 60,
+          "measured_interval_s": 1.0059693,
+          "fps": 58.64990114509458,
+          "gap_ms": {
+            "min": 15.5248,
+            "median": 16.6786,
+            "p99": 17.7789,
+            "max": 40.0289
+          }
+        }
+      }
+    },
+    "source_to_stage_ms": {
+      "present": {
+        "min": 106.1009,
+        "median": 111.7405,
+        "p99": 116.1865,
+        "max": 116.5836
+      },
+      "gpu": {
+        "min": 115.7924,
+        "median": 123.8968,
+        "p99": 128.2596,
+        "max": 151.2622
+      }
+    },
+    "trace_footers": [
+      {
+        "file": "gst.25364.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 12600
+      },
+      {
+        "file": "renderer.40156.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 232864
+      },
+      {
+        "file": "transport.25364.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 33603
+      },
+      {
+        "file": "transport.40156.csv",
+        "footer": "# dropped_events=0,rejected_threads=0,capacity_per_thread=524288",
+        "max_events_per_thread": 111084
+      }
+    ],
+    "identity_proof": true,
+    "call_max_ms": {
+      "scene.present_call_cpu": 23.043,
+      "scene.queue_submit_cpu": 0.152,
+      "service.input_cpu_map": 3.4205,
+      "d3d11.signal_ready": 0.5065
+    }
+  },
+  "NV12-off": {
+    "present_errors": 0,
+    "peak_pending_frames": 6,
+    "aggregate_steady_interval_s": 67.95051799993962,
+    "case": {
+      "case": "1920x1080-60-NV12-av",
+      "trace": "off",
+      "wall_s": 71.65891700005159,
+      "exit_codes": [
+        0,
+        0
+      ],
+      "native": true,
+      "media_run_ms": 70000,
+      "commands": [
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink_av_producer.exe",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-off\\1920x1080-60-NV12-av\\session",
+          "--format",
+          "NV12",
+          "--frames",
+          "4200",
+          "--width",
+          "1920",
+          "--height",
+          "1080",
+          "--fps",
+          "60",
+          "--input-pipeline",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-off\\1920x1080-60-NV12-av\\source.pipeline",
+          "--timeout-ms",
+          "15000",
+          "--media-run-ms",
+          "70000"
+        ],
+        [
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe",
+          "--serve",
+          "1920x1080-60-NV12-av",
+          "--control-port",
+          "54968",
+          "--av-exit-on-end",
+          "--av-session",
+          "C:\\Users\\jonsu\\dev\\m5-sustained-NV12-off\\1920x1080-60-NV12-av\\session",
+          "--av-plugin",
+          "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+          "--av-format",
+          "NV12",
+          "--av-width",
+          "1920",
+          "--av-height",
+          "1080",
+          "--av-fps",
+          "60",
+          "--av-audio-sink",
+          "autoaudiosink",
+          "--av-clock",
+          "producer",
+          "--av-timeout-ms",
+          "15000",
+          "--av-media-run-ms",
+          "70000"
+        ]
+      ]
+    },
+    "aggregate_transport": {
+      "event": "video-transport-summary",
+      "received": 4200,
+      "submitted": 4200,
+      "dropped": 0,
+      "ring_full_drops": 0
+    },
+    "playback_complete": {
+      "event": "playback-complete",
+      "audio_master": false,
+      "video_received": 0,
+      "video_late": 0,
+      "audio_blocks": 4200,
+      "audio_samples": 3360000,
+      "latency_ns": 100000000
+    },
+    "playback_timing": {
+      "event": "playback-timing",
+      "audio_first_running_pts_ns": 0,
+      "video_first_running_pts_ns": 18446744073709551615,
+      "audio_end_ns": 70000000000,
+      "video_end_ns": 70000000000
+    },
+    "audio_metrics": {
+      "event": "playback-metrics",
+      "peak_queue_buffers": 4,
+      "peak_queue_ns": 66666667,
+      "queue_empty_events": 4,
+      "queue_full_events": 4195,
+      "late_audio_blocks": 0,
+      "arrival_drift_ns": 144933
+    },
+    "steady_cpu_percent_one_core": {
+      "producer_cpu_s": 47.76656845330614,
+      "renderer_cpu_s": 28.23197470722863
+    },
+    "aggregate_active_interval_s": 69.95051799993962,
+    "sampled_schedule_error_ms": {
+      "min": -55.99545,
+      "max": 8.331617
+    },
+    "identity_proof": false
+  },
+  "NV12-cpu-on-minus-off-pp": {
+    "producer_cpu_s": -1.7138557184954522,
+    "renderer_cpu_s": 0.08515285348663681
+  }
+}

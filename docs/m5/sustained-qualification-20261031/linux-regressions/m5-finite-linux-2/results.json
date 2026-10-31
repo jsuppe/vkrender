@@ -1,0 +1,65 @@
+[
+  {
+    "case": "longer-than-setup",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "elapsed_seconds": 4.32528181897942
+  },
+  {
+    "case": "missing-peer",
+    "exit_codes": [
+      1
+    ],
+    "elapsed_seconds": 2.019824184011668
+  },
+  {
+    "case": "mismatch",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.06577805802226067
+  },
+  {
+    "case": "legacy-peer",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.046895670995581895
+  },
+  {
+    "case": "early-eos",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.8157876590266824
+  },
+  {
+    "case": "producer-idle",
+    "exit_codes": [
+      -9,
+      1
+    ],
+    "elapsed_seconds": 2.321349496021867
+  },
+  {
+    "case": "consumer-idle",
+    "exit_codes": [
+      1,
+      -9
+    ],
+    "elapsed_seconds": 6.133693097974174
+  },
+  {
+    "case": "cancel",
+    "exit_codes": [
+      1,
+      0
+    ],
+    "elapsed_seconds": 0.2661671200185083
+  }
+]

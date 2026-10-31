@@ -1,0 +1,13 @@
+{"event":"session-ready","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":265002040419947}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":50,"audio_blocks":50,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":75,"audio_blocks":75,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":100,"audio_blocks":100,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":125,"audio_blocks":125,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":150,"audio_blocks":150,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":175,"audio_blocks":175,"audio_offset_ns":0}
+{"event":"media-progress","instance":"69705a89ae63d640befcb7bf3afd6213","generation":1,"format":"BGRA","video_frames":200,"audio_blocks":200,"audio_offset_ns":0}
+FAIL: control read/disconnect: Socket I/O timed out
+{"event":"producer-pacing","pacing_ppm":0,"max_push_ns":204737}

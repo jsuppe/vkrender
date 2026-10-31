@@ -1,0 +1,4 @@
+{"event":"session-ready","instance":"cd86a8b829bc37c4db9f31e3e77c26de","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+FAIL: external audio must be contiguous and match declared duration
+{"event":"startup-released","epoch_ns":264999391761566}
+{"event":"video-transport-summary","received":10,"submitted":10,"dropped":0,"ring_full_drops":0}
