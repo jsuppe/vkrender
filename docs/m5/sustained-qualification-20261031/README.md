@@ -102,9 +102,9 @@ valid evidence of their runs, not replaced by these smaller differences.
 - Linux FrameLink and renderer Release builds passed. FrameLink offer bounds,
   audio segment, recovery3/3; renderer schedule, clock contract, NV12 CPU3/3.
 - Linux actual finite peers:8 cases pass, plus explicit source-stall case exits
-  in2.571s despite70s budget. Strict8 malformed CLI budgets rejected; unit wire
+  in2.571s despite70s budget. Seven malformed CLI budgets rejected; unit wire
   bounds include uint64 max and overflow-safe duration checks.
-- Windows matching Release builds;9 finite real-peer cases +8 malformed CLI
+- Windows matching Release builds;9 finite real-peer cases +7 malformed CLI
   cases + bounds unit passed.4s playback succeeds under2s setup limit;
   missing peer2.077s, source stall2.645s, earlyEOS0.864s, API cancel0.661s.
   Silent stopped peers fail boundedly; fixture process handles only are stopped.
@@ -144,3 +144,7 @@ helper Ready; DISPLAY/SYSTEM power requests None. Original demo untouched.
 Cold physical power-on after the fix remains unqualified (no observed OFF),
 as do physical scanout/acoustic sync and the historical untraced BGRA380ms cause.
 M5 as a whole remains open for Android adoption/cross-UID and final review.
+
+Parent review accepted this measured performance gate; see
+[PARENT_REVIEW.md](PARENT_REVIEW.md). It also corrects the old harness's
+seven-versus-eight malformed-CLI count without altering retained raw logs.
