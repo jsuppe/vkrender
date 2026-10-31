@@ -385,7 +385,7 @@ int runWinService(const WinServeOptions& options) {
             if(!request.end){s.name=request.name;
                 if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
                     (flFormat)request.config.video.format,8,
-                    request.config.video.format==FL_FORMAT_BGRA8?FL_GPU_SYNC:FL_DEFER_RELEASE,
+                    FL_GPU_SYNC,
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
             }
@@ -449,6 +449,16 @@ int runWinService(const WinServeOptions& options) {
             }
 
             if(&s==&inSlots.front() && avInput.active()){
+                // Queue metadata without waiting for producer GPU work. CPU
+                // mapping still requires completion; observe it without blocking
+                // before scheduling/adopting this pending frame.
+                if(now.format!=FL_FORMAT_BGRA8) {
+                    VkSemaphoreWaitInfo ready{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+                    ready.semaphoreCount=1;ready.pSemaphores=&s.readySem;ready.pValues=&f._readyValue;
+                    const VkResult readyResult=vkWaitSemaphores(vk.device,&ready,0);
+                    if(readyResult==VK_TIMEOUT)continue;
+                    if(readyResult!=VK_SUCCESS)throw std::runtime_error("A/V CPU input readiness failed");
+                }
                 auto decision=avInput.decide(f.ptsNs);
                 if(decision==AvSchedule::Decision::Hold){continue;}
                 s.pending.pop_front();avInput.schedule.queued=s.pending.size();
