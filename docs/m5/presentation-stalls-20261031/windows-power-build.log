@@ -1,0 +1,14 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  glslang-default-resource-limits.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\_deps\glslang-build\glslang\Release\glslang-default-resource-limits.lib
+  glslang.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\_deps\glslang-build\glslang\Release\glslang.lib
+  glslang-standalone.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\_deps\glslang-build\StandAlone\Release\glslang.exe
+  framelink.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\Release\framelink.dll
+  volk.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\_deps\volk-build\Release\volk.lib
+  framelink_av_playback.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\framelink\Release\framelink_av_playback.lib
+  vkr_common.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\Release\vkr_common.lib
+  glfw.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\_deps\glfw-build\src\Release\glfw3.lib
+  vk_context.cpp
+  win_service.cpp
+  Generating Code...
+  vkrenderer.vcxproj -> C:\Users\jonsu\dev\vkrender-m5-final-validation\build-final\Release\vkrenderer.exe

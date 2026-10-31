@@ -1,0 +1,24 @@
+Number of Processors : 16
+CPU Speed            : 4691 MHz
+OS Version           : 10.00.00.00
+OS Build Number      : 26300
+Clock type           : PerfCounter
+Boot time            : 2026/10/15:05:32:37.5000000
+Native Pointer Size  : 8 (64bit)
+Start time (UTC)     : 2026/10/31:14:28:11.0763455
+End time (UTC)       : 2026/10/31:14:28:34.6146229  (+         0:00:00:23.5382774)
+Total # Lost Buffers : 0
+Total # Lost Events  : 0
+
+Number of Traces     : 1
+
+Trace name: C:/Users/jonsu/dev/m5-present-etw-baseline.etl
+    Log file mode        : Sequential Secure SystemLogger
+    Pointer size         : 8 (64bit)
+    Start time (UTC)     : 2026/10/31:14:28:11.0763455
+    End time (UTC)       : 2026/10/31:14:28:34.6146229  (+         0:00:00:23.5382774)
+    Start time (Local)   : 2026/10/31:10:28:11.0763455
+    End time (Local)     : 2026/10/31:10:28:34.6146229
+    # Lost Buffers       : 0
+    # Lost Events        : 0
+

@@ -1,0 +1,12 @@
+[INF] renderer: validation layer enabled
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] swapchain: primary selected_present_mode=fifo(2) requested=default-fifo images=3 extent=1280x720
+[INF] swapchain: primary window fullscreen=0 visible=1 iconified=0 focused=1
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('prepare-failure.in.0' .. 'prepare-failure.in.11')
+[INF] control: moderation API on http://127.0.0.1:50089/api/
+[INF] service: display input sent=1 thread=38908
+[INF] service: display wake held (presentation active, timed_session=1)
+AV_RENDER due_decisions=0 hold_checks=0 late_drops=0 invalid_pts=0 status=injected native preparation failure

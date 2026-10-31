@@ -1,0 +1,163 @@
+[
+  {
+    "module": "win32kfull.sys",
+    "address": "0xfffff80478fd7d42",
+    "symbol": "NtUserUserPowerCalloutWorker",
+    "displacement": 34,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff804795dc794",
+    "symbol": "GreDeviceIoControlImpl",
+    "displacement": 260,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff8047955aaf8",
+    "symbol": "DrvSetWddmDeviceMonitorPowerState",
+    "displacement": 600,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff8047955a87f",
+    "symbol": "DrvSetMonitorPowerState",
+    "displacement": 47,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff804795a083b",
+    "symbol": "PowerOnMonitor",
+    "displacement": 411,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff8047965ccf3",
+    "symbol": "xxxUserPowerEventCalloutWorker",
+    "displacement": 3443,
+    "error": 0
+  },
+  {
+    "module": "win32kbase.sys",
+    "address": "0xfffff8047965bb0d",
+    "symbol": "xxxUserPowerCalloutWorker",
+    "displacement": 317,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c958d25",
+    "symbol": "ADAPTER_RENDER::ResumeVidMmWorkerThread",
+    "displacement": 69,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c957df6",
+    "symbol": "ADAPTER_RENDER::ResumeScheduler",
+    "displacement": 158,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c957917",
+    "symbol": "ADAPTER_RENDER::FlushScheduler",
+    "displacement": 223,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c956db9",
+    "symbol": "DXGADAPTER::ReleaseCoreSync",
+    "displacement": 149,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c956c2e",
+    "symbol": "DxgkReleaseAdapterCoreSync",
+    "displacement": 74,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c956ba9",
+    "symbol": "DpiReleaseCoreSyncAccessSafe",
+    "displacement": 73,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c895dff",
+    "symbol": "DxgkPowerOnOffMonitor",
+    "displacement": 2415,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047ca0410e",
+    "symbol": "DpiGdoDispatchInternalIoctl",
+    "displacement": 1534,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047ca039ad",
+    "symbol": "DpiDispatchInternalIoctl",
+    "displacement": 301,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c8e05b5",
+    "symbol": "DXGADAPTER::ReleaseCoreResource",
+    "displacement": 197,
+    "error": 0
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "address": "0xfffff8047c956d81",
+    "symbol": "DXGADAPTER::ReleaseCoreSync",
+    "displacement": 93,
+    "error": 0
+  },
+  {
+    "module": "dxgmms2.sys",
+    "address": "0xfffff80479377b20",
+    "symbol": "VidMmTransitionToState",
+    "displacement": 52,
+    "error": 0
+  },
+  {
+    "module": "dxgmms2.sys",
+    "address": "0xfffff80479377a55",
+    "symbol": "VidMmRequestWorkerThreadStatus",
+    "displacement": 105,
+    "error": 0
+  },
+  {
+    "module": "dxgmms2.sys",
+    "address": "0xfffff804793779dd",
+    "symbol": "VIDMM_GLOBAL::ResumeWorkerThread",
+    "displacement": 17,
+    "error": 0
+  },
+  {
+    "module": "dxgmms2.sys",
+    "address": "0xfffff804792b2689",
+    "symbol": "VidMmResumeWorkerThread",
+    "displacement": 9,
+    "error": 0
+  },
+  {
+    "module": "dxgmms2.sys",
+    "address": "0xfffff80479377b42",
+    "symbol": "VidMmTransitionToState",
+    "displacement": 86,
+    "error": 0
+  }
+]

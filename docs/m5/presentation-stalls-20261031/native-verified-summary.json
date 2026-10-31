@@ -1,0 +1,98 @@
+[
+  {
+    "case": "1920x1080-60-BGRA-av",
+    "unique_by_stage": {
+      "sink_receive": 2700,
+      "buffer_acquire": 2700,
+      "submit": 2700,
+      "ipc_receive": 2700,
+      "consumer_acquire": 2700,
+      "schedule": 2700,
+      "adopt": 2700,
+      "render_submit": 2700,
+      "present_attempt": 2700,
+      "present_submit": 2700,
+      "gpu_complete": 2700
+    },
+    "phases": {
+      "startup": {
+        "complete": 60
+      },
+      "steady": {
+        "complete": 2580
+      },
+      "end": {
+        "complete": 60
+      }
+    },
+    "source_fps": 60.00024626999932,
+    "present_unique_fps": 60.00796418408094,
+    "max_present_unique_gap_ms": 25.0106,
+    "max_call_ms": {
+      "scene.present_call_cpu": 22.6961,
+      "scene.queue_submit_cpu": 0.1074,
+      "service.input_cpu_map": 0,
+      "d3d11.signal_ready": 1.3323
+    },
+    "power_requests": [
+      {
+        "relative_source_ms": -458.1187,
+        "duration_ms": 0.0561,
+        "result": 2147483648
+      },
+      {
+        "relative_source_ms": 45137.0423,
+        "duration_ms": 0.0275,
+        "result": 2147483651
+      }
+    ]
+  },
+  {
+    "case": "1920x1080-60-NV12-av",
+    "unique_by_stage": {
+      "sink_receive": 2700,
+      "buffer_acquire": 2700,
+      "submit": 2700,
+      "ipc_receive": 2700,
+      "consumer_acquire": 2700,
+      "schedule": 2700,
+      "adopt": 2700,
+      "render_submit": 2700,
+      "present_attempt": 2700,
+      "present_submit": 2700,
+      "gpu_complete": 2700
+    },
+    "phases": {
+      "startup": {
+        "complete": 60
+      },
+      "steady": {
+        "complete": 2580
+      },
+      "end": {
+        "complete": 60
+      }
+    },
+    "source_fps": 60.00148289696745,
+    "present_unique_fps": 60.00798673175611,
+    "max_present_unique_gap_ms": 25.0474,
+    "max_call_ms": {
+      "scene.present_call_cpu": 22.1349,
+      "scene.queue_submit_cpu": 0.1002,
+      "service.input_cpu_map": 3.672,
+      "d3d11.signal_ready": 0.5656
+    },
+    "power_requests": [
+      {
+        "relative_source_ms": -473.207,
+        "duration_ms": 0.06,
+        "result": 2147483648
+      },
+      {
+        "relative_source_ms": 45134.5884,
+        "duration_ms": 0.026,
+        "result": 2147483651
+      }
+    ]
+  }
+]

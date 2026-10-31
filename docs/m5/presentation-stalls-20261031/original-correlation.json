@@ -1,0 +1,35 @@
+{
+  "first_source_ns": 1407940284839600,
+  "intervals": [
+    {
+      "present_start_ns": 1407940390357400,
+      "present_duration_ns": 163360000,
+      "relative_source_ms": 105.5178,
+      "ipc_pts_inside": [
+        116666666
+      ],
+      "overlapping_signals": [
+        {
+          "start_ns": 1407940402142800,
+          "duration_ns": 150201000,
+          "pts_ns": 116666666
+        }
+      ]
+    },
+    {
+      "present_start_ns": 1407941011958800,
+      "present_duration_ns": 95819100,
+      "relative_source_ms": 727.1192,
+      "ipc_pts_inside": [
+        733333333
+      ],
+      "overlapping_signals": [
+        {
+          "start_ns": 1407941019980500,
+          "duration_ns": 85747900,
+          "pts_ns": 733333333
+        }
+      ]
+    }
+  ]
+}
