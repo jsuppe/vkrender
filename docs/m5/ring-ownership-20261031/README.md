@@ -1,6 +1,6 @@
 # Native Windows ring ownership probes
 
-Same 100 ms latency, eight transport slots, six pending video samples. Opt-in Signal/Flush and retirement/ring-state tracing only; no capacity or pacing changes. Source: renderer d093a3e (includes per-image presentation semaphores), FrameLink preconnect ac2100d plus Windows transport scopes from b9c7602. Release build, RTX 5090, interactive limited desktop; Khronos validation enabled. Raw traces compressed losslessly. Manifests independently enumerate fixture FPS × duration, not observed sink rows.
+Same 100 ms latency, eight transport slots, six pending video samples. Opt-in Signal/Flush and retirement/ring-state tracing only; no capacity or pacing changes. Source: renderer d093a3e (includes per-image presentation semaphores), FrameLink preconnect ac2100d plus Windows transport scopes from b9c7602. Release build, RTX 5090, interactive limited desktop. This ownership probe did not enable Khronos validation; separate semaphore/lifetime validation evidence is retained under native-accounted-20261031. Raw traces compressed losslessly. Manifests independently enumerate fixture FPS × duration, not observed sink rows.
 
 ## Outcomes
 
