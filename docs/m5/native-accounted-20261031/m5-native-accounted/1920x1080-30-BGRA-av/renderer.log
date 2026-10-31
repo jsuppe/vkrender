@@ -1,0 +1,37 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('1920x1080-30-BGRA-av.in.0' .. '1920x1080-30-BGRA-av.in.11')
+[INF] control: moderation API on http://127.0.0.1:54356/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=17 1920x1080 (1 total, zero-copy)
+[INF] service: display wake held (presentation active)
+[INF] renderer: imported win32 surface key=18 1920x1080 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=16 1920x1080 (3 total, zero-copy)
+[INF] renderer: imported win32 surface key=19 1920x1080 (4 total, zero-copy)
+[INF] renderer: imported win32 surface key=20 1920x1080 (5 total, zero-copy)
+[INF] renderer: imported win32 surface key=21 1920x1080 (6 total, zero-copy)
+[INF] scene: 555 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 117 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 601 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 601 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 601 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 151 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] scene: 600 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 150 adoptions in 5s (pool 6 slots, 1 producers)
+[INF] service: display wake released (presentation idle)
+AV_RENDER due_decisions=1348 hold_checks=4041 late_drops=1 invalid_pts=0 status=ended
+{"event":"playback-clock","policy":"producer","system_now_ns":1403481128921300,"selected_now_ns":1403481128921100,"device_now_ns":0,"mapped_producer_base_ns":1403481178815050,"playback_base_ns":1403481178815050,"latency_ns":100000000,"resample_slaves":1}
+{"event":"video-schedule-summary","received":0,"scheduled":0,"handed_off":0,"late":0,"overflow":0,"peak_pending":0,"pending_limit":6,"peak_bytes":0,"byte_limit":134217728}
+{"event":"playback-metrics","peak_queue_buffers":3,"peak_queue_ns":100000000,"queue_empty_events":5,"queue_full_events":0,"late_audio_blocks":0,"arrival_drift_ns":-613133}
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":1350,"audio_samples":2160000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":45000000000,"video_end_ns":45000000000}
