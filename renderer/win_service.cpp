@@ -361,7 +361,25 @@ int runWinService(const WinServeOptions& options) {
                 info.width, info.height, info.poolSize);
     };
 
-    AvInput avInput(options.avOptions);
+    AvInput avInput(options.avOptions,true);
+    // Diagnostic preparation delay is elapsed-time bounded and applied once per
+    // session, either before GO or at first use in the explicit legacy control.
+    bool preparationDelayDone=false;
+    const bool lazyPreparationControl=getenv("VKR_TEST_AV_LAZY_PREPARATION")!=nullptr;
+    auto preparationDelay=[&](std::chrono::steady_clock::time_point deadline){
+        if(preparationDelayDone)return;preparationDelayDone=true;
+        const char* value=getenv("VKR_TEST_AV_PREPARE_DELAY_MS");
+        if(!value)return;
+        char* tail=nullptr;const auto ms=std::strtoul(value,&tail,10);
+        if(!tail || *tail || ms>5000)throw std::runtime_error("invalid native preparation fault delay");
+        const auto finish=std::chrono::steady_clock::now()+std::chrono::milliseconds(ms);
+        while(std::chrono::steady_clock::now()<finish){
+            if(avInput.stop.load())throw std::runtime_error("native preparation cancelled");
+            if(std::chrono::steady_clock::now()>=deadline)throw std::runtime_error("native preparation deadline");
+            std::this_thread::sleep_until((std::min)(finish,(std::min)(deadline,std::chrono::steady_clock::now()+std::chrono::milliseconds(10))));
+        }
+    };
+
     bool quit = false;
     HeadlessPacer headlessPacer(std::chrono::steady_clock::now());
     while (!quit) {
@@ -392,7 +410,42 @@ int runWinService(const WinServeOptions& options) {
         // slot with nothing new must cost the render thread nothing, and the
         // ready fence is waited on by the GPU, not here.
         avInput.service([&](const AvInput::Request& request){
-            auto& s=inSlots.front();host.forgetStream(s.uid);dropRing(s);
+            auto& s=inSlots.front();
+            if(request.prepare){
+                vkrtrace::Scope preparationTrace("service.native_preparation");
+                if(lazyPreparationControl)return; // deterministic old first-use control only
+                preparationDelay(request.deadline);
+                if(getenv("VKR_TEST_AV_PREPARE_FAIL"))throw std::runtime_error("injected native preparation failure");
+                auto checkPreparation=[&]{
+                    if(avInput.stop.load())throw std::runtime_error("native preparation cancelled");
+                    if(std::chrono::steady_clock::now()>=request.deadline)throw std::runtime_error("native preparation deadline");
+                };
+                checkPreparation();flChannelInfo info{};
+                if(!s.channel || flQuery(s.channel,&info)!=FL_OK)throw std::runtime_error("native preparation channel unavailable");
+                if(info.generation!=s.generation){
+                    dropRing(s);s.generation=info.generation;s.width=info.width;s.height=info.height;
+                    if(!importSync(s))throw std::runtime_error("native preparation fence import failed");
+                }
+                // These are destination conversion images, never unproduced
+                // source pixels. Prepare the existing bounded ring's targets
+                // before the final epoch, not during its first timed frames.
+                if(info.format!=FL_FORMAT_BGRA8){
+                    if(!ensurePool())throw std::runtime_error("native preparation pool failed");
+                    for(uint32_t slot=0;slot<info.poolSize;++slot){
+                        checkPreparation();const uint32_t key=(s.uid<<4)|slot;
+                        if(!pool.addOwnedSurface(vk,key,info.width,info.height))throw std::runtime_error("native preparation surface failed");
+                        s.imported[slot]=true;
+                        if(passBound && !passNeedsBind && !pass.addSlot(vk,pool,key))throw std::runtime_error("native preparation descriptor failed");
+                    }
+                    if(!passBound || passNeedsBind){passBound=pass.bindPool(vk,pool);passNeedsBind=false;
+                        if(!passBound)throw std::runtime_error("native preparation descriptors failed");}
+                }
+                checkPreparation();
+                std::fprintf(stderr,"AV_NATIVE_PREPARED slots=%u generation=%llu format=%u\n",info.poolSize,(unsigned long long)info.generation,unsigned(info.format));
+                return;
+            }
+            preparationDelayDone=false;
+            host.forgetStream(s.uid);dropRing(s);
             if(s.channel)flClose(s.channel);s.channel=nullptr;s.generation=0;
             if(!request.end){s.name=request.name;
                 if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
@@ -512,6 +565,7 @@ int runWinService(const WinServeOptions& options) {
             }
             const uint32_t key = (s.uid << 4) | f.slot;
             if(now.format!=FL_FORMAT_BGRA8) {
+                if(scheduled && lazyPreparationControl)preparationDelay(std::chrono::steady_clock::now()+std::chrono::milliseconds(options.avOptions.timeoutMs));
                 if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {failedAdoption();continue;}
                 passNeedsBind=false;s.imported[f.slot]=true;
             }
