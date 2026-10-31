@@ -1,0 +1,42 @@
+{
+  "case": "1920x1080-60-NV12-av",
+  "status_sample_window_s": [
+    5.030432200059295,
+    39.981857100035995
+  ],
+  "producer_cpu_core_percent": 45.956638523228584,
+  "renderer_cpu_core_percent": 23.291253570624605,
+  "due_decision_rate": 60.02616505633218,
+  "observed_due_max": 2700,
+  "transport": {
+    "event": "video-transport-summary",
+    "received": 2700,
+    "submitted": 2700,
+    "dropped": 0,
+    "ring_full_drops": 0
+  },
+  "adoptions_per_5s": [
+    236,
+    301,
+    300,
+    300,
+    300,
+    300,
+    300,
+    300,
+    301
+  ],
+  "late_max": 0,
+  "import_failures_max": 0,
+  "presentation_errors_max": 0,
+  "csv_files": 0,
+  "secondary_post10s_window": {
+    "window_s": [
+      10.042534400010481,
+      39.981857100035995
+    ],
+    "producer_cpu_core_percent": 46.29154486513548,
+    "renderer_cpu_core_percent": 22.806544651707107,
+    "due_decision_rate": 60.02139787879933
+  }
+}
