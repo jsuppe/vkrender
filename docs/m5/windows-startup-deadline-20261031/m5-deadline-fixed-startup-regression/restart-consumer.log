@@ -1,0 +1,3 @@
+FAIL process deadline
+{"event":"startup-preroll-delay","requested_ms":1500,"elapsed_us":2735341}
+{"event":"playback-clock","policy":"producer","system_now_ns":1404647736108300,"selected_now_ns":1404647736108100,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":1404647785969350,"playback_base_ns":1404647785969350,"latency_ns":100000000,"resample_slaves":0}

@@ -1,0 +1,1 @@
+filesrc location="C:/Users/jonsu/dev/m5-deadline-fixed-preconnect-regression/legacy/decoded-source.avi" ! avidemux name=demux demux.video_0 ! queue ! jpegdec ! videoconvert ! @VIDEO_SINK@ demux.audio_0 ! queue ! audioconvert ! @AUDIO_SINK@

@@ -1,0 +1,6 @@
+{"event":"session-ready","instance":"ad408402398504cee297e7d1b4468338","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1404647785968700}
+{"event":"media-progress","instance":"ad408402398504cee297e7d1b4468338","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"ad408402398504cee297e7d1b4468338","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+FAIL process deadline
+{"event":"producer-pacing","pacing_ppm":0,"max_push_ns":58400}
