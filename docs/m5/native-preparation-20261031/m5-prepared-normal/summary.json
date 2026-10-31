@@ -1,0 +1,58 @@
+[
+  {
+    "case": "1920x1080-60-NV12-av",
+    "wall_s": 46.682461000047624,
+    "exit_codes": [
+      0,
+      0
+    ],
+    "commands": [
+      [
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink_av_producer.exe",
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+        "--session",
+        "C:\\Users\\jonsu\\dev\\m5-prepared-normal\\1920x1080-60-NV12-av\\session",
+        "--format",
+        "NV12",
+        "--frames",
+        "2700",
+        "--width",
+        "1920",
+        "--height",
+        "1080",
+        "--fps",
+        "60",
+        "--input-pipeline",
+        "C:\\Users\\jonsu\\dev\\m5-prepared-normal\\1920x1080-60-NV12-av\\source.pipeline",
+        "--timeout-ms",
+        "53000"
+      ],
+      [
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe",
+        "--serve",
+        "1920x1080-60-NV12-av",
+        "--control-port",
+        "49941",
+        "--av-exit-on-end",
+        "--av-session",
+        "C:\\Users\\jonsu\\dev\\m5-prepared-normal\\1920x1080-60-NV12-av\\session",
+        "--av-plugin",
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\gstframelink.dll",
+        "--av-format",
+        "NV12",
+        "--av-width",
+        "1920",
+        "--av-height",
+        "1080",
+        "--av-fps",
+        "60",
+        "--av-audio-sink",
+        "autoaudiosink",
+        "--av-clock",
+        "producer",
+        "--av-timeout-ms",
+        "53000"
+      ]
+    ]
+  }
+]

@@ -1,0 +1,48 @@
+[  1%] Built target volk
+[  3%] Built target vkr_android_control_test
+[  3%] Built target vkr_common
+[  3%] Built target glslang-default-resource-limits
+[  6%] Built target framelink
+[  8%] Built target vkr_control_test
+[ 49%] Built target glfw
+[ 49%] Built target glslang
+[ 50%] Built target vkr_av_schedule_test
+[ 51%] Built target vkr_nv12_cpu_test
+[ 52%] Built target vkr_headless_pacer_test
+[ 53%] Built target vkr_av_clock_contract_test
+[ 55%] Built target vkr_control_short_write_test
+[ 56%] Built target vkr_preview_mailbox_test
+[ 57%] Built target OSDependent
+[ 57%] Built target GenericCodeGen
+[ 59%] Built target framelink_producer
+[ 60%] Built target framelink_consumer
+[ 61%] Built target gstframelink
+[ 61%] Built target framelink_av_session
+[ 61%] Building CXX object framelink/CMakeFiles/framelink_av_producer.dir/samples/av_apps.cpp.o
+[ 61%] Building CXX object framelink/CMakeFiles/framelink_av_consumer.dir/samples/av_apps.cpp.o
+[ 63%] Built target vkdecoder
+[ 63%] Building CXX object framelink/CMakeFiles/framelink_av_playback.dir/samples/av_apps.cpp.o
+[ 67%] Built target vkr_wl_dmabuf_client
+[ 69%] Built target glslang-standalone
+[ 70%] Built target vkr_rtsp
+[ 71%] Built target vkr_webrtc
+[ 72%] Built target vkr_ipc_test
+[ 77%] Built target vkr_portable_output_check
+[ 77%] Built target vkr_gpu_output_caps
+[ 77%] Built target vkr_gpu_sync_fd_test
+[ 77%] Built target vkr_scene_layout_test
+[ 79%] Built target vkr_gpu_output_pixels
+[ 82%] Built target SPIRV
+[ 82%] Built target vkr_android_surface_generations_test
+[ 82%] Built target MachineIndependent
+[ 85%] Built target vkr_shaders
+[ 86%] Linking CXX static library libframelink_av_playback.a
+[ 87%] Built target framelink_av_playback
+[ 87%] Building CXX object CMakeFiles/vkrenderer.dir/renderer/main.cpp.o
+[ 87%] Building CXX object CMakeFiles/vkrenderer.dir/renderer/wayland_compositor.cpp.o
+[ 88%] Linking CXX executable framelink_av_consumer
+[ 89%] Built target framelink_av_consumer
+[ 90%] Linking CXX executable framelink_av_producer
+[ 91%] Built target framelink_av_producer
+[ 92%] Linking CXX executable vkrenderer
+[100%] Built target vkrenderer

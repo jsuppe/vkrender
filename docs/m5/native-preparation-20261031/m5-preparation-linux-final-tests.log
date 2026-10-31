@@ -1,0 +1,50 @@
+Internal ctest changing into directory: /tmp/vkrender-m5-native-budget-build
+Test project /tmp/vkrender-m5-native-budget-build
+      Start  1: ipc
+ 1/22 Test  #1: ipc ..............................   Passed    0.00 sec
+      Start  2: mixed_rgb_nv12_input
+ 2/22 Test  #2: mixed_rgb_nv12_input .............   Passed    2.47 sec
+      Start  3: vulkan_sync_fd_contract
+ 3/22 Test  #3: vulkan_sync_fd_contract ..........   Passed    0.30 sec
+      Start  4: shared_scene_layouts
+ 4/22 Test  #4: shared_scene_layouts .............   Passed    0.00 sec
+      Start  5: gpu_output_pixels_1
+ 5/22 Test  #5: gpu_output_pixels_1 ..............   Passed    1.42 sec
+      Start  6: gpu_output_pixels_2
+ 6/22 Test  #6: gpu_output_pixels_2 ..............   Passed    1.42 sec
+      Start  7: gpu_output_pixels_3
+ 7/22 Test  #7: gpu_output_pixels_3 ..............   Passed    1.39 sec
+      Start  8: gpu_output_pixels_4
+ 8/22 Test  #8: gpu_output_pixels_4 ..............   Passed    1.42 sec
+      Start  9: gpu_output_pixels_4k_rgba
+ 9/22 Test  #9: gpu_output_pixels_4k_rgba ........   Passed    3.57 sec
+      Start 10: shared_moderation
+10/22 Test #10: shared_moderation ................   Passed    0.00 sec
+      Start 11: control_http
+11/22 Test #11: control_http .....................   Passed    0.12 sec
+      Start 12: control_preview_admission
+12/22 Test #12: control_preview_admission ........   Passed    1.41 sec
+      Start 13: android_surface_generations
+13/22 Test #13: android_surface_generations ......   Passed    0.00 sec
+      Start 14: android_stream_owners
+14/22 Test #14: android_stream_owners ............   Passed    0.45 sec
+      Start 15: android_control_mailbox
+15/22 Test #15: android_control_mailbox ..........   Passed    0.00 sec
+      Start 16: android_control_aidl
+16/22 Test #16: android_control_aidl .............   Passed    0.02 sec
+      Start 17: control_preview_short_write
+17/22 Test #17: control_preview_short_write ......   Passed    0.06 sec
+      Start 18: preview_mailbox
+18/22 Test #18: preview_mailbox ..................   Passed    0.00 sec
+      Start 19: av_schedule
+19/22 Test #19: av_schedule ......................   Passed    0.00 sec
+      Start 20: av_clock_contract
+20/22 Test #20: av_clock_contract ................   Passed    0.01 sec
+      Start 21: headless_pacer
+21/22 Test #21: headless_pacer ...................   Passed    0.00 sec
+      Start 22: nv12_cpu
+22/22 Test #22: nv12_cpu .........................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 22
+
+Total Test time (real) =  14.07 sec
