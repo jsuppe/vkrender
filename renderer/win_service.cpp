@@ -584,6 +584,8 @@ int runWinService(const WinServeOptions& options) {
 
         std::vector<SceneHost::StreamRef> streams;
         SceneHost::Extras extras;
+        std::vector<VkSemaphore> retireSems;
+        std::vector<uint64_t> retireValues;
         // Reap departures and record liveness. Consumed-fence signals are
         // issued for EVERY live slot - hidden or rotated-out producers must
         // keep flowing, or their rings fill and they stall behind a moderator
@@ -591,24 +593,35 @@ int runWinService(const WinServeOptions& options) {
         bool live[kInSlots] = {};
         for (SlotIn& s : inSlots) {
             const size_t idx = (size_t)(&s - inSlots.data());
+            if (s.departing && s.currentSlot >= 0 &&
+                ((nowNs() - s.departedNs) > 3000000000ll || !host.retainsStream((uint64_t)s.uid))) {
+                dropRing(s);s.departing=false;s.generation=0;
+                continue;
+            }
             if (s.pendingConsumed && s.consumedSem) {
-                extras.signalSems.push_back(s.consumedSem);
-                extras.signalValues.push_back(s.pendingConsumed);
+                retireSems.push_back(s.consumedSem);
+                retireValues.push_back(s.pendingConsumed);
                 s.lastConsumedSignal = s.pendingConsumed;
                 s.pendingConsumed = 0;
             }
             if (s.currentSlot < 0) continue;
-            const bool expired =
-                s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
-            if (s.departing && (expired || !host.retainsStream((uint64_t)s.uid))) {
-                dropRing(s);
-                s.departing = false;
-                s.generation = 0; // force a re-import when someone attaches
-                continue;
-            }
             if (s.departing) continue;
             live[idx] = true;
             mod.ensureOrdered((uint32_t)idx);
+        }
+        // Retired input frames were sampled only by earlier queue submissions.
+        // Signal after those reads, BEFORE acquiring the next swapchain image:
+        // bundling retirement with the new frame also waits for its vsync and
+        // producer-ready semaphore, unnecessarily starving the bounded ring.
+        if (!retireSems.empty()) {
+            VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+            timeline.signalSemaphoreValueCount=uint32_t(retireValues.size());
+            timeline.pSignalSemaphoreValues=retireValues.data();
+            VkSubmitInfo retire{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            retire.pNext=&timeline;retire.signalSemaphoreCount=uint32_t(retireSems.size());
+            retire.pSignalSemaphores=retireSems.data();
+            if(vkQueueSubmit(vk.queue,1,&retire,VK_NULL_HANDLE)!=VK_SUCCESS)
+                throw std::runtime_error("A/V input retirement submit failed");
         }
         // Selection: spotlight, then pinned, then the carousel over the rest
         // (see Moderation::select). Only the SELECTED streams reach the layout
