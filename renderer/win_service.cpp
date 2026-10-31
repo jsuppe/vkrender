@@ -639,7 +639,7 @@ int runWinService(const WinServeOptions& options) {
             if (s.pendingConsumed && s.consumedSem) {
                 retireSems.push_back(s.consumedSem);
                 retireValues.push_back(s.pendingConsumed);
-                retireOwners.push_back(&s);
+                if (traceRetirement && vkrtrace::enabled()) retireOwners.push_back(&s);
                 s.lastConsumedSignal = s.pendingConsumed;
                 s.pendingConsumed = 0;
             }
