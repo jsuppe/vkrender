@@ -45,3 +45,10 @@ SEPARATE headless run because the gate is intentionally headless-only:96actual
 488adopted/rendered/GPU-completed and112explicit failure/backpressure outcomes.
 The native import-failure run with the old semaphore allocation had no actual
 GPU gates and must not be used as delayed-GPU evidence.
+
+Analyzer94a18bf resolves the preserved resize result without a rerun:600fixture
+identities accounted,1189draw/present attempts (1187accepted,2OUT_OF_DATE).
+PTS1.550s was rejected then successfully retried; PTS3.583333333s had only a
+rejected attempt and is classified presentation failure. Thus552unique accepted
+identities plus47earlier explicit drops plus1presentation failure =600. This is
+complete accounting of a disrupted resize test, not lossless delivery.
