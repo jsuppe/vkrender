@@ -1,0 +1,5 @@
+{"event":"session-ready","instance":"d270a8213166e31473739fea43e725b8","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1405209243050800}
+{"event":"video-transport-summary","received":2700,"submitted":2700,"dropped":0,"ring_full_drops":0}
+{"event":"session-complete","instance":"d270a8213166e31473739fea43e725b8","generation":1,"format":"BGRA","video_frames":2700,"audio_blocks":2700,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":2700,"audio_blocks":2700,"errors":0,"disconnects":0}

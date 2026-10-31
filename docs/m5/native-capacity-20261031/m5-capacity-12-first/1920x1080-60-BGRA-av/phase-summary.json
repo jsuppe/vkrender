@@ -1,0 +1,37 @@
+{
+  "gst.frame_receive->flEndSubmit_ms": {
+    "n": 2580,
+    "min": 0.3339,
+    "p50": 0.3728,
+    "p99": 0.4678,
+    "max": 0.8209
+  },
+  "flEndSubmit->ipc.frame_received_ms": {
+    "n": 2580,
+    "min": -0.0052,
+    "p50": 0.0032,
+    "p99": 0.0045,
+    "max": 0.0094
+  },
+  "ipc.frame_received->av.frame_adopt_ms": {
+    "n": 2580,
+    "min": 98.079,
+    "p50": 99.7243,
+    "p99": 100.5338,
+    "max": 100.7825
+  },
+  "gst.frame_receive->av.frame_present_submit_ms": {
+    "n": 2580,
+    "min": 106.7664,
+    "p50": 108.4396,
+    "p99": 109.2468,
+    "max": 109.4889
+  },
+  "producer_end_to_next_swapchain_acquire_observation_ms": {
+    "n": 2580,
+    "min": 0.0001,
+    "p50": 2.91825,
+    "p99": 8.2747,
+    "max": 8.3612
+  }
+}
