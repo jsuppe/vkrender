@@ -392,7 +392,7 @@ int runWinService(const WinServeOptions& options) {
             if(s.channel)flClose(s.channel);s.channel=nullptr;s.generation=0;
             if(!request.end){s.name=request.name;
                 if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
-                    (flFormat)request.config.video.format,8,
+                    (flFormat)request.config.video.format,AvRingBudget::ringSlots,
                     FL_GPU_SYNC,
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
@@ -422,7 +422,7 @@ int runWinService(const WinServeOptions& options) {
             flResult r=FL_TIMEOUT;
             AvAcquireBudget acquireBudget;
             auto acquirePending=[&]{
-                acquireBudget.poll(unsigned(s.pending.size()),6,[&]{
+                acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
                     flFrame next{};r=flAcquireFrame(s.channel,&next,0);
                     if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
                 });

@@ -31,6 +31,8 @@ public:
     std::unique_lock<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
     base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    budgetNs_=AvRingBudget::maxLatencyNs(c.video.fpsNum,c.video.fpsDen);
+    reportBudget();
     metrics_={};metricsValid_=false;
     request_=std::make_unique<Request>(Request{c,n,false});
     cv_.wait(l,[this]{return !request_||stop.load();});
@@ -38,6 +40,7 @@ public:
    cb.onClock=[this](const av::PlaybackClock& clock){std::lock_guard<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
     base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    reportBudget();
    };
    cb.onEnd=[this]{std::unique_lock<std::mutex> l(m_);if(stop)return;
     if(clock_){gst_object_unref(clock_);clock_=nullptr;}audio_=false;
@@ -78,6 +81,15 @@ public:
  MetricsSnapshot metrics(){std::lock_guard<std::mutex> l(m_);return {metrics_,metricsValid_};}
  bool audioMaster(){std::lock_guard<std::mutex> l(m_);return audio_;}
 private:
+ // Caller holds m_. Report negotiated latency; never lower the common A/V epoch.
+ void reportBudget(){
+  if(latency_>budgetNs_ && (!budgetWarned_ || warnedLatency_!=latency_)){
+   std::fprintf(stderr,"AV_RING_BUDGET latency_ns=%llu nominal_max_ns=%llu ring_slots=%u pending_slots=%u policy=bounded_backpressure_drops_possible\n",
+    (unsigned long long)latency_,(unsigned long long)budgetNs_,AvRingBudget::ringSlots,AvRingBudget::pendingSlots);
+   budgetWarned_=true;warnedLatency_=latency_;
+  }
+ }
+ uint64_t budgetNs_=0,warnedLatency_=0;bool budgetWarned_=false;
  av::PlaybackMetrics metrics_{};bool metricsValid_=false;
  av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;
  std::thread worker_;std::mutex m_;std::condition_variable cv_;std::unique_ptr<Request> request_;
