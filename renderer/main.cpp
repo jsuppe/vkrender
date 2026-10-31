@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <algorithm>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -115,6 +116,12 @@ int main(int argc, char** argv) {
             if(policy!="audio" && policy!="producer"){fprintf(stderr,"--av-clock must be audio or producer\n");return 1;}
             avOptions.clockPolicy=policy=="producer" ? av::PlaybackClockPolicy::ProducerMapped : av::PlaybackClockPolicy::AudioPreferred;
         }
+        else if (!strcmp(argv[i], "--av-media-run-ms") && i+1<argc) {
+            const char* value=argv[++i];char* end=nullptr;errno=0;
+            const auto n=std::strtoul(value,&end,10);
+            if(!*value || std::strspn(value,"0123456789")!=std::strlen(value) || !end || *end || errno || !n || n>300000){fprintf(stderr,"--av-media-run-ms must be 1..300000\n");return 1;}
+            avOptions.mediaRunMs=static_cast<unsigned>(n);
+        }
         else if (!strcmp(argv[i], "--av-format") && i+1<argc) avOptions.format=argv[++i];
         else if ((!strcmp(argv[i],"--av-width") || !strcmp(argv[i],"--av-height") ||
                   !strcmp(argv[i],"--av-fps") || !strcmp(argv[i],"--av-rate") ||
@@ -167,7 +174,7 @@ int main(int argc, char** argv) {
             else if (mode != "latest") { fprintf(stderr, "bad --pacing\n"); return 1; }
         } else {
             fprintf(stderr,
-                    "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-clock audio|producer --av-timeout-ms N --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
+                    "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-clock audio|producer --av-timeout-ms N --av-media-run-ms N --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
                     "[--wayland [socket]] [--serve [pipe]] [--scene-output channel (repeatable)] "
                     "[--window WxH+X+Y[:bezel]]... [--bezel px] "
                     "[--headless N [--dump out.ppm]]\n");
