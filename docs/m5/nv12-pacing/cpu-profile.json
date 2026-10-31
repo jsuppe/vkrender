@@ -1,0 +1,182 @@
+{
+  "m5-nv12-pacing-before": {
+    "1920x1080-60-NV12-av": {
+      "service.headless_pacing": {
+        "count": 415,
+        "median_ms": 16.4851,
+        "p99_ms": 17.3278,
+        "max_ms": 17.4475
+      },
+      "service.input_cpu_conversion": {
+        "count": 344,
+        "median_ms": 10.8479,
+        "p99_ms": 18.1244,
+        "max_ms": 28.596
+      }
+    }
+  },
+  "m5-nv12-pacing-after": {
+    "1920x1080-30-NV12-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 15.953949999999999,
+        "p99_ms": 17.9575,
+        "max_ms": 17.9958
+      },
+      "service.input_cpu_map": {
+        "count": 296,
+        "median_ms": 0.7999499999999999,
+        "p99_ms": 2.385,
+        "max_ms": 2.429
+      },
+      "service.input_cpu_pixels": {
+        "count": 296,
+        "median_ms": 8.39205,
+        "p99_ms": 8.8456,
+        "max_ms": 10.2304
+      },
+      "service.input_cpu_upload": {
+        "count": 296,
+        "median_ms": 0.3076,
+        "p99_ms": 0.3952,
+        "max_ms": 1.303
+      },
+      "service.input_cpu_conversion": {
+        "count": 296,
+        "median_ms": 10.41765,
+        "p99_ms": 12.0356,
+        "max_ms": 12.9304
+      }
+    },
+    "1920x1080-60-NV12-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 7.1488,
+        "p99_ms": 17.9732,
+        "max_ms": 18.0045
+      },
+      "service.input_cpu_map": {
+        "count": 347,
+        "median_ms": 0.6704,
+        "p99_ms": 1.3782,
+        "max_ms": 1.3999
+      },
+      "service.input_cpu_pixels": {
+        "count": 347,
+        "median_ms": 8.3939,
+        "p99_ms": 8.9736,
+        "max_ms": 9.1051
+      },
+      "service.input_cpu_upload": {
+        "count": 347,
+        "median_ms": 0.3071,
+        "p99_ms": 0.3809,
+        "max_ms": 1.3295
+      },
+      "service.input_cpu_conversion": {
+        "count": 347,
+        "median_ms": 10.2779,
+        "p99_ms": 11.6742,
+        "max_ms": 12.757
+      }
+    },
+    "160x90-50-NV12-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 16.44625,
+        "p99_ms": 17.9651,
+        "max_ms": 18.2235
+      },
+      "service.input_cpu_map": {
+        "count": 488,
+        "median_ms": 0.1702,
+        "p99_ms": 0.3703,
+        "max_ms": 0.5932
+      },
+      "service.input_cpu_pixels": {
+        "count": 488,
+        "median_ms": 0.0587,
+        "p99_ms": 0.0652,
+        "max_ms": 0.0807
+      },
+      "service.input_cpu_upload": {
+        "count": 488,
+        "median_ms": 0.0018,
+        "p99_ms": 0.0045,
+        "max_ms": 0.945
+      },
+      "service.input_cpu_conversion": {
+        "count": 488,
+        "median_ms": 0.23875000000000002,
+        "p99_ms": 0.7962,
+        "max_ms": 2.036
+      }
+    },
+    "160x90-50-BGRA-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 16.46365,
+        "p99_ms": 17.9603,
+        "max_ms": 18.4518
+      }
+    },
+    "1920x1080-30-BGRA-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 16.463250000000002,
+        "p99_ms": 17.968,
+        "max_ms": 18.4692
+      }
+    },
+    "1920x1080-60-BGRA-av": {
+      "service.headless_pacing": {
+        "count": 642,
+        "median_ms": 16.4648,
+        "p99_ms": 17.954,
+        "max_ms": 18.4498
+      }
+    }
+  },
+  "m5-nv12-pacing-16ms": {
+    "1920x1080-60-NV12-av": {
+      "service.headless_pacing": {
+        "count": 668,
+        "median_ms": 5.6779,
+        "p99_ms": 16.9655,
+        "max_ms": 16.9897
+      },
+      "service.input_cpu_map": {
+        "count": 552,
+        "median_ms": 0.6745,
+        "p99_ms": 1.3658,
+        "max_ms": 1.4188
+      },
+      "service.input_cpu_pixels": {
+        "count": 552,
+        "median_ms": 8.3973,
+        "p99_ms": 8.5601,
+        "max_ms": 9.6418
+      },
+      "service.input_cpu_upload": {
+        "count": 552,
+        "median_ms": 0.3072,
+        "p99_ms": 0.3538,
+        "max_ms": 3.2738
+      },
+      "service.input_cpu_conversion": {
+        "count": 552,
+        "median_ms": 10.27345,
+        "p99_ms": 11.6619,
+        "max_ms": 14.4199
+      }
+    },
+    "1920x1080-60-BGRA-av": {
+      "service.headless_pacing": {
+        "count": 669,
+        "median_ms": 15.9483,
+        "p99_ms": 16.9699,
+        "max_ms": 16.9829
+      }
+    }
+  }
+}

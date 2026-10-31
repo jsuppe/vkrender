@@ -1,0 +1,20 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('1920x1080-60-NV12-av.in.0' .. '1920x1080-60-NV12-av.in.11')
+[INF] control: moderation API on http://127.0.0.1:58835/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: created owned surface key=17 1920x1080 (shm upload path, 1 total)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=16 1920x1080 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=21 1920x1080 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=19 1920x1080 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=20 1920x1080 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=22 1920x1080 (shm upload path, 6 total)
+[INF] service: display wake released (presentation idle)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=18 1920x1080 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=23 1920x1080 (shm upload path, 8 total)
+[INF] service: display wake released (presentation idle)
+[INF] service: system wake held (presentation active)
+[INF] scene: 190 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 131 adoptions in 5s (pool 8 slots, 1 producers)

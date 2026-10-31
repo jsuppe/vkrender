@@ -1,0 +1,4 @@
+{"event":"session-ready","instance":"9205ad34aec7a7acffb9346fbfc965c8","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"video-transport-summary","received":600,"submitted":593,"dropped":7,"ring_full_drops":7}
+{"event":"session-complete","instance":"9205ad34aec7a7acffb9346fbfc965c8","generation":1,"format":"BGRA","video_frames":600,"audio_blocks":600,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":600,"audio_blocks":600,"errors":0,"disconnects":0}
