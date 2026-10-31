@@ -613,7 +613,9 @@ int runWinService(const WinServeOptions& options) {
         // pts_ns=current media PTS. These are NOT GPU duration measurements.
         const auto retireTrace = [&](const char* op, const SlotIn& s, uint64_t value, int64_t result) {
             if (!traceRetirement || !vkrtrace::enabled()) return;
-            const int64_t pts = s.currentSlot >= 0 ? s.traceSlots[s.currentSlot].pts : -1;
+            int64_t pts = -1;
+            for (const auto& frame : s.traceSlots)
+                if (frame.key >= 0 && frame.key == s.currentSlot) {pts=frame.pts;break;}
             vkrtrace::record({op,vkrtrace::clockNs(),uint64_t(s.pending.size()),
                 vkrtrace::id(s.name.c_str()),s.currentReady,value,s.generation,pts,result});
         };
