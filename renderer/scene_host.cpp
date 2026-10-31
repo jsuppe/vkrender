@@ -242,13 +242,12 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
         cbai.commandBufferCount = 1;
         vkAllocateCommandBuffers(vk.device, &cbai, &f.cmd);
         f.acquireSems.resize(windowCount);
-        f.renderDoneSems.resize(windowCount);
         for (size_t w = 0; w < windowCount; ++w) {
             VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
             vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSems[w]);
-            vkCreateSemaphore(vk.device, &sci, nullptr, &f.renderDoneSems[w]);
         }
     }
+    if (!rebuildPresentSemaphores(vk)) return false;
     lastFrameNs_ = nowNs();
     rateWindowStart_ = nowNs();
     lastSnapshotNs_ = nowNs();
@@ -321,8 +320,8 @@ void SceneHost::handleKey(int key) {
 
 bool SceneHost::recreateWindow(VkContext& vk, size_t index) {
     vkDeviceWaitIdle(vk.device);
-    if (index == 0) return vk.recreateSwapchain();
-    return createWindowSwapchain(vk, extra_[index - 1]);
+    const bool ok = index == 0 ? vk.recreateSwapchain() : createWindowSwapchain(vk, extra_[index - 1]);
+    return ok && rebuildPresentSemaphores(vk);
 }
 
 // ---- M43: runtime display outputs (headless appliance) ---------------------
@@ -402,6 +401,25 @@ void SceneHost::recomputeDisplayRects() {
     }
 }
 
+bool SceneHost::rebuildPresentSemaphores(VkContext& vk) {
+    // A graphics submission fence does not retire a presentation wait. Reuse
+    // only after reacquiring the SAME swapchain image, not a frame-in-flight.
+    // Callers drain the device before swapchain recreation/display changes.
+    for (auto& sems : presentSems_)
+        for (auto sem : sems) if (sem) vkDestroySemaphore(vk.device, sem, nullptr);
+    presentSems_.clear();
+    presentSems_.resize(1 + extra_.size());
+    for (size_t w = vk.headless ? 1 : 0; w < presentSems_.size(); ++w) {
+        auto& sems = presentSems_[w];
+        sems.assign(w == 0 ? vk.swapImages.size() : extra_[w-1].images.size(), VK_NULL_HANDLE);
+        for (auto& sem : sems) {
+            VkSemaphoreCreateInfo ci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+            if (vkCreateSemaphore(vk.device, &ci, nullptr, &sem) != VK_SUCCESS) return false;
+        }
+    }
+    return true;
+}
+
 bool SceneHost::resizeFrameSync(VkContext& vk) {
     vkDeviceWaitIdle(vk.device);
     const size_t windowCount = 1 + extra_.size();
@@ -411,18 +429,15 @@ bool SceneHost::resizeFrameSync(VkContext& vk) {
         f.testGate = VK_NULL_HANDLE;
         f.testGateValue = 0;
         for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
-        for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
         f.acquireSems.assign(windowCount, VK_NULL_HANDLE);
-        f.renderDoneSems.assign(windowCount, VK_NULL_HANDLE);
         for (size_t w = 0; w < windowCount; ++w) {
             VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-            if (vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSems[w]) != VK_SUCCESS ||
-                vkCreateSemaphore(vk.device, &sci, nullptr, &f.renderDoneSems[w]) != VK_SUCCESS)
+            if (vkCreateSemaphore(vk.device, &sci, nullptr, &f.acquireSems[w]) != VK_SUCCESS)
                 return false;
         }
     }
     lastImageIndex_.assign(windowCount, 0);
-    return true;
+    return rebuildPresentSemaphores(vk);
 }
 
 bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
@@ -796,7 +811,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     std::vector<VkSemaphore> signalSems;
     std::vector<uint64_t> signalValues;
     for (size_t w = firstChain; w < windowCount; ++w) {
-        signalSems.push_back(f.renderDoneSems[w]);
+        signalSems.push_back(presentSems_[w][imageIndex[w]]);
         signalValues.push_back(0);
     }
     for (size_t i = 0; i < extras.signalSems.size(); ++i) {
@@ -864,7 +879,8 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         std::vector<VkResult> results(chains.size());
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = (uint32_t)(windowCount - firstChain);
-        pi.pWaitSemaphores = f.renderDoneSems.data() + firstChain;
+        // The first signals are exactly the acquired-image presentation semaphores.
+        pi.pWaitSemaphores = signalSems.data();
         pi.swapchainCount = (uint32_t)chains.size();
         pi.pSwapchains = chains.data();
         pi.pImageIndices = imageIndex.data() + firstChain;
@@ -952,17 +968,18 @@ void SceneHost::destroy(VkContext& vk) {
         }
     }
     portableOutput_.destroy(vk);
+    for (auto& sems : presentSems_)
+        for (auto sem : sems) if (sem) vkDestroySemaphore(vk.device, sem, nullptr);
+    presentSems_.clear();
     for (auto& f : frames_) {
         if (f.testRelease.joinable()) f.testRelease.join();
         if (f.testGate) vkDestroySemaphore(vk.device, f.testGate, nullptr);
         f.testGate = VK_NULL_HANDLE;
         f.testGateValue = 0;
         for (VkSemaphore s : f.acquireSems) vkDestroySemaphore(vk.device, s, nullptr);
-        for (VkSemaphore s : f.renderDoneSems) vkDestroySemaphore(vk.device, s, nullptr);
         f.gpuTrace.destroy(vk);
         if (f.inFlight) vkDestroyFence(vk.device, f.inFlight, nullptr);
         f.acquireSems.clear();
-        f.renderDoneSems.clear();
         f.inFlight = VK_NULL_HANDLE;
     }
     if (cmdPool_) vkDestroyCommandPool(vk.device, cmdPool_, nullptr);

@@ -188,6 +188,8 @@ private:
     };
     void recomputeDisplayRects();
     bool resizeFrameSync(VkContext& vk);
+    bool rebuildPresentSemaphores(VkContext& vk); // device idle, indexed by acquired image
+    std::vector<std::vector<VkSemaphore>> presentSems_;
 
     std::vector<WindowSpec> specs_;
     std::vector<Window> extra_;
@@ -218,7 +220,6 @@ private:
         uint64_t traceSubmission = 0;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window
-        std::vector<VkSemaphore> renderDoneSems; // per window
     };
     FrameSync frames_[kFramesInFlight];
     PortableOutput portableOutput_;
