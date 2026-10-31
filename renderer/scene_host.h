@@ -159,7 +159,14 @@ public:
         std::vector<VkImageView> views;
     };
 
+    // Submission observations, not display scanout timestamps. Includes repeated content.
+    uint64_t presentCalls() const { return presentCalls_; }
+    uint64_t presentErrors() const { return presentErrors_; }
+    int64_t presentFirstNs() const { return presentFirstNs_; }
+    int64_t presentLastNs() const { return presentLastNs_; }
 private:
+    uint64_t presentCalls_ = 0, presentErrors_ = 0;
+    int64_t presentFirstNs_ = 0, presentLastNs_ = 0;
     struct WindowRects {
         float u0, v0, u1, v1; // canvas region
     };

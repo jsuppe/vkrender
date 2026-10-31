@@ -14,7 +14,7 @@ int main(int argc,char**argv){
  m.spotlight=2;if(m.select(live,0)!=std::vector<uint32_t>({2}))return 4;
  live[2]=false;if(m.select(live,0)!=std::vector<uint32_t>({3,0}))return 5;
  if(argc<2)return 0;
- vkr::ControlApi api;vkr::ControlSnapshot s;s.layout="wall";s.cameraAvailable=false;s.previewAvailable=argc>2;
+ vkr::ControlApi api;vkr::ControlSnapshot s;s.layout="wall";s.presentCalls=123;s.presentErrors=2;s.presentFirstNs=1000000000;s.presentLastNs=3000000000;s.cameraAvailable=false;s.previewAvailable=argc>2;
  s.avAudioMetricsValid=true;s.avAudioBlocks=17;s.avAudioSamples=16320;s.avAudioArrivalDriftNs=-420000;s.avGeneration=3;s.avAudioQueueEmpty=9;
  vkr::ControlStreamInfo stream;stream.slot=0;stream.connected=true;s.streams.push_back(stream);api.publish(s);
  if(!api.start(atoi(argv[1])))return 6;

@@ -68,6 +68,8 @@ struct ControlDisplayInfo {
 };
 
 struct ControlSnapshot {
+    uint64_t presentCalls=0,presentErrors=0;
+    int64_t presentFirstNs=0,presentLastNs=0;
     bool avConfigured=false,avActive=false,avAudioMaster=false,avMuted=false,avPaused=false;
     uint64_t avImportFailures=0;
     uint64_t avResets=0,avPresented=0,avHeld=0,avLate=0,avInvalid=0,avSkipped=0,avQueued=0,avMaxQueued=0;

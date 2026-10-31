@@ -737,6 +737,8 @@ int runWinService(const WinServeOptions& options) {
             if(host.takePreview(bgra))
                 control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
             ControlSnapshot snap;
+            snap.presentCalls=host.presentCalls();snap.presentErrors=host.presentErrors();
+            snap.presentFirstNs=host.presentFirstNs();snap.presentLastNs=host.presentLastNs();
             switch (host.layout()) {
                 case SceneLayout::Presentation: snap.layout = "presentation"; break;
                 case SceneLayout::TwoCubes: snap.layout = "two-cubes"; break;

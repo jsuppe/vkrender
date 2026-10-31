@@ -847,7 +847,11 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         pi.pSwapchains = chains.data();
         pi.pImageIndices = imageIndex.data() + firstChain;
         pi.pResults = results.data();
-        vkrtrace::call("scene.present_call_cpu", [&]{return vkQueuePresentKHR(vk.queue, &pi);});
+        const VkResult presentResult = vkrtrace::call("scene.present_call_cpu", [&]{return vkQueuePresentKHR(vk.queue, &pi);});
+        ++presentCalls_;
+        presentLastNs_ = nowNs();
+        if (!presentFirstNs_) presentFirstNs_ = presentLastNs_;
+        if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR) ++presentErrors_;
         for (size_t w = 0; w < results.size(); ++w)
             if (results[w] == VK_ERROR_OUT_OF_DATE_KHR || results[w] == VK_SUBOPTIMAL_KHR)
                 recreateWindow(vk, w + firstChain);

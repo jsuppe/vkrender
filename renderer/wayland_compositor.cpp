@@ -1223,6 +1223,8 @@ int runWaylandCompositor(const WaylandOptions& options) {
         }
         if(controlUp) {
             ControlSnapshot snap=initial;
+            snap.presentCalls=host.presentCalls();snap.presentErrors=host.presentErrors();
+            snap.presentFirstNs=host.presentFirstNs();snap.presentLastNs=host.presentLastNs();
             const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
             switch(host.layout()){case SceneLayout::TwoCubes:snap.layout=layouts[0];break;case SceneLayout::SingleCube:snap.layout=layouts[1];break;case SceneLayout::Wall:snap.layout=layouts[2];break;default:snap.layout=layouts[3];}
             snap.avConfigured=avInput.configured();snap.avActive=avInput.active();snap.avAudioMaster=avInput.audioMaster();snap.avMuted=avInput.muted.load();snap.avPaused=avInput.paused.load();
