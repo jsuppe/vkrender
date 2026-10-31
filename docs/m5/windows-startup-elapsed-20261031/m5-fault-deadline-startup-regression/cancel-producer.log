@@ -1,0 +1,2 @@
+{"event":"session-ready","instance":"46924f6aa5bac8fd0b809fce62afc0ab","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+FAIL: control read/disconnect: Error receiving data: An existing connection was forcibly closed by the remote host.
