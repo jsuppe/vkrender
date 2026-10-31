@@ -1,0 +1,8 @@
+{"phase":"control","slots":8,"case":"1920x1080-60-BGRA-av","finished":"2026-10-31T11:49:08.6585715Z","exit":0}
+{"phase":"first","slots":12,"case":"1920x1080-60-BGRA-av","finished":"2026-10-31T11:49:55.7231061Z","exit":0}
+{"phase":"control","slots":8,"case":"1920x1080-60-NV12-av","finished":"2026-10-31T11:50:42.7710762Z","exit":0}
+{"phase":"first","slots":12,"case":"1920x1080-60-NV12-av","finished":"2026-10-31T11:51:29.8310308Z","exit":0}
+{"phase":"first","slots":12,"case":"1920x1080-30-BGRA-av","finished":"2026-10-31T11:52:16.9210782Z","exit":0}
+{"phase":"first","slots":12,"case":"1920x1080-30-NV12-av","finished":"2026-10-31T11:53:03.9651822Z","exit":0}
+{"phase":"repeat","slots":12,"case":"1920x1080-60-BGRA-av","finished":"2026-10-31T11:53:51.0569200Z","exit":0}
+{"phase":"repeat","slots":12,"case":"1920x1080-60-NV12-av","finished":"2026-10-31T11:54:38.1116814Z","exit":0}
