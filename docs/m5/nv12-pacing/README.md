@@ -51,3 +51,35 @@ allocation, plane interpretation, synchronization, or memory-negotiation scope.
 
 Startup losses and latest-wins polling gaps remain visible in raw counts.
 These fixes do not promise lossless acquisition or physical smooth playback.
+
+## Readiness-gated acquisition follow-up (ce86138)
+
+NV12 used FL_DEFER_RELEASE, so zero-timeout acquisition rejected metadata while
+producer GPU copy was unfinished; BGRA's FL_GPU_SYNC did not. On latest-wins
+transport this creates extra polling losses, even though actual CPU access is
+scheduled roughly100ms later. Use GPU_SYNC for scheduled input metadata and
+explicitly `vkWaitSemaphores(timeout=0)` on the imported ready timeline before
+CPU mapping. Not-ready frames stay in the unchanged bounded queue. This is
+not permission to read before producer completion; it moves readiness checking
+to the adoption boundary without introducing a blocking wait.
+
+Single-variable10-second A/B: NV12 acquisition56.09→59.04fps, submissions581→594,
+acquisitions552→581 from600 source frames. BGRA path unchanged by this follow-up.
+GPU retirement/consumed-fence ownership remains unchanged. Actual Windows
+validation layer is absent, so delayed-producer-fence/GPU stress qualification
+must remain explicit rather than inferred from throughput.
+
+Acquisition interval distribution,10-second NV12 controls: baseline median27.54ms,
+p99 55.57ms,max104.30ms; final readiness correction median16.02ms,p99 32.58ms,
+max47.12ms. These include startup/intervening stalls between first and last
+observed events; they are not actual presentation intervals. Final control
+reported maxqueue6, zero invalidPTS/import failures, and all600audio blocks/
+480000samples completed. There are still13 sequence gaps and2 late drops in
+that short run, so this is not a zero-loss claim.
+
+
+Final ce86138 sustained45-second NV121080p60 run:2700inputs,2679successful
+submissions,2650acquisitions at59.11fps. Producer/renderer exits0. Two ordinary
+native NV12 session-generation switches passed with queue<=6, no invalidPTS.
+This is ordinary recovery qualification, NOT delayed-GPU validation-layer proof.
+Remaining loss is visible; no silent queue enlargement or timeout relaxation.

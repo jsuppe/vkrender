@@ -1,0 +1,29 @@
+{"event":"session-ready","instance":"b5d9b005d9e8687f6fcd714cf5604d86","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"media-progress","instance":"b5d9b005d9e8687f6fcd714cf5604d86","generation":1,"format":"NV12","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"b5d9b005d9e8687f6fcd714cf5604d86","generation":1,"format":"NV12","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+pipeline error: Could not write to resource. (../gst/gio/gstgiobasesink.c(361): gst_gio_base_sink_render (): /GstPipeline:pipeline0/GstGioStreamSink:audioio:
+Could not write to stream: Error sending data: An established connection was aborted by the software in your host machine.)
+FAIL: video send failed
+{"event":"session-ready","instance":"76ad6a748041815ec7937ebb3f8946e9","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"media-progress","instance":"76ad6a748041815ec7937ebb3f8946e9","generation":1,"format":"NV12","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"76ad6a748041815ec7937ebb3f8946e9","generation":1,"format":"NV12","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+pipeline error: Could not write to resource. (../gst/gio/gstgiobasesink.c(361): gst_gio_base_sink_render (): /GstPipeline:pipeline0/GstGioStreamSink:audioio:
+Could not write to stream: Error sending data: An established connection was aborted by the software in your host machine.)
+FAIL: video send failed
+{"event":"session-ready","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":50,"audio_blocks":50,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":75,"audio_blocks":75,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":100,"audio_blocks":100,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":125,"audio_blocks":125,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":150,"audio_blocks":150,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":175,"audio_blocks":175,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":200,"audio_blocks":200,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":225,"audio_blocks":225,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":250,"audio_blocks":250,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":275,"audio_blocks":275,"audio_offset_ns":0}
+{"event":"media-progress","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":300,"audio_blocks":300,"audio_offset_ns":0}
+{"event":"producer-pacing","pacing_ppm":0,"max_push_ns":96212200}
+{"event":"session-complete","instance":"901a2e48b8e3a73bab6b931e34ab5242","generation":1,"format":"NV12","video_frames":300,"audio_blocks":300,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":300,"audio_blocks":300,"errors":0,"disconnects":0}
