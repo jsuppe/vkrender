@@ -6,6 +6,19 @@ namespace vkr {
 // latest-frame policy; their PTS may be an unrelated absolute monotonic epoch.
 // One nonblocking acquisition attempt per render iteration. If the queue starts
 // full, its budget remains available after a due frame is removed.
+// Fixed transport storage: six future frames, one displayed frame, one writer.
+// This is a nominal pacing envelope, not a guarantee against GPU stalls.
+struct AvRingBudget {
+    static constexpr unsigned ringSlots=8, pendingSlots=ringSlots-2;
+    static uint64_t maxLatencyNs(uint32_t fpsNum,uint32_t fpsDen) {
+        if(!fpsNum || !fpsDen)return 0;
+        const uint64_t scaled=1000000000ull*fpsDen;
+        const uint64_t q=scaled/fpsNum,r=scaled%fpsNum;
+        const auto max=(std::numeric_limits<uint64_t>::max)();
+        const uint64_t tail=r*pendingSlots/fpsNum;
+        return q>(max-tail)/pendingSlots ? max : q*pendingSlots+tail;
+    }
+};
 struct AvAcquireBudget {
     bool attempted=false;
     template<class Acquire> void poll(unsigned depth, unsigned capacity, Acquire acquire) {
