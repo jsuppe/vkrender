@@ -1,0 +1,7 @@
+Renderer6e2ba57: ring retirement + per-acquired-swapchain-image binary presentation semaphore correction.
+FrameLinkac2100d: preconnectd3db581 plus Windows std::min macro correction.
+Analyzer94a18bf (includes exact expected source manifests and present-attempt results).
+NativeWindows RTX5090 Caspar, four sequential45s cases,1080p30/60BGRA/NV12.
+100ms producer-clock latency,8slots/6pending, same fixed scene, previewoff.
+Trace capacities262144events/thread; all terminal footers retained.
+No physicalscanout claim. Acquisition and repeatedscene draws are not uniquevideoFPS.
