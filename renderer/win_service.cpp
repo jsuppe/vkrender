@@ -603,6 +603,20 @@ int runWinService(const WinServeOptions& options) {
         SceneHost::Extras extras;
         std::vector<VkSemaphore> retireSems;
         std::vector<uint64_t> retireValues;
+        std::vector<SlotIn*> retireOwners;
+        static const bool traceRetirement = [] {
+            const char* p = getenv("VKR_TRACE_RETIRE");
+            return p && p[0] == '1';
+        }();
+        // Diagnostic schema: sequence=current ready value, fence=observed or
+        // submitted consumed value, slot=generation, duration_ns=pending depth,
+        // pts_ns=current media PTS. These are NOT GPU duration measurements.
+        const auto retireTrace = [&](const char* op, const SlotIn& s, uint64_t value, int64_t result) {
+            if (!traceRetirement || !vkrtrace::enabled()) return;
+            const int64_t pts = s.currentSlot >= 0 ? s.traceSlots[s.currentSlot].pts : -1;
+            vkrtrace::record({op,vkrtrace::clockNs(),uint64_t(s.pending.size()),
+                vkrtrace::id(s.name.c_str()),s.currentReady,value,s.generation,pts,result});
+        };
         // Reap departures and record liveness. Consumed-fence signals are
         // issued for EVERY live slot - hidden or rotated-out producers must
         // keep flowing, or their rings fill and they stall behind a moderator
@@ -615,9 +629,15 @@ int runWinService(const WinServeOptions& options) {
                 dropRing(s);s.departing=false;s.generation=0;
                 continue;
             }
+            if (traceRetirement && vkrtrace::enabled() && s.consumedSem) {
+                uint64_t completed=0;
+                const auto result=vkGetSemaphoreCounterValue(vk.device,s.consumedSem,&completed);
+                retireTrace("av.retire_observed",s,completed,result);
+            }
             if (s.pendingConsumed && s.consumedSem) {
                 retireSems.push_back(s.consumedSem);
                 retireValues.push_back(s.pendingConsumed);
+                retireOwners.push_back(&s);
                 s.lastConsumedSignal = s.pendingConsumed;
                 s.pendingConsumed = 0;
             }
@@ -637,7 +657,10 @@ int runWinService(const WinServeOptions& options) {
             VkSubmitInfo retire{VK_STRUCTURE_TYPE_SUBMIT_INFO};
             retire.pNext=&timeline;retire.signalSemaphoreCount=uint32_t(retireSems.size());
             retire.pSignalSemaphores=retireSems.data();
-            if(vkQueueSubmit(vk.queue,1,&retire,VK_NULL_HANDLE)!=VK_SUCCESS)
+            const auto retireResult=vkQueueSubmit(vk.queue,1,&retire,VK_NULL_HANDLE);
+            for(size_t i=0;i<retireOwners.size();++i)
+                retireTrace("av.retire_submit",*retireOwners[i],retireValues[i],retireResult);
+            if(retireResult!=VK_SUCCESS)
                 throw std::runtime_error("A/V input retirement submit failed");
         }
         // Selection: spotlight, then pinned, then the carousel over the rest
