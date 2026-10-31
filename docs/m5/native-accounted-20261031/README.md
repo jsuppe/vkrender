@@ -52,3 +52,27 @@ PTS1.550s was rejected then successfully retried; PTS3.583333333s had only a
 rejected attempt and is classified presentation failure. Thus552unique accepted
 identities plus47earlier explicit drops plus1presentation failure =600. This is
 complete accounting of a disrupted resize test, not lossless delivery.
+
+## Final combined preconnect matrix: performance gate FAILED
+
+FrameLink ac2100d plus renderer6e2ba57, same45s/100ms/ring8/queue6:
+
+- NV1230:1350/1350 complete, all phases lossless.
+- BGRA30:1349/1350 complete; one steady IPCpending replacement at9.600s.
+  Preceding producer flSubmit took66.17ms, mostly before flEndSubmit, while
+  renderer maintained~8ms iterations; subsequent catch-up arrivals~6.7ms apart
+  exceeded the single latest-wins mailbox's polling cadence.
+- BGRA60:2521/2700 complete,179explicit pre-submit ring_full failures.
+- NV1260:2521/2700 complete,179explicit pre-submit ring_full failures.
+- Both60cases have172steady ring_full failures. Every successfully submitted
+  frame is acquired/adopted/rendered/GPU-completed/presented; no postsubmit loss.
+- Independent known-source manifests and all terminal events reconcile every
+  identity. Zero unknown loss does NOT mean zero dropped frames.
+
+Preconnect removed the earlier late/catch-up startup defect, but changed timing
+phase enough to expose remaining ring retirement/capacity pressure. Earlier
+clean45s cases are retained, not substituted for this failing final matrix.
+The ring budget remains nominal, not a demonstrated universal60fps guarantee.
+Additional opt-in producer Signal/Flush and timeout-owner snapshots plus native
+retirement observations are the next diagnostic step; no latency/ring size has
+been changed to hide this failure.
