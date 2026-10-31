@@ -78,11 +78,11 @@ struct SceneOut {
     std::string name;
     flFormat format = FL_FORMAT_BGRA8;
     uint64_t convertValue=0;
-    Nv12Output converters[proto::kMaxPoolSize];
+    Nv12Output converters[FL_MAX_POOL_SIZE];
     flChannel* channel = nullptr;
     uint32_t width = 0, height = 0, poolSize = 0;
-    VkImage images[proto::kMaxPoolSize] = {};        // imported per slot, cached
-    VkDeviceMemory memories[proto::kMaxPoolSize] = {};
+    VkImage images[FL_MAX_POOL_SIZE] = {};        // imported per slot, cached
+    VkDeviceMemory memories[FL_MAX_POOL_SIZE] = {};
     VkSemaphore readySem = VK_NULL_HANDLE;           // we signal, consumer waits
     int pendingSlot = -1;                            // blit recorded this frame
     uint64_t pendingValue = 0;
@@ -102,14 +102,14 @@ struct SceneOut {
 // instead, exactly as the client rings do.
 struct SlotIn {
     std::deque<flFrame> pending;
-    SceneHost::TraceFrame traceSlots[proto::kMaxPoolSize]{};
+    SceneHost::TraceFrame traceSlots[FL_MAX_POOL_SIZE]{};
     flChannel* channel = nullptr;
     std::string name;
     uint32_t uid = 0;        // scene stream id; stable for the slot's lifetime
     uint64_t generation = 0; // which ring we imported - see flChannelInfo
     uint32_t width = 0, height = 0;
     VkSemaphore readySem = VK_NULL_HANDLE, consumedSem = VK_NULL_HANDLE;
-    bool imported[proto::kMaxPoolSize] = {}; // ring slot -> already in the pool
+    bool imported[FL_MAX_POOL_SIZE] = {}; // ring slot -> already in the pool
     int64_t currentSlot = -1;                // pool key, or -1
     uint64_t currentReady = 0;
     uint64_t lastConsumedSignal = 0;
@@ -120,6 +120,10 @@ struct SlotIn {
 
 // Twelve, because that is the fan-in M22 proved and the scene supports.
 constexpr uint32_t kInSlots = 12;
+static_assert(FL_MAX_POOL_SIZE <= 16, "FrameLink pool keys reserve four slot bits");
+static_assert(AvRingBudget::ringSlots <= FL_MAX_POOL_SIZE, "A/V ownership budget exceeds transport capacity");
+static_assert(AvRingBudget::priorGpuSlots >= SceneHost::kFramesInFlight,
+              "A/V ownership budget must cover older GPU frame contexts");
 
 // M42: what the moderator has decided. Owned and applied by the render loop;
 // the control API only queues commands that mutate it.
@@ -215,7 +219,7 @@ int runWinService(const WinServeOptions& options) {
             signal.semaphore=s.consumedSem;signal.value=s.currentReady;
             vkSignalSemaphore(vk.device,&signal); // all old GPU reads retired above
         }
-        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+        for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
             if (!s.imported[i]) continue;
             const uint32_t key = (s.uid << 4) | i;
             pass.removeSlot(vk, key);
@@ -312,7 +316,7 @@ int runWinService(const WinServeOptions& options) {
     auto teardownSceneOut = [&](SceneOut& so) {
         if (!so.channel) return;
         vkDeviceWaitIdle(vk.device);
-        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+        for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
             so.converters[i].destroy(vk);
             if (so.images[i]) vkDestroyImage(vk.device, so.images[i], nullptr);
             if (so.memories[i]) vkFreeMemory(vk.device, so.memories[i], nullptr);
@@ -392,7 +396,7 @@ int runWinService(const WinServeOptions& options) {
             if(s.channel)flClose(s.channel);s.channel=nullptr;s.generation=0;
             if(!request.end){s.name=request.name;
                 if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
-                    (flFormat)request.config.video.format,AvRingBudget::ringSlots,
+                    (flFormat)request.config.video.format,avInput.ringSlots(),
                     FL_GPU_SYNC,
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");

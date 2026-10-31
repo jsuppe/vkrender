@@ -163,8 +163,8 @@ struct FlSlotIn {
     uint64_t lastReady=0;
     bool departing=false;
     std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
-    bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
-    uint32_t keys[8] = {};
+    bool imported[FL_MAX_POOL_SIZE] = {}; // FrameLink capacity, not legacy wire pool
+    uint32_t keys[FL_MAX_POOL_SIZE] = {};
     int64_t currentSlot = -1;
 };
 
@@ -385,10 +385,10 @@ void android_main(android_app* app) {
             flQuery(s.channel, &info);
             if (info.generation != s.generation) {
                 bool any = false;
-                for (uint32_t i = 0; i < 8; ++i) any = any || s.imported[i];
+                for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) any = any || s.imported[i];
                 if (any) {
                     vkDeviceWaitIdle(vk.device);
-                    for (uint32_t i = 0; i < 8; ++i) {
+                    for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
                         if (!s.imported[i]) continue;
                         pass.removeSlot(vk, s.keys[i]);
                         pool.removeSlot(vk, s.keys[i]);
@@ -410,7 +410,7 @@ void android_main(android_app* app) {
             if (r != FL_OK) continue;
             flChannelInfo now{};
             flQuery(s.channel, &now);
-            if (now.generation != s.generation || fr.slot >= 8) {
+            if (now.generation != s.generation || fr.slot >= FL_MAX_POOL_SIZE) {
                 flRelease(s.channel, &fr);
                 continue;
             }
@@ -545,7 +545,7 @@ void android_main(android_app* app) {
                             auto& slot=flSlots[i];
                             uint64_t id=(1ull<<63)|i;motion.forget(id);
                             for(size_t j=tileSlots.size();j-->0;)if(tileSlots[j].first==id)tileSlots.erase(tileSlots.begin()+j);
-                            for(unsigned j=0;j<8;j++)if(slot.imported[j]){pass.removeSlot(vk,slot.keys[j]);pool.removeSlot(vk,slot.keys[j]);}
+                            for(unsigned j=0;j<FL_MAX_POOL_SIZE;j++)if(slot.imported[j]){pass.removeSlot(vk,slot.keys[j]);pool.removeSlot(vk,slot.keys[j]);}
                             if(slot.channel)flClose(slot.channel);
                             auto name=slot.name;slot=FlSlotIn{};slot.name=name;
                             flCreateChannelEx(name.c_str(),640,360,vkr::inputFormat(i,FL_FORMAT_RGBA8),4,FL_MAP_CPU|FL_DEFER_RELEASE,&slot.channel);

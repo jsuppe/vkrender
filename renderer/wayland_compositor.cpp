@@ -796,8 +796,8 @@ struct FlSlotIn {
     uint32_t width = 0, height = 0;
     uint64_t lastReady=0;
     std::vector<std::pair<uint64_t,uint64_t>> retire; // frame fence index, watermark
-    bool imported[8] = {}; // ring slot -> pool key valid (fl kMaxPool is 8)
-    uint32_t keys[8] = {};
+    bool imported[FL_MAX_POOL_SIZE] = {}; // FrameLink capacity, not legacy wire pool
+    uint32_t keys[FL_MAX_POOL_SIZE] = {};
     int64_t currentSlot = -1;
     int64_t lastAdoptNs=0, firstAdoptNs=0;
     uint64_t adopted=0;
@@ -809,7 +809,7 @@ constexpr uint32_t kFlSlots = 12;
 
 void flDropRing(Ctx& ctx, FlSlotIn& s) {
     s.pending.clear();
-    for (uint32_t i = 0; i < 8; ++i) {
+    for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
         if (!s.imported[i]) continue;
         ctx.slotsToRemove.push_back(s.keys[i]);
         s.imported[i] = false;
@@ -842,7 +842,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
             flResult r=FL_TIMEOUT;
             AvAcquireBudget acquireBudget;
             auto acquirePending=[&]{
-                acquireBudget.poll(unsigned(s.pending.size()),6,[&]{
+                acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
                     flFrame next{};r=flAcquireFrame(s.channel,&next,0);
                     if(r==FL_OK){s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
                 });
@@ -868,7 +868,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         // resends and the next iteration re-imports.
         flChannelInfo now{};
         flQuery(s.channel, &now);
-        if (now.generation != s.generation || f.slot >= 8) {
+        if (now.generation != s.generation || f.slot >= FL_MAX_POOL_SIZE) {
             releaseFrame();
             continue;
         }
@@ -1125,7 +1125,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
             s.generation=0;s.retire.clear();s.lastReady=0;
             if(!request.end){s.name=request.name;
                 if(flCreateChannelEx(s.name.c_str(),request.config.video.width,request.config.video.height,
-                    (flFormat)request.config.video.format,8,FL_MAP_CPU|FL_DEFER_RELEASE,&s.channel)!=FL_OK)
+                    (flFormat)request.config.video.format,avInput.ringSlots(),FL_MAP_CPU|FL_DEFER_RELEASE,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
             }
         });

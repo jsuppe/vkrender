@@ -61,6 +61,8 @@ struct WindowSpec {
 
 class SceneHost {
 public:
+    // Exposed so A/V ownership capacity cannot silently outlive this bound.
+    static constexpr uint32_t kFramesInFlight = 2;
     // vk must already be initialized: window mode with the FIRST spec's size
     // (the host repositions it), or headless (then specs beyond the first are
     // ignored and the offscreen target is the whole canvas).
@@ -209,7 +211,6 @@ private:
     std::vector<uint64_t> lastStreamIds_; // order snapshot for number keys
 
     VkCommandPool cmdPool_ = VK_NULL_HANDLE;
-    static constexpr uint32_t kFramesInFlight = 2;
     struct FrameSync {
         VkFence inFlight = VK_NULL_HANDLE;
         VkSemaphore testGate = VK_NULL_HANDLE;

@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <memory>
 #include <cstdio>
+#include <cstdlib>
 namespace vkr {
 // One selected A/V session occupies slot zero. Ordinary slots remain low-latency.
 // Receiver never calls Vulkan: boundary work is acknowledged by render thread.
@@ -14,7 +15,11 @@ public:
  struct Request {flSessionConfig config{};std::string name;bool end=false;};
  std::atomic<bool> stop{false}, muted{false}, paused{false}, finished{false}, succeeded{false};
  AvSchedule schedule;
- explicit AvInput(av::PlaybackOptions options):options_(options) {start(options);}
+ explicit AvInput(av::PlaybackOptions options):options_(options) {
+  ringSlots_=AvRingBudget::testRingSlots(std::getenv("VKR_TEST_AV_POOL_SLOTS"));
+  start(options);
+ }
+ unsigned ringSlots() const{return ringSlots_;}
  bool configured() const{return !options_.plugin.empty();}
  bool done() const{return finished.load() && !switching_;}
  void selectSession(const std::string& session){
@@ -39,7 +44,11 @@ public:
    };
    cb.onClock=[this](const av::PlaybackClock& clock){std::lock_guard<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
-    base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+   base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    // onSession precedes the selected playback clock; report only its real
+    // negotiated latency here, not the empty startup placeholder.
+    std::fprintf(stderr,"AV_RING_CONFIG ring_slots=%u pending_slots=%u common_latency_ns=%llu\n",
+     ringSlots_,AvRingBudget::pendingSlots,(unsigned long long)latency_);
     reportBudget();
    };
    cb.onEnd=[this]{std::unique_lock<std::mutex> l(m_);if(stop)return;
@@ -85,11 +94,12 @@ private:
  void reportBudget(){
   if(latency_>budgetNs_ && (!budgetWarned_ || warnedLatency_!=latency_)){
    std::fprintf(stderr,"AV_RING_BUDGET latency_ns=%llu nominal_max_ns=%llu ring_slots=%u pending_slots=%u policy=bounded_backpressure_drops_possible\n",
-    (unsigned long long)latency_,(unsigned long long)budgetNs_,AvRingBudget::ringSlots,AvRingBudget::pendingSlots);
+    (unsigned long long)latency_,(unsigned long long)budgetNs_,ringSlots_,AvRingBudget::pendingSlots);
    budgetWarned_=true;warnedLatency_=latency_;
   }
  }
  uint64_t budgetNs_=0,warnedLatency_=0;bool budgetWarned_=false;
+ unsigned ringSlots_=AvRingBudget::ringSlots;
  av::PlaybackMetrics metrics_{};bool metricsValid_=false;
  av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;
  std::thread worker_;std::mutex m_;std::condition_variable cv_;std::unique_ptr<Request> request_;

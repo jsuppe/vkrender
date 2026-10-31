@@ -3,12 +3,26 @@
 #include <cstdio>
 #define CHECK(x) do {if(!(x)){fprintf(stderr,"failed line %d: %s\n",__LINE__,#x);return 1;}} while(0)
 int main(){
+ // Storage headroom does not silently expand the timed queue or shift A/V PTS.
+ CHECK(vkr::AvRingBudget::pendingSlots==6);
+ CHECK(vkr::AvRingBudget::testRingSlots(nullptr)==12);
+ CHECK(vkr::AvRingBudget::testRingSlots("8")==8);
+ CHECK(vkr::AvRingBudget::testRingSlots("12")==12);
+ bool rejected=false;try{vkr::AvRingBudget::testRingSlots("12junk");}
+ catch(const std::invalid_argument&){rejected=true;}CHECK(rejected);
  CHECK(vkr::AvRingBudget::maxLatencyNs(60,1)==100000000);
  CHECK(vkr::AvRingBudget::maxLatencyNs(30,1)==200000000);
  CHECK(vkr::AvRingBudget::maxLatencyNs(60000,1001)==100100000);
  CHECK(vkr::AvRingBudget::maxLatencyNs(0,1)==0);
  CHECK(vkr::AvRingBudget::maxLatencyNs(1,UINT32_MAX)==UINT64_MAX);
  vkr::AvSchedule s;using D=vkr::AvSchedule::Decision;
+ // Observed ownership trace: ready112..119 are unavailable until consumed112.
+ // The old ring has no writer although its six-future-frame queue is valid.
+ // Additional storage fixes that opportunity without declaring old reads free.
+ const uint64_t occupied[]={112,113,114,115,116,117,118,119};
+ unsigned unavailable=0;for(auto ready:occupied)if(ready>111)++unavailable;
+ CHECK(unavailable==vkr::AvRingBudget::testRingSlots("8"));
+ CHECK(unavailable+1<=vkr::AvRingBudget::testRingSlots(nullptr));
  s.reset(3);CHECK(s.generation==3);
  CHECK(s.decide(20,100,100,10)==D::Hold);
  CHECK(s.decide(20,130,100,10)==D::Present);

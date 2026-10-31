@@ -1,15 +1,31 @@
 #pragma once
 #include <cstdint>
 #include <limits>
+#include <cstring>
+#include <stdexcept>
 namespace vkr {
 // Only negotiated A/V tracks use running PTS. Legacy inputs keep their existing
 // latest-frame policy; their PTS may be an unrelated absolute monotonic epoch.
 // One nonblocking acquisition attempt per render iteration. If the queue starts
 // full, its budget remains available after a due frame is removed.
-// Fixed transport storage: six future frames, one displayed frame, one writer.
-// This is a nominal pacing envelope, not a guarantee against GPU stalls.
+// Timed buffering and transport ownership are different bounds. Six future
+// frames at 60fps represent 100ms; increasing storage must NOT increase that
+// queue or change either A/V deadline. Extra slots cover retained current,
+// older GPU reads, ordered retirement lag, the IPC mailbox and producer writer.
+// Twelve is a conservative normal-cadence operating envelope, not a guarantee
+// against arbitrary GPU stalls or latest-wins replacement during catch-up bursts.
 struct AvRingBudget {
-    static constexpr unsigned ringSlots=8, pendingSlots=ringSlots-2;
+    static constexpr unsigned pendingSlots=6;
+    static constexpr unsigned currentSlots=1, priorGpuSlots=2,
+                              retirementSlots=1, mailboxSlots=1, writerSlots=1;
+    static constexpr unsigned ringSlots=pendingSlots+currentSlots+priorGpuSlots+
+                                        retirementSlots+mailboxSlots+writerSlots;
+    // Controlled same-binary capacity experiment; not a lossless-delivery mode.
+    static unsigned testRingSlots(const char* value) {
+        if(!value || !*value || std::strcmp(value,"12")==0)return ringSlots;
+        if(std::strcmp(value,"8")==0)return 8;
+        throw std::invalid_argument("VKR_TEST_AV_POOL_SLOTS must be 8 or 12");
+    }
     static uint64_t maxLatencyNs(uint32_t fpsNum,uint32_t fpsDen) {
         if(!fpsNum || !fpsDen)return 0;
         const uint64_t scaled=1000000000ull*fpsDen;
