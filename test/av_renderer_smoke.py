@@ -4,6 +4,7 @@ import argparse,json,os,socket,subprocess,tempfile,time,urllib.request,urllib.er
 p=argparse.ArgumentParser();p.add_argument('renderer');p.add_argument('producer');p.add_argument('plugin')
 p.add_argument('--format',choices=['BGRA','NV12'],default='BGRA');p.add_argument('--audio-sink',default='fakesink');p.add_argument('--audio-master',action='store_true')
 p.add_argument('--import-failures',action='store_true')
+p.add_argument('--clock-policy',choices=['audio','producer'],default='audio')
 a=p.parse_args();root=tempfile.mkdtemp(prefix='vkr-av-render-');os.chmod(root,0o700)
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
 env=dict(os.environ,XDG_RUNTIME_DIR=root)
@@ -19,7 +20,7 @@ try:
  with open(root+'/producer.log','w') as pl,open(root+'/renderer.log','w') as rl:
   procs.append(subprocess.Popen([a.producer,a.plugin,'--session',session,'--format',a.format,'--frames','300','--timeout-ms','15000'],stdout=pl,stderr=pl,env=env))
   mode='--serve' if os.name=='nt' else '--wayland'
-  procs.append(subprocess.Popen([a.renderer,mode,'av-smoke','--headless','-1','--av-exit-on-end','--control-port',str(port),'--av-session',session,'--av-plugin',a.plugin,'--av-format',a.format,'--av-audio-sink',a.audio_sink],stdout=rl,stderr=rl,env=env,cwd=root))
+  procs.append(subprocess.Popen([a.renderer,mode,'av-smoke','--headless','-1','--av-exit-on-end','--control-port',str(port),'--av-session',session,'--av-plugin',a.plugin,'--av-format',a.format,'--av-audio-sink',a.audio_sink,'--av-clock',a.clock_policy],stdout=rl,stderr=rl,env=env,cwd=root))
   deadline=time.monotonic()+25;muted=False;unmuted=False
   while time.monotonic()<deadline and procs[1].poll() is None:
    time.sleep(.1)

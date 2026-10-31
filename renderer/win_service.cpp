@@ -406,13 +406,17 @@ int runWinService(const WinServeOptions& options) {
             flFrame f{};
             const bool scheduled=(&s==&inSlots.front() && avInput.active());
             flResult r=FL_TIMEOUT;
+            AvAcquireBudget acquireBudget;
+            auto acquirePending=[&]{
+                acquireBudget.poll(unsigned(s.pending.size()),6,[&]{
+                    flFrame next{};r=flAcquireFrame(s.channel,&next,0);
+                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                });
+            };
             if(scheduled){
                 // Bookkeeping release does NOT recycle deferred/GPU-sync storage.
                 // This permits a bounded timestamp queue without blocking acquire.
-                if(s.pending.size()<6){flFrame next{};
-                    r=flAcquireFrame(s.channel,&next,0);
-                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
-                }
+                acquirePending();
                 if(!s.pending.empty()){f=s.pending.front();r=FL_OK;}
             }else r=flAcquireFrame(s.channel,&f,0);
             auto releaseFrame=[&]{if(!scheduled)flRelease(s.channel,&f);};
@@ -442,6 +446,12 @@ int runWinService(const WinServeOptions& options) {
                 auto decision=avInput.decide(f.ptsNs);
                 if(decision==AvSchedule::Decision::Hold){continue;}
                 s.pending.pop_front();avInput.schedule.queued=s.pending.size();
+                // A full queue skipped the pre-decision acquire. Refill the newly
+                // freed slot now, not one render iteration later: otherwise a
+                // steady 60 Hz source loses one latest-wins frame every queue cycle.
+                // Bookkeeping release retains deferred/GPU-sync ownership; neither
+                // capacity nor consumed-fence retirement is changed here.
+                acquirePending();
             if(decision!=AvSchedule::Decision::Present){
                     host.forgetStream(s.uid);s.currentSlot=-1;s.pendingConsumed=f._readyValue;
                     releaseFrame();continue;

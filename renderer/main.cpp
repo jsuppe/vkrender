@@ -110,10 +110,15 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--av-session") && i+1<argc) avOptions.session=argv[++i];
         else if (!strcmp(argv[i], "--av-plugin") && i+1<argc) avOptions.plugin=argv[++i];
         else if (!strcmp(argv[i], "--av-audio-sink") && i+1<argc) avOptions.audioSink=argv[++i];
+        else if (!strcmp(argv[i], "--av-clock") && i+1<argc) {
+            const std::string policy=argv[++i];
+            if(policy!="audio" && policy!="producer"){fprintf(stderr,"--av-clock must be audio or producer\n");return 1;}
+            avOptions.clockPolicy=policy=="producer" ? av::PlaybackClockPolicy::ProducerMapped : av::PlaybackClockPolicy::AudioPreferred;
+        }
         else if (!strcmp(argv[i], "--av-format") && i+1<argc) avOptions.format=argv[++i];
         else if ((!strcmp(argv[i],"--av-width") || !strcmp(argv[i],"--av-height") ||
                   !strcmp(argv[i],"--av-fps") || !strcmp(argv[i],"--av-rate") ||
-                  !strcmp(argv[i],"--av-channels") || !strcmp(argv[i],"--av-latency-ms")) && i+1<argc) {
+                  !strcmp(argv[i],"--av-channels") || !strcmp(argv[i],"--av-timeout-ms") || !strcmp(argv[i],"--av-latency-ms")) && i+1<argc) {
             std::string option=argv[i];char* end=nullptr;
             unsigned long n=std::strtoul(argv[++i],&end,10);
             if(!end || *end || !n || n>192000){fprintf(stderr,"invalid A/V numeric option\n");return 1;}
@@ -122,6 +127,7 @@ int main(int argc, char** argv) {
             else if(option=="--av-fps")avOptions.fps=n;
             else if(option=="--av-rate")avOptions.rate=n;
             else if(option=="--av-channels")avOptions.channels=n;
+            else if(option=="--av-timeout-ms"){if(n<100 || n>60000){fprintf(stderr,"--av-timeout-ms must be 100..60000\n");return 1;}avOptions.timeoutMs=n;}
             else avOptions.latencyMs=n;
         }
         else if (!strcmp(argv[i], "--control-port") && i + 1 < argc)
@@ -161,7 +167,7 @@ int main(int argc, char** argv) {
             else if (mode != "latest") { fprintf(stderr, "bad --pacing\n"); return 1; }
         } else {
             fprintf(stderr,
-                    "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
+                    "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-clock audio|producer --av-timeout-ms N --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
                     "[--wayland [socket]] [--serve [pipe]] [--scene-output channel (repeatable)] "
                     "[--window WxH+X+Y[:bezel]]... [--bezel px] "
                     "[--headless N [--dump out.ppm]]\n");

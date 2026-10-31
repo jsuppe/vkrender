@@ -4,6 +4,14 @@
 namespace vkr {
 // Only negotiated A/V tracks use running PTS. Legacy inputs keep their existing
 // latest-frame policy; their PTS may be an unrelated absolute monotonic epoch.
+// One nonblocking acquisition attempt per render iteration. If the queue starts
+// full, its budget remains available after a due frame is removed.
+struct AvAcquireBudget {
+    bool attempted=false;
+    template<class Acquire> void poll(unsigned depth, unsigned capacity, Acquire acquire) {
+        if(!attempted && depth<capacity){attempted=true;acquire();}
+    }
+};
 struct AvSchedule {
     enum class Decision { Hold, Present, Drop, Invalid };
     uint64_t importFailures=0;
