@@ -361,6 +361,45 @@ int runWinService(const WinServeOptions& options) {
                 info.width, info.height, info.poolSize);
     };
 
+    // Monitor power-on can take the shared graphics adapter's core resource,
+    // blocking both Vulkan and another process's D3D11 Signal. Request power
+    // during session setup, before acknowledging onSession/PRIMED/GO; never
+    // wait for the first timed adoption to wake the presentation output.
+    // A scheduled drop must not release/reacquire the hold and retrigger wake.
+    // Legacy non-AV slots still hold power only while actually presenting.
+    int powerHeld = 0; // 0 = none, 1 = system, 2 = system+display
+    const bool latePowerControl = getenv("VKR_TEST_AV_LATE_POWER_REQUEST") != nullptr;
+    auto updatePower = [&](bool timedSession) {
+        bool presenting = timedSession && !latePowerControl;
+        for (const auto& slot : inSlots)
+            presenting = presenting || (slot.currentSlot >= 0 && !slot.departing);
+        const bool displaysOut = host.activeDisplayCount() > 0;
+        const int powerWant = !presenting ? 0 : (headless && !displaysOut) ? 1 : 2;
+        if (powerWant == powerHeld) return;
+        const auto previousPower = vkrtrace::call("service.power_request", [&]{
+            return SetThreadExecutionState(powerWant == 0 ? ES_CONTINUOUS :
+                powerWant == 1 ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED) :
+                (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED));
+        });
+        // ES_DISPLAY_REQUIRED requests display-on. Preserve the existing input
+        // nudge policy for appliances that also need to dismiss an idle screen;
+        // it now happens before timed media, not at first-frame adoption.
+        static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
+        if (powerWant == 2 && wakeAllowed) {
+            INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = MOUSEEVENTF_MOVE;
+            const auto sent = vkrtrace::call("service.display_input", [&]{return SendInput(1, &in, sizeof(in));});
+            VKR_LOG("service: display input sent=%u thread=%lu", sent, GetCurrentThreadId());
+        }
+        powerHeld = powerWant; // one bounded attempt per policy transition
+        if (!previousPower) VKR_WARN("service: power request failed");
+        VKR_LOG("service: %s %s (presentation %s, timed_session=%d)",
+                powerWant == 1 ? "system wake" : "display wake",
+                powerWant ? "held" : "released", presenting ? "active" : "idle", timedSession);
+    };
+    struct ReleasePower {
+        ~ReleasePower() { SetThreadExecutionState(ES_CONTINUOUS); }
+    } releasePower; // also clear the hold on failure/cancellation/exception
+
     AvInput avInput(options.avOptions,true);
     // Diagnostic preparation delay is elapsed-time bounded and applied once per
     // session, either before GO or at first use in the explicit legacy control.
@@ -454,6 +493,7 @@ int runWinService(const WinServeOptions& options) {
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
             }
+            updatePower(!request.end); // completes before onSession is acknowledged
         });
         for (SlotIn& s : inSlots) {
             if (!s.channel) continue;
@@ -750,57 +790,8 @@ int runWinService(const WinServeOptions& options) {
                 break;
             }
 
-        // M28: keep the display awake while a presentation is live.
-        //
-        // Not cosmetic. A sleeping display stops the compositor consuming
-        // swapchain images, so FIFO vkQueuePresentKHR blocks ~134 ms and the
-        // ENTIRE scene collapses to ~7 fps - measured on this box after its
-        // monitor had been asleep for three hours, with the GPU otherwise
-        // finishing frames instantly (136k fps under IMMEDIATE). In a meeting
-        // room that is a live failure: the display sleeps after five idle
-        // minutes, someone casts, and every producer's ring starves against a
-        // 7 fps consumer.
-        //
-        // Held only while presenting, so an idle room display is still allowed
-        // to sleep.
-        // Headless (vcam-only) needs the SYSTEM held awake while presenting -
-        // the camera must keep pumping into the meeting - but has no display
-        // to wake and no swapchain for a sleeping panel to starve, so the
-        // panel is left alone entirely.
-        // M43: a headless appliance WITH attached display outputs is back in
-        // the "sleeping panel starves the swapchain" regime above, so the
-        // display hold (and the wake nudge) applies whenever displays are out.
-        const bool displaysOut = host.activeDisplayCount() > 0;
-        static int powerHeld = 0; // 0 = none, 1 = system, 2 = system+display
-        const int powerWant = !presenting ? 0 : (headless && !displaysOut) ? 1 : 2;
-        if (powerWant != powerHeld) {
-            SetThreadExecutionState(powerWant == 0
-                                        ? ES_CONTINUOUS
-                                        : powerWant == 1
-                                              ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
-                                              : (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
-                                                 ES_DISPLAY_REQUIRED));
-            // ES_DISPLAY_REQUIRED only PREVENTS sleep - it will not wake a
-            // display that is already off, which is exactly the state a room
-            // appliance is in when someone starts casting. Waking needs input,
-            // so synthesise a zero-delta mouse move: it resets the idle timer
-            // and powers the panel without moving the user's cursor.
-            // VKR_NO_DISPLAY_WAKE=1 opts out (useful on a dev box, where a
-            // receiver stealing the display is just rude).
-            static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
-            if (powerWant == 2 && wakeAllowed) {
-                INPUT in{};
-                in.type = INPUT_MOUSE;
-                in.mi.dwFlags = MOUSEEVENTF_MOVE;
-                in.mi.dx = 0;
-                in.mi.dy = 0;
-                SendInput(1, &in, sizeof(in));
-            }
-            powerHeld = powerWant;
-            VKR_LOG("service: %s %s (presentation %s)",
-                    powerWant == 1 ? "system wake" : "display wake",
-                    powerWant ? "held" : "released", presenting ? "active" : "idle");
-        }
+        // Hold across scheduled holds/drops, not just a currently adopted frame.
+        updatePower(avInput.active() && !avInput.finished.load());
         const int64_t scenePts=nowNs();
         for (auto& sceneOut : sceneOuts) {
             vkrtrace::Scope outputTrace("service.output_prepare",vkrtrace::id(sceneOut.name.c_str()));

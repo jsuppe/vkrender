@@ -445,6 +445,17 @@ bool VkContext::createSwapchain() {
 
     uint32_t count = 0;
     vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
+    VKR_LOG("swapchain: primary selected_present_mode=%s(%d) requested=%s images=%u extent=%ux%u",
+            presentMode == VK_PRESENT_MODE_FIFO_KHR ? "fifo" :
+            presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" :
+            presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" : "other",
+            int(presentMode), pmEnv ? pmEnv : (preferFifo ? "default-fifo" : "default-mailbox"),
+            count, swapExtent.width, swapExtent.height);
+#ifndef __ANDROID__
+    VKR_LOG("swapchain: primary window fullscreen=%d visible=%d iconified=%d focused=%d",
+            glfwGetWindowMonitor(window) != nullptr, glfwGetWindowAttrib(window, GLFW_VISIBLE),
+            glfwGetWindowAttrib(window, GLFW_ICONIFIED), glfwGetWindowAttrib(window, GLFW_FOCUSED));
+#endif
     swapImages.resize(count);
     vkGetSwapchainImagesKHR(device, swapchain, &count, swapImages.data());
     swapViews.resize(count);

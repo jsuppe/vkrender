@@ -4,7 +4,7 @@ Needs matching FrameLink sample/plugin binaries and an interactive desktop.
 No physical scanout claim. Leaves all failed logs intact.
 """
 import argparse,csv,json,os,pathlib,socket,subprocess,time
-p=argparse.ArgumentParser();p.add_argument('--build',required=True);p.add_argument('--renderer',required=True);p.add_argument('--output',required=True);p.add_argument('--case');p.add_argument('--headless',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--build',required=True);p.add_argument('--renderer',required=True);p.add_argument('--output',required=True);p.add_argument('--case');p.add_argument('--headless',action='store_true');p.add_argument('--require-early-power',action='store_true');a=p.parse_args()
 b=pathlib.Path(a.build).resolve();r=pathlib.Path(a.renderer).resolve();root=pathlib.Path(a.output).resolve();root.mkdir(parents=True,exist_ok=True)
 results=[]
 for name,extra,timeout in [('prepared',{'VKR_TEST_AV_PREPARE_DELAY_MS':'250'},15000),('lazy-negative',{'VKR_TEST_AV_PREPARE_DELAY_MS':'250','VKR_TEST_AV_LAZY_PREPARATION':'1'},15000),('failure',{'VKR_TEST_AV_PREPARE_FAIL':'1'},4000),('timeout',{'VKR_TEST_AV_PREPARE_DELAY_MS':'5000'},4000)]:
@@ -35,6 +35,10 @@ for name,extra,timeout in [('prepared',{'VKR_TEST_AV_PREPARE_DELAY_MS':'250'},15
  source_start=min([int(x['start_ns']) for x in rows if x['operation']=='gst.frame_receive'],default=0)
  if name=='prepared':
   assert codes==[0,0],codes
+  if a.require_early_power:
+   power=[x for x in rows if x['operation']=='service.power_request' and int(x['result'])!=0]
+   assert power and min(int(x['start_ns'])+int(x['duration_ns']) for x in power)<source_start,'power request followed timed source'
+   assert 'power request failed' not in (d/'renderer.log').read_text(),'power request failed'
   assert presented==received=={i*1000000000//60 for i in range(180)},(len(received),len(presented))
   assert prepared and max(int(x['start_ns'])+int(x['duration_ns']) for x in prepared)<source_start,'media preceded resource preparation'
  elif name=='lazy-negative':
