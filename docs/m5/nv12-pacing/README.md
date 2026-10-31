@@ -32,15 +32,22 @@ allocation, plane interpretation, synchronization, or memory-negotiation scope.
 
 - Linux and Windows CPU tests compare SIMD result byte-for-byte against scalar
   reference across padded rows, widths2/4/6/14/1920, heights2/10 and random input,
-  including untouched output padding. Linux ASan/UBSan passed.
+  including untouched output padding. Linux ASan/UBSan and forced scalar
+  fallback builds passed.
 - Deterministic pacing test proves processing time consumes budget, missed-tick
   debt discarded, and display-mode reset. Linux and Windows passed.
 - `VKR_VALIDATION=1` explicitly requests Khronos validation in optimized builds;
   unavailable layer is a clear initialization failure, not a silent unvalidated
   success. Default release behavior remains unchanged.
-- Caspar currently has no registered Khronos validation layer. No Windows GPU
+- Caspar explicit `VKR_VALIDATION=1` initialization was exercised and correctly
+  exited1 with `requires VK_LAYER_KHRONOS_validation`. Caspar currently has no
+  registered Khronos validation layer. No Windows GPU
   lifetime validation claim is made from the default Release performance runs.
-- Candidate SIMD performance matrix pending at this checkpoint.
+- SIMD final10-second matrix: 160x90@50 BGRA49.58/NV1249.57;
+  1080p30 both30.18; 1080p60 BGRA59.25/NV1256.09 acquisitions/s.
+  CPU pixel median1.475ms and full readback/conversion/upload3.364ms at1080p30.
+  SIMD removes the conversion bottleneck but remaining acquisition loss is NOT
+  closed. Readiness-gated metadata acquisition is being isolated next.
 
 Startup losses and latest-wins polling gaps remain visible in raw counts.
 These fixes do not promise lossless acquisition or physical smooth playback.

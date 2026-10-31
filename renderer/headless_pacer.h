@@ -3,6 +3,7 @@
 #include <chrono>
 
 namespace vkr {
+// Preserve the existing nominal16ms offscreen polling cadence.
 // Fixed wall-clock cadence: processing consumes the period instead of adding
 // to it. A missed deadline discards schedule debt rather than catch-up bursts.
 class HeadlessPacer {
