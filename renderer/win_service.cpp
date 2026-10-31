@@ -102,6 +102,7 @@ struct SceneOut {
 // instead, exactly as the client rings do.
 struct SlotIn {
     std::deque<flFrame> pending;
+    SceneHost::TraceFrame traceSlots[proto::kMaxPoolSize]{};
     flChannel* channel = nullptr;
     std::string name;
     uint32_t uid = 0;        // scene stream id; stable for the slot's lifetime
@@ -198,8 +199,15 @@ int runWinService(const WinServeOptions& options) {
     // Drop everything imported from this slot's current ring. Called when the
     // generation moves, which on Windows means either a reallocation or a new
     // producer - both hand out new shared handles AND a new fence pair.
+    const auto traceFrame = [](const char* op, const SlotIn& s, const flFrame& f, int64_t result = 0) {
+        if (vkrtrace::enabled())
+            vkrtrace::record({op, vkrtrace::clockNs(), 0, vkrtrace::id(s.name.c_str()),
+                              f.sequence, f._readyValue, s.generation, f.ptsNs, result});
+    };
     auto dropRing = [&](SlotIn& s) {
+        for (const auto& f : s.pending) traceFrame("av.frame_drop.generation_end", s, f);
         s.pending.clear();
+        for (auto& identity : s.traceSlots) identity = {};
         if (!s.readySem && s.currentSlot < 0 && s.generation == 0) return;
         vkDeviceWaitIdle(vk.device);
         if(s.consumedSem && s.currentReady>s.lastConsumedSignal) {
@@ -444,6 +452,7 @@ int runWinService(const WinServeOptions& options) {
             flChannelInfo now{};
             flQuery(s.channel, &now);
             if (now.generation != s.generation) {
+                traceFrame("av.frame_drop.generation_changed", s, f);
                 releaseFrame();
                 continue;
             }
@@ -469,11 +478,14 @@ int runWinService(const WinServeOptions& options) {
                 // capacity nor consumed-fence retirement is changed here.
                 acquirePending();
             if(decision!=AvSchedule::Decision::Present){
+                    traceFrame(decision==AvSchedule::Decision::Drop ? "av.frame_drop.late" : "av.frame_drop.invalid", s, f);
                     host.forgetStream(s.uid);s.currentSlot=-1;s.pendingConsumed=f._readyValue;
                     releaseFrame();continue;
                 }
             }
+            traceFrame("av.frame_schedule", s, f);
             auto failedAdoption=[&]{
+                traceFrame("av.frame_drop.import_failed", s, f);
                 if(scheduled){
                     ++avInput.schedule.importFailures;
                     // Forget retained sampling before releasing through this
@@ -520,6 +532,11 @@ int runWinService(const WinServeOptions& options) {
             s.departing = false;
             s.currentSlot = (int64_t)key;
             s.currentReady = f._readyValue;
+            if (vkrtrace::enabled()) {
+                s.traceSlots[f.slot] = {int64_t(key), vkrtrace::id(s.name.c_str()),
+                    s.generation, f.sequence, f._readyValue, f.ptsNs};
+                traceFrame("av.frame_adopt", s, f);
+            }
             slotLastFrameNs[&s - inSlots.data()] = nowNs();
             ++slotFrameCount[&s - inSlots.data()];
             // Release the PREVIOUS frame, not this one: the scene keeps
@@ -737,6 +754,11 @@ int runWinService(const WinServeOptions& options) {
             }
         } // all scene outputs share this render and timestamp
 
+        if (vkrtrace::enabled()) {
+            for (const auto& s : inSlots)
+                for (const auto& identity : s.traceSlots)
+                    if (identity.key >= 0) extras.traceFrames.push_back(identity);
+        }
         if(controlUp && control.previewDue())host.requestPreview();
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
             exitCode = 1;

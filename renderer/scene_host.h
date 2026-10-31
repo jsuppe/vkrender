@@ -73,7 +73,15 @@ public:
     // applies its enable/disable set and the active layout. Extra timeline
     // waits/signals (the Windows service's per-client fences) join the
     // frame's single submit.
+    // Optional software-frame accounting. key is the actual sampled pool slot.
+    // These records describe GPU submissions/completions, never physical scanout.
+    struct TraceFrame {
+        int64_t key = -1;
+        uint64_t channel = 0, generation = 0, sequence = 0, ready = 0;
+        int64_t pts = 0;
+    };
     struct Extras {
+        std::vector<TraceFrame> traceFrames;
         std::vector<VkSemaphore> waitSems;
         std::vector<uint64_t> waitValues;
         std::vector<VkSemaphore> signalSems;
@@ -206,6 +214,8 @@ private:
         uint64_t testGateValue = 0;
         std::thread testRelease;
         FrameGpuTrace gpuTrace;
+        std::vector<TraceFrame> traceFrames;
+        uint64_t traceSubmission = 0;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window
         std::vector<VkSemaphore> renderDoneSems; // per window

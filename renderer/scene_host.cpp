@@ -565,6 +565,22 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         faceSlots.clear();
     }
 
+    std::vector<TraceFrame> sampledTraceFrames;
+    if (vkrtrace::enabled()) {
+        // faceSlots is the scene's actual selection, including retained/exit
+        // tiles. Do not equate input acquisition or moderation with sampling.
+        for (const auto& identity : extras.traceFrames) {
+            if (std::find(faceSlots.begin(), faceSlots.end(), identity.key) != faceSlots.end())
+                sampledTraceFrames.push_back(identity);
+        }
+    }
+    const auto traceFrames = [](const char* op, const std::vector<TraceFrame>& identities, int64_t result, uint64_t submission) {
+        if (!vkrtrace::enabled()) return;
+        for (const auto& i : identities)
+            vkrtrace::record({op, vkrtrace::clockNs(), submission, i.channel, i.sequence,
+                              i.ready, i.generation, i.pts, result});
+    };
+
     FrameSync& f = frames_[frameIndex_ % kFramesInFlight];
     ++frameIndex_;
 
@@ -576,7 +592,10 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     static const bool kTiming = getenv("VKR_SCENE_TIMING") != nullptr;
     const int64_t tFrameStart = kTiming ? nowNs() : 0;
 
-    vkrtrace::call("scene.wait_inflight_fence", [&]{return vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);});
+    const VkResult traceWaitResult = vkrtrace::call("scene.wait_inflight_fence", [&]{return vkWaitForFences(vk.device, 1, &f.inFlight, VK_TRUE, UINT64_MAX);});
+    if (traceWaitResult == VK_SUCCESS)
+        traceFrames("av.frame_gpu_complete", f.traceFrames, 0, f.traceSubmission);
+    f.traceFrames.clear();
     if (f.testRelease.joinable()) f.testRelease.join();
     f.gpuTrace.prepare(vk);
     portableOutput_.retire(vk,(frameIndex_-1)%kFramesInFlight);
@@ -824,6 +843,9 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         VKR_ERR("scene: submit failed");
         return false;
     }
+    f.traceFrames = sampledTraceFrames;
+    f.traceSubmission = frameIndex_ - 1;
+    traceFrames("av.frame_render_submit", sampledTraceFrames, 0, f.traceSubmission);
     f.gpuTrace.submitted(frameIndex_-1);
     portableOutput_.submitted((frameIndex_-1)%kFramesInFlight);
     const int64_t tAfterSubmit = kTiming ? nowNs() : 0;
@@ -848,6 +870,10 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         pi.pImageIndices = imageIndex.data() + firstChain;
         pi.pResults = results.data();
         const VkResult presentResult = vkrtrace::call("scene.present_call_cpu", [&]{return vkQueuePresentKHR(vk.queue, &pi);});
+        // A successful present call is not evidence of display scanout.
+        // All sampled identities belong to the scene submission; repeats remain
+        // separate events so accounting can distinguish unique video frames.
+        traceFrames("av.frame_present_submit", sampledTraceFrames, presentResult, f.traceSubmission);
         ++presentCalls_;
         presentLastNs_ = nowNs();
         if (!presentFirstNs_) presentFirstNs_ = presentLastNs_;
@@ -916,7 +942,15 @@ void SceneHost::snapshot(VkContext& vk) {
 }
 
 void SceneHost::destroy(VkContext& vk) {
-    vkDeviceWaitIdle(vk.device);
+    const VkResult drained = vkDeviceWaitIdle(vk.device);
+    if (drained == VK_SUCCESS && vkrtrace::enabled()) {
+        for (auto& f : frames_) {
+            for (const auto& i : f.traceFrames)
+                vkrtrace::record({"av.frame_gpu_complete", vkrtrace::clockNs(), f.traceSubmission,
+                    i.channel, i.sequence, i.ready, i.generation, i.pts, 0});
+            f.traceFrames.clear();
+        }
+    }
     portableOutput_.destroy(vk);
     for (auto& f : frames_) {
         if (f.testRelease.joinable()) f.testRelease.join();
