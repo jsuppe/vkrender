@@ -1,0 +1,42 @@
+{
+  "case": "1920x1080-60-BGRA-av",
+  "status_sample_window_s": [
+    5.029830800136551,
+    39.98993570008315
+  ],
+  "producer_cpu_core_percent": 41.07360387245844,
+  "renderer_cpu_core_percent": 5.89958184022254,
+  "due_decision_rate": 60.011261579572796,
+  "observed_due_max": 2700,
+  "transport": {
+    "event": "video-transport-summary",
+    "received": 2700,
+    "submitted": 2700,
+    "dropped": 0,
+    "ring_full_drops": 0
+  },
+  "adoptions_per_5s": [
+    237,
+    300,
+    300,
+    301,
+    300,
+    300,
+    300,
+    300,
+    301
+  ],
+  "late_max": 0,
+  "import_failures_max": 0,
+  "presentation_errors_max": 0,
+  "csv_files": 4,
+  "secondary_post10s_window": {
+    "window_s": [
+      10.03348320000805,
+      39.98993570008315
+    ],
+    "producer_cpu_core_percent": 40.94485153063184,
+    "renderer_cpu_core_percent": 5.528858932798694,
+    "due_decision_rate": 60.02045802971805
+  }
+}
