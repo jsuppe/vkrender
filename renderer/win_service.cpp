@@ -16,6 +16,7 @@
 #include "win_service.h"
 #include "nv12_output.h"
 #include "portable_input.h"
+#include "headless_pacer.h"
 
 // M35: the scene view now goes out over framelink (docs/FRAMELINK.md)
 // instead of the M24 consumer protocol - the CONSUMER owns the ring.
@@ -350,6 +351,7 @@ int runWinService(const WinServeOptions& options) {
 
     AvInput avInput(options.avOptions);
     bool quit = false;
+    HeadlessPacer headlessPacer(std::chrono::steady_clock::now());
     while (!quit) {
         if(options.avExitOnEnd && avInput.done()){exitCode=avInput.succeeded?0:1;break;}
         vkrtrace::Scope loopTrace("service.iteration");
@@ -361,11 +363,15 @@ int runWinService(const WinServeOptions& options) {
                 exitCode = 2;
                 break;
             }
-            // No vsync without a swapchain; this sleep IS the frame pacing.
+            // No vsync without a swapchain; pace the whole iteration, not an
+            // extra 16ms after conversion/rendering. Never burst to catch up.
             // M43: unless a display output is attached - then its FIFO
             // present paces the loop at the panel's refresh instead.
-            if (host.activeDisplayCount() == 0)
-                { vkrtrace::Scope pacing("service.headless_pacing"); std::this_thread::sleep_for(std::chrono::milliseconds(16)); }
+            if (host.activeDisplayCount() == 0) {
+                vkrtrace::Scope pacing("service.headless_pacing");
+                std::this_thread::sleep_until(headlessPacer.deadline());
+                headlessPacer.advance(std::chrono::steady_clock::now());
+            } else headlessPacer.reset(std::chrono::steady_clock::now());
         }
 
         for(auto&output:sceneOuts)attachSceneOut(output);
