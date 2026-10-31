@@ -2,6 +2,8 @@
 #include "av_playback.h"
 #include "av_schedule.h"
 #include <thread>
+#include <chrono>
+#include <stdexcept>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
@@ -12,10 +14,10 @@ namespace vkr {
 // Receiver never calls Vulkan: boundary work is acknowledged by render thread.
 class AvInput {
 public:
- struct Request {flSessionConfig config{};std::string name;bool end=false;};
+ struct Request {flSessionConfig config{};std::string name;bool end=false;bool prepare=false;std::chrono::steady_clock::time_point deadline{};};
  std::atomic<bool> stop{false}, muted{false}, paused{false}, finished{false}, succeeded{false};
  AvSchedule schedule;
- explicit AvInput(av::PlaybackOptions options):options_(options) {
+ explicit AvInput(av::PlaybackOptions options,bool nativePreparation=false):nativePreparation_(nativePreparation),options_(options) {
   ringSlots_=AvRingBudget::testRingSlots(std::getenv("VKR_TEST_AV_POOL_SLOTS"));
   start(options);
  }
@@ -41,6 +43,18 @@ public:
     metrics_={};metricsValid_=false;
     request_=std::make_unique<Request>(Request{c,n,false});
     cv_.wait(l,[this]{return !request_||stop.load();});
+   };
+   if(nativePreparation_ && options.clockPolicy==av::PlaybackClockPolicy::ProducerMapped)cb.onPrepare=[this](unsigned remainingMs){
+    std::unique_lock<std::mutex> l(m_);
+    if(stop.load())throw std::runtime_error("native preparation cancelled");
+    prepareError_.clear();request_=std::make_unique<Request>();request_->prepare=true;
+    request_->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(remainingMs);
+    const auto deadline=request_->deadline;
+    if(!cv_.wait_until(l,deadline,[this]{return !request_||stop.load();})){
+      stop=true;throw std::runtime_error("native preparation deadline");
+    }
+    if(stop.load())throw std::runtime_error("native preparation cancelled");
+    if(!prepareError_.empty()){stop=true;throw std::runtime_error(prepareError_);}
    };
    cb.onClock=[this](const av::PlaybackClock& clock){std::lock_guard<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
@@ -77,7 +91,10 @@ public:
    status_="connecting";l.unlock();start(options_);return;
   }
   if(!request_)return;
-  fn(*request_);schedule.reset(request_->config.generation);active_=!request_->end;
+  if(request_->prepare){
+   try{fn(*request_);}catch(const std::exception& e){prepareError_=e.what();}
+   catch(...){prepareError_="native preparation failed";}
+  }else{fn(*request_);schedule.reset(request_->config.generation);active_=!request_->end;}
   request_.reset();cv_.notify_all();
  }
  bool active() const{return active_;}
@@ -99,6 +116,8 @@ private:
   }
  }
  uint64_t budgetNs_=0,warnedLatency_=0;bool budgetWarned_=false;
+ std::string prepareError_;
+ bool nativePreparation_=false;
  unsigned ringSlots_=AvRingBudget::ringSlots;
  av::PlaybackMetrics metrics_{};bool metricsValid_=false;
  av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;

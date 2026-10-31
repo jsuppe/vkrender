@@ -1,0 +1,11 @@
+# Native A/V resource preparation
+
+Windows ProducerMapped playback now requests bounded render-thread preparation after producer preconnect/audio preroll and **before PRIMED/final shared epoch**. The optional FrameLink playback callback receives the remaining startup budget, not a renewed timeout. Other modes retain their existing behavior.
+
+The renderer imports the current-generation synchronization objects and allocates/binds the existing ring's bounded CPU-conversion destination images before timed media begins. It never maps or reads unproduced source images, does not create a media queue, and does not change ring12/pending6/common100ms. Source ready/consumed ownership is unchanged. Preparation errors return to the receiver and terminate this native session coherently rather than escaping the render thread or retrying a permanent resource failure indefinitely. Checks occur between bounded setup operations; an unresponsive GPU driver cannot be made cancellable by a user-space deadline.
+
+This fixes lazy NV12 first-use allocation on the timed render path: the previous addOwnedSurface allocation/layout transition/queue-idle work occupied17–18ms conversion scopes, allowing two16.67ms arrivals to overwrite the single latest-wins IPC mailbox. The mailbox's low-latency policy is unchanged. This is **not a zero-copy NV12 consumer implementation**: current conversion remains CPU mapping/conversion/upload. M5a GPU memory negotiation is separate.
+
+`test/native_av_preparation.py` runs a delayed preparation positive, matching lazy-first-use negative, explicit failure and timeout cases. `--headless` checks exact source-to-GPU-completion identities without conflating native compositor stalls; native-mode tests check accepted presentation identities. The test deliberately fails rather than hides presentation losses. Test-only environment controls are VKR_TEST_AV_PREPARE_DELAY_MS (elapsed, maximum5000ms), VKR_TEST_AV_LAZY_PREPARATION and VKR_TEST_AV_PREPARE_FAIL. Normal operation uses none of them.
+
+A separate native45s case validates presentation. Native delayed-preparation tests exposed unrelated long vkQueuePresent call stalls; those failed captures must remain documented, not reclassified as lossless. No physical scanout qualification is implied.
