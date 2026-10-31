@@ -1,0 +1,24 @@
+[
+  {
+    "format": "BGRA",
+    "producer_video_frames": 100,
+    "sink_arrival_video_frames": 100,
+    "scheduled_video_frames": 100,
+    "matched_audio_blocks": 100,
+    "audio_samples": 96000,
+    "late_video": 0,
+    "payload_pts_duration_preserved": true,
+    "physical_playback_qualified": false
+  },
+  {
+    "format": "NV12",
+    "producer_video_frames": 100,
+    "sink_arrival_video_frames": 100,
+    "scheduled_video_frames": 100,
+    "matched_audio_blocks": 100,
+    "audio_samples": 96000,
+    "late_video": 0,
+    "payload_pts_duration_preserved": true,
+    "physical_playback_qualified": false
+  }
+]

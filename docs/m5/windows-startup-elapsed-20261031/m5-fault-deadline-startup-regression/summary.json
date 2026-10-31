@@ -1,0 +1,86 @@
+[
+  {
+    "policy": "producer",
+    "returncode": 0,
+    "cases": [
+      {
+        "format": "BGRA",
+        "intact": true,
+        "stats": {
+          "event": "video-transport-summary",
+          "received": 100,
+          "submitted": 100,
+          "dropped": 0,
+          "ring_full_drops": 0
+        },
+        "received": 100
+      },
+      {
+        "format": "NV12",
+        "intact": true,
+        "stats": {
+          "event": "video-transport-summary",
+          "received": 100,
+          "submitted": 100,
+          "dropped": 0,
+          "ring_full_drops": 0
+        },
+        "received": 100
+      }
+    ]
+  },
+  {
+    "policy": "audio",
+    "returncode": 0,
+    "cases": [
+      {
+        "format": "BGRA",
+        "intact": false,
+        "stats": {
+          "event": "video-transport-summary",
+          "received": 100,
+          "submitted": 68,
+          "dropped": 32,
+          "ring_full_drops": 32
+        },
+        "received": 65
+      },
+      {
+        "format": "NV12",
+        "intact": false,
+        "stats": {
+          "event": "video-transport-summary",
+          "received": 100,
+          "submitted": 69,
+          "dropped": 31,
+          "ring_full_drops": 31
+        },
+        "received": 66
+      }
+    ]
+  },
+  {
+    "case": "cancel",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 0.8067167000845075
+  },
+  {
+    "case": "restart",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "elapsed_seconds": 3.2747149001806974
+  },
+  {
+    "case": "long-preroll",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "elapsed_seconds": 4.0779987999703735
+  }
+]
