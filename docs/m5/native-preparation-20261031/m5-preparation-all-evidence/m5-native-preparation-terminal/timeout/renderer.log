@@ -1,0 +1,5 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('prepare-timeout.in.0' .. 'prepare-timeout.in.11')
+[INF] control: moderation API on http://127.0.0.1:64577/api/
+AV_RENDER due_decisions=0 hold_checks=0 late_drops=0 invalid_pts=0 status=native preparation deadline
