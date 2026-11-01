@@ -495,6 +495,10 @@ else()
  endif()
 endif()
 
+if(TEST av_clock_contract)
+ set_tests_properties(av_clock_contract PROPERTIES TIMEOUT 30)
+endif()
+
 add_executable(vkr_headless_pacer_test test/headless_pacer_test.cpp)
 target_include_directories(vkr_headless_pacer_test PRIVATE renderer)
 add_test(NAME headless_pacer COMMAND vkr_headless_pacer_test)
