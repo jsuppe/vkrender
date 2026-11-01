@@ -2,19 +2,26 @@
 #include "av_playback.h"
 #include "av_schedule.h"
 #include <thread>
+#include <chrono>
+#include <stdexcept>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
 #include <cstdio>
+#include <cstdlib>
 namespace vkr {
 // One selected A/V session occupies slot zero. Ordinary slots remain low-latency.
 // Receiver never calls Vulkan: boundary work is acknowledged by render thread.
 class AvInput {
 public:
- struct Request {flSessionConfig config{};std::string name;bool end=false;};
+ struct Request {flSessionConfig config{};std::string name;bool end=false;bool prepare=false;std::chrono::steady_clock::time_point deadline{};};
  std::atomic<bool> stop{false}, muted{false}, paused{false}, finished{false}, succeeded{false};
  AvSchedule schedule;
- explicit AvInput(av::PlaybackOptions options):options_(options) {start(options);}
+ explicit AvInput(av::PlaybackOptions options,bool nativePreparation=false):nativePreparation_(nativePreparation),options_(options) {
+  ringSlots_=AvRingBudget::testRingSlots(std::getenv("VKR_TEST_AV_POOL_SLOTS"));
+  start(options);
+ }
+ unsigned ringSlots() const{return ringSlots_;}
  bool configured() const{return !options_.plugin.empty();}
  bool done() const{return finished.load() && !switching_;}
  void selectSession(const std::string& session){
@@ -31,13 +38,32 @@ public:
     std::unique_lock<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
     base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    budgetNs_=AvRingBudget::maxLatencyNs(c.video.fpsNum,c.video.fpsDen);
+    reportBudget();
     metrics_={};metricsValid_=false;
     request_=std::make_unique<Request>(Request{c,n,false});
     cv_.wait(l,[this]{return !request_||stop.load();});
    };
+   if(nativePreparation_ && options.clockPolicy==av::PlaybackClockPolicy::ProducerMapped)cb.onPrepare=[this](unsigned remainingMs){
+    std::unique_lock<std::mutex> l(m_);
+    if(stop.load())throw std::runtime_error("native preparation cancelled");
+    prepareError_.clear();request_=std::make_unique<Request>();request_->prepare=true;
+    request_->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(remainingMs);
+    const auto deadline=request_->deadline;
+    if(!cv_.wait_until(l,deadline,[this]{return !request_||stop.load();})){
+      stop=true;throw std::runtime_error("native preparation deadline");
+    }
+    if(stop.load())throw std::runtime_error("native preparation cancelled");
+    if(!prepareError_.empty()){stop=true;throw std::runtime_error(prepareError_);}
+   };
    cb.onClock=[this](const av::PlaybackClock& clock){std::lock_guard<std::mutex> l(m_);
     if(clock_)gst_object_unref(clock_);clock_=clock.clock?GST_CLOCK(gst_object_ref(clock.clock)):nullptr;
-    base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+   base_=clock.baseTimeNs;latency_=clock.latencyNs;audio_=clock.audioMaster;
+    // onSession precedes the selected playback clock; report only its real
+    // negotiated latency here, not the empty startup placeholder.
+    std::fprintf(stderr,"AV_RING_CONFIG ring_slots=%u pending_slots=%u common_latency_ns=%llu\n",
+     ringSlots_,AvRingBudget::pendingSlots,(unsigned long long)latency_);
+    reportBudget();
    };
    cb.onEnd=[this]{std::unique_lock<std::mutex> l(m_);if(stop)return;
     if(clock_){gst_object_unref(clock_);clock_=nullptr;}audio_=false;
@@ -65,7 +91,10 @@ public:
    status_="connecting";l.unlock();start(options_);return;
   }
   if(!request_)return;
-  fn(*request_);schedule.reset(request_->config.generation);active_=!request_->end;
+  if(request_->prepare){
+   try{fn(*request_);}catch(const std::exception& e){prepareError_=e.what();}
+   catch(...){prepareError_="native preparation failed";}
+  }else{fn(*request_);schedule.reset(request_->config.generation);active_=!request_->end;}
   request_.reset();cv_.notify_all();
  }
  bool active() const{return active_;}
@@ -78,6 +107,18 @@ public:
  MetricsSnapshot metrics(){std::lock_guard<std::mutex> l(m_);return {metrics_,metricsValid_};}
  bool audioMaster(){std::lock_guard<std::mutex> l(m_);return audio_;}
 private:
+ // Caller holds m_. Report negotiated latency; never lower the common A/V epoch.
+ void reportBudget(){
+  if(latency_>budgetNs_ && (!budgetWarned_ || warnedLatency_!=latency_)){
+   std::fprintf(stderr,"AV_RING_BUDGET latency_ns=%llu nominal_max_ns=%llu ring_slots=%u pending_slots=%u policy=bounded_backpressure_drops_possible\n",
+    (unsigned long long)latency_,(unsigned long long)budgetNs_,ringSlots_,AvRingBudget::pendingSlots);
+   budgetWarned_=true;warnedLatency_=latency_;
+  }
+ }
+ uint64_t budgetNs_=0,warnedLatency_=0;bool budgetWarned_=false;
+ std::string prepareError_;
+ bool nativePreparation_=false;
+ unsigned ringSlots_=AvRingBudget::ringSlots;
  av::PlaybackMetrics metrics_{};bool metricsValid_=false;
  av::PlaybackOptions options_;bool switching_=false;std::string nextSession_;
  std::thread worker_;std::mutex m_;std::condition_variable cv_;std::unique_ptr<Request> request_;

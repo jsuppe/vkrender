@@ -1,0 +1,4 @@
+{"event":"session-ready","instance":"d5cf450057541e0fdd3f22970a2510b4","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"video-transport-summary","received":600,"submitted":521,"dropped":79,"ring_full_drops":79}
+{"event":"session-complete","instance":"d5cf450057541e0fdd3f22970a2510b4","generation":1,"format":"NV12","video_frames":600,"audio_blocks":600,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":600,"audio_blocks":600,"errors":0,"disconnects":0}

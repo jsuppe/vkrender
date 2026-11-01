@@ -1,0 +1,26 @@
+[
+  {
+    "module": "win32kfull.sys",
+    "pdb": "win32kfull.pdb",
+    "url": "https://msdl.microsoft.com/download/symbols/win32kfull.pdb/E44AE6E5F6284389F7A58878592D07B81/win32kfull.pdb",
+    "bytes": 2740224
+  },
+  {
+    "module": "win32kbase.sys",
+    "pdb": "win32kbase.pdb",
+    "url": "https://msdl.microsoft.com/download/symbols/win32kbase.pdb/7BD4193FFA935A0483172A97C84B455D1/win32kbase.pdb",
+    "bytes": 2756608
+  },
+  {
+    "module": "dxgkrnl.sys",
+    "pdb": "dxgkrnl.pdb",
+    "url": "https://msdl.microsoft.com/download/symbols/dxgkrnl.pdb/95CF6A2BB6DC4A124C867ACA3FF948EC1/dxgkrnl.pdb",
+    "bytes": 3010560
+  },
+  {
+    "module": "dxgmms2.sys",
+    "pdb": "dxgmms2.pdb",
+    "url": "https://msdl.microsoft.com/download/symbols/dxgmms2.pdb/042D9DDB9160211EFE30A3B5849A5A9E1/dxgmms2.pdb",
+    "bytes": 815104
+  }
+]

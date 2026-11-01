@@ -1,0 +1,24 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('160x90-50-BGRA-av.in.0' .. '160x90-50-BGRA-av.in.11')
+[INF] control: moderation API on http://127.0.0.1:59097/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: imported win32 surface key=23 160x90 (1 total, zero-copy)
+[INF] service: system wake held (presentation active)
+[INF] renderer: imported win32 surface key=16 160x90 (2 total, zero-copy)
+[INF] renderer: imported win32 surface key=17 160x90 (3 total, zero-copy)
+[INF] renderer: imported win32 surface key=18 160x90 (4 total, zero-copy)
+[INF] renderer: imported win32 surface key=19 160x90 (5 total, zero-copy)
+[INF] renderer: imported win32 surface key=20 160x90 (6 total, zero-copy)
+[INF] renderer: imported win32 surface key=21 160x90 (7 total, zero-copy)
+[INF] renderer: imported win32 surface key=22 160x90 (8 total, zero-copy)
+[INF] scene: 281 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 189 adoptions in 5s (pool 8 slots, 1 producers)
+[INF] scene: 300 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 250 adoptions in 5s (pool 8 slots, 1 producers)
+[INF] service: display wake released (presentation idle)
+AV_RENDER due_decisions=488 hold_checks=108 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-clock","policy":"producer","system_now_ns":1386397518850100,"selected_now_ns":1386397518849900,"device_now_ns":0,"mapped_producer_base_ns":1386397509238550,"playback_base_ns":1386397509238550,"latency_ns":100000000,"resample_slaves":1}
+{"event":"playback-metrics","peak_queue_buffers":4,"peak_queue_ns":80000000,"queue_empty_events":4,"queue_full_events":3,"late_audio_blocks":0,"arrival_drift_ns":-7320500}
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":500,"audio_samples":480000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":10000000000,"video_end_ns":10000000000}

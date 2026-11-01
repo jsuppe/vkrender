@@ -1,0 +1,59 @@
+{
+  "1920x1080-30-NV12-av": {
+    "service.input_cpu_map": {
+      "median_ms": 0.6831,
+      "p99_ms": 1.2176
+    },
+    "service.input_cpu_pixels": {
+      "median_ms": 1.4754,
+      "p99_ms": 1.5702
+    },
+    "service.input_cpu_upload": {
+      "median_ms": 0.3077,
+      "p99_ms": 0.3707
+    },
+    "service.input_cpu_conversion": {
+      "median_ms": 3.3637,
+      "p99_ms": 4.2971
+    }
+  },
+  "1920x1080-60-NV12-av": {
+    "service.input_cpu_map": {
+      "median_ms": 0.6765,
+      "p99_ms": 1.3788
+    },
+    "service.input_cpu_pixels": {
+      "median_ms": 1.4737,
+      "p99_ms": 1.4904
+    },
+    "service.input_cpu_upload": {
+      "median_ms": 0.3071,
+      "p99_ms": 0.3844
+    },
+    "service.input_cpu_conversion": {
+      "median_ms": 3.3413,
+      "p99_ms": 4.3297
+    }
+  },
+  "160x90-50-NV12-av": {
+    "service.input_cpu_map": {
+      "median_ms": 0.16995,
+      "p99_ms": 0.3232
+    },
+    "service.input_cpu_pixels": {
+      "median_ms": 0.0103,
+      "p99_ms": 0.0107
+    },
+    "service.input_cpu_upload": {
+      "median_ms": 0.0018,
+      "p99_ms": 0.0044
+    },
+    "service.input_cpu_conversion": {
+      "median_ms": 0.1874,
+      "p99_ms": 0.7289
+    }
+  },
+  "160x90-50-BGRA-av": {},
+  "1920x1080-30-BGRA-av": {},
+  "1920x1080-60-BGRA-av": {}
+}

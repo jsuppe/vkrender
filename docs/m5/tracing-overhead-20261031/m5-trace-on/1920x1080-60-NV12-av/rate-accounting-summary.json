@@ -1,0 +1,36 @@
+{
+  "steady_present_gap_ms_max": 16.9001,
+  "case": "1920x1080-60-NV12-av",
+  "expected": 2700,
+  "accepted_unique": 2697,
+  "steady_rate_fps": 59.99921137911309,
+  "first_present_gap_ms_max": 46.5718,
+  "first_present_gap_ms_p99": 16.8558,
+  "accounting_complete": true,
+  "stages": {
+    "sink_receive": 2700,
+    "buffer_acquire": 2700,
+    "submit": 2700,
+    "ipc_receive": 2700,
+    "consumer_acquire": 2697,
+    "schedule": 2697,
+    "adopt": 2697,
+    "render_submit": 2697,
+    "present_attempt": 2697,
+    "present_submit": 2697,
+    "gpu_complete": 2697,
+    "drop": 3
+  },
+  "phases": {
+    "startup": {
+      "complete": 57,
+      "classified_drop:pending_replaced": 3
+    },
+    "steady": {
+      "complete": 2580
+    },
+    "end": {
+      "complete": 60
+    }
+  }
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "file": "transport.15856.csv",
+    "op": "d3d11.signal_ready",
+    "etl_wall_aligned_start_us": 2662692.4,
+    "duration_us": 154505.7,
+    "pts": "116666666"
+  },
+  {
+    "file": "transport.15856.csv",
+    "op": "d3d11.signal_ready",
+    "etl_wall_aligned_start_us": 3297055.2,
+    "duration_us": 88660.0,
+    "pts": "750000000"
+  },
+  {
+    "file": "transport.15856.csv",
+    "op": "d3d11.signal_ready",
+    "etl_wall_aligned_start_us": 3394034.7,
+    "duration_us": 33019.0,
+    "pts": "766666666"
+  },
+  {
+    "file": "renderer.18576.csv",
+    "op": "scene.queue_submit_cpu",
+    "etl_wall_aligned_start_us": 2653694.1,
+    "duration_us": 163011.0,
+    "pts": "0"
+  },
+  {
+    "file": "renderer.18576.csv",
+    "op": "service.input_cpu_map",
+    "etl_wall_aligned_start_us": 3284574.3,
+    "duration_us": 97818.9,
+    "pts": "0"
+  }
+]

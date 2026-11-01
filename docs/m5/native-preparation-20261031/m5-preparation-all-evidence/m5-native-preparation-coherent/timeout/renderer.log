@@ -1,0 +1,6 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('prepare-timeout.in.0' .. 'prepare-timeout.in.11')
+[INF] control: moderation API on http://127.0.0.1:59335/api/
+[INF] scene: 123 frames in 5s (two-cubes, 0/0 streams in scene, 1 windows)
+[INF] service: 0 adoptions in 5s (pool 0 slots, 0 producers)

@@ -1,0 +1,47 @@
+[  4%] Built target glslang-default-resource-limits
+[  5%] Built target vkr_common
+[  5%] Built target framelink
+[ 25%] Built target glslang
+[ 26%] Built target volk
+[ 30%] Built target vkr_wl_dmabuf_client
+[ 31%] Built target vkr_webrtc
+[ 52%] Built target glfw
+[ 53%] Built target vkr_ipc_test
+[ 54%] Built target vkr_rtsp
+[ 55%] Built target vkr_scene_layout_test
+[ 56%] Built target vkr_portable_output_check
+[ 56%] Building CXX object CMakeFiles/vkr_gpu_output_caps.dir/renderer/vk_context.cpp.o
+[ 56%] Building CXX object CMakeFiles/vkr_gpu_output_pixels.dir/renderer/vk_context.cpp.o
+[ 57%] Built target vkr_android_surface_generations_test
+[ 59%] Built target vkr_control_test
+[ 59%] Built target vkr_android_control_test
+[ 61%] Built target vkr_control_short_write_test
+[ 62%] Built target vkr_preview_mailbox_test
+[ 63%] Built target vkr_av_schedule_test
+[ 65%] Built target vkr_headless_pacer_test
+[ 65%] Built target vkr_av_clock_contract_test
+[ 66%] Built target SPIRV
+[ 67%] Built target vkr_nv12_cpu_test
+[ 68%] Built target GenericCodeGen
+[ 68%] Built target MachineIndependent
+[ 69%] Built target OSDependent
+[ 70%] Built target gstframelink
+[ 71%] Built target framelink_producer
+[ 73%] Built target framelink_consumer
+[ 73%] Built target framelink_av_session
+[ 75%] Built target framelink_av_producer
+[ 77%] Built target framelink_av_consumer
+[ 79%] Built target vkdecoder
+[ 81%] Built target glslang-standalone
+[ 83%] Built target framelink_av_playback
+[ 86%] Built target vkr_shaders
+[ 87%] Building CXX object CMakeFiles/vkr_gpu_sync_fd_test.dir/renderer/vk_context.cpp.o
+[ 88%] Building CXX object CMakeFiles/vkrenderer.dir/renderer/vk_context.cpp.o
+[ 89%] Linking CXX executable vkr_gpu_output_caps
+[ 90%] Linking CXX executable vkr_gpu_output_pixels
+[ 91%] Built target vkr_gpu_output_caps
+[ 92%] Built target vkr_gpu_output_pixels
+[ 92%] Linking CXX executable vkr_gpu_sync_fd_test
+[ 93%] Linking CXX executable vkrenderer
+[ 93%] Built target vkr_gpu_sync_fd_test
+[100%] Built target vkrenderer

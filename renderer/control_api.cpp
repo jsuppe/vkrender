@@ -176,7 +176,11 @@ int ControlApi::handleRequest(mg_connection* conn) {
                      }(),
                      (unsigned)s.streams.size());
             j = buf;
-            j.pop_back();j += ",\"av\":{\"active\":"+std::string(s.avActive?"true":"false")+
+            j.pop_back();
+            j += ",\"presentation_submission\":{\"calls\":"+std::to_string(s.presentCalls)+
+                ",\"errors\":"+std::to_string(s.presentErrors)+",\"first_monotonic_ns\":"+std::to_string(s.presentFirstNs)+
+                ",\"last_monotonic_ns\":"+std::to_string(s.presentLastNs)+",\"physical_scanout_measured\":false}";
+            j += ",\"av\":{\"active\":"+std::string(s.avActive?"true":"false")+
                 ",\"audio_master\":"+(s.avAudioMaster?"true":"false")+
                 ",\"muted\":"+(s.avMuted?"true":"false")+
                 ",\"paused\":"+(s.avPaused?"true":"false")+

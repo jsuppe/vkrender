@@ -1,0 +1,10 @@
+Renderer: c54cf7f (base7af0322 +50b39f2 retirement +1217e46 tracing via2db20eb +capacitycontract).
+FrameLink: b551b63.
+Analyzer: 87da51e.
+Windows Release native Vulkan FIFO window, RTX5090 Caspar interactive limited task.
+45sec source; four sequential1080p BGRA/NV12 30/60. Shared100ms producerclock.
+VKR_TRACE_EVENTS=FRAMELINK_TRACE_EVENTS=FRAMELINK_GST_TRACE_EVENTS=262144.
+No validationlayer or testfault injection in throughput runs.
+vkrenderer.exe SHA256 83A9244E8A50CF74DE48564E9CBEA3F96E15FB456187DCD75B0997D23D9B7B64
+framelink.dll SHA256 7483EA98001E491D36EAFCE0E2AEDD646898F94536F1C9BC4CF4942014AB2343
+gstframelink.dll SHA256 33C89A0CC103AA5C349E928F1F198E5EA18CD56DB9ACC1C445139F0FAFF3D58A

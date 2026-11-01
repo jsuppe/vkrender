@@ -9,7 +9,7 @@ on:
 
 # Match the renderer API to a reproducible FrameLink revision.
 env:
-  FRAMELINK_REF: 6aba99cd3c33e3eb1abe8bdb30261d32fdf94c0b
+  FRAMELINK_REF: 21d15d56e51e9c7e200f2b0d6481880b9af6dd45
 
 jobs:
   windows:
@@ -52,6 +52,12 @@ jobs:
           Write-Host "devel msi exit: $($p2.ExitCode)"
           Get-ChildItem C:\gstreamer -Recurse -Depth 2 -Directory -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty FullName
           if ($p1.ExitCode -ne 0 -or $p2.ExitCode -ne 0) { exit 1 }
+          # The runner process predates the MSI install: exporting the SDK for
+          # compilation does not put its runtime DLLs on subsequent steps' PATH.
+          $root = @('C:\gstreamer\1.0\msvc_x86_64','C:\Program Files\gstreamer\1.0\msvc_x86_64') | Where-Object { Test-Path "$_\lib\gstreamer-1.0.lib" } | Select-Object -First 1
+          if (!$root -or !(Test-Path "$root\bin\gstreamer-1.0-0.dll")) { throw 'GStreamer development/runtime install not found' }
+          "GSTREAMER_1_0_ROOT_MSVC_X86_64=$root" >> $env:GITHUB_ENV
+          "$root\bin" >> $env:GITHUB_PATH
 
       - name: Configure
         run: cmake -S . -B build -A x64 -DFRAMELINK_DIR="${{ github.workspace }}/deps/framelink"
@@ -60,7 +66,8 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Test portable control plane
-        run: ctest --test-dir build -C Release --output-on-failure -R "^(shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+        timeout-minutes: 5
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 60 -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
 
       - name: Package
         shell: pwsh
@@ -115,7 +122,7 @@ jobs:
 
       # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -R "^(ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+        run: ctest --test-dir build --output-on-failure -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
 
   # The sender is a Flutter app, so it builds and tests entirely outside the
   # CMake tree and needs its own job. Ubuntu is deliberate: the suite is pure

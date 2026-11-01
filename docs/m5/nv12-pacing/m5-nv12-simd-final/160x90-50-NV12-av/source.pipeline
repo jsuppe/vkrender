@@ -1,0 +1,1 @@
+videotestsrc num-buffers=500 pattern=ball ! @VIDEO_SINK@ audiotestsrc num-buffers=500 samplesperbuffer=960 volume=0.0 ! @AUDIO_SINK@

@@ -16,6 +16,7 @@
 #include "win_service.h"
 #include "nv12_output.h"
 #include "portable_input.h"
+#include "headless_pacer.h"
 
 // M35: the scene view now goes out over framelink (docs/FRAMELINK.md)
 // instead of the M24 consumer protocol - the CONSUMER owns the ring.
@@ -77,11 +78,11 @@ struct SceneOut {
     std::string name;
     flFormat format = FL_FORMAT_BGRA8;
     uint64_t convertValue=0;
-    Nv12Output converters[proto::kMaxPoolSize];
+    Nv12Output converters[FL_MAX_POOL_SIZE];
     flChannel* channel = nullptr;
     uint32_t width = 0, height = 0, poolSize = 0;
-    VkImage images[proto::kMaxPoolSize] = {};        // imported per slot, cached
-    VkDeviceMemory memories[proto::kMaxPoolSize] = {};
+    VkImage images[FL_MAX_POOL_SIZE] = {};        // imported per slot, cached
+    VkDeviceMemory memories[FL_MAX_POOL_SIZE] = {};
     VkSemaphore readySem = VK_NULL_HANDLE;           // we signal, consumer waits
     int pendingSlot = -1;                            // blit recorded this frame
     uint64_t pendingValue = 0;
@@ -101,13 +102,14 @@ struct SceneOut {
 // instead, exactly as the client rings do.
 struct SlotIn {
     std::deque<flFrame> pending;
+    SceneHost::TraceFrame traceSlots[FL_MAX_POOL_SIZE]{};
     flChannel* channel = nullptr;
     std::string name;
     uint32_t uid = 0;        // scene stream id; stable for the slot's lifetime
     uint64_t generation = 0; // which ring we imported - see flChannelInfo
     uint32_t width = 0, height = 0;
     VkSemaphore readySem = VK_NULL_HANDLE, consumedSem = VK_NULL_HANDLE;
-    bool imported[proto::kMaxPoolSize] = {}; // ring slot -> already in the pool
+    bool imported[FL_MAX_POOL_SIZE] = {}; // ring slot -> already in the pool
     int64_t currentSlot = -1;                // pool key, or -1
     uint64_t currentReady = 0;
     uint64_t lastConsumedSignal = 0;
@@ -118,6 +120,10 @@ struct SlotIn {
 
 // Twelve, because that is the fan-in M22 proved and the scene supports.
 constexpr uint32_t kInSlots = 12;
+static_assert(FL_MAX_POOL_SIZE <= 16, "FrameLink pool keys reserve four slot bits");
+static_assert(AvRingBudget::ringSlots <= FL_MAX_POOL_SIZE, "A/V ownership budget exceeds transport capacity");
+static_assert(AvRingBudget::priorGpuSlots >= SceneHost::kFramesInFlight,
+              "A/V ownership budget must cover older GPU frame contexts");
 
 // M42: what the moderator has decided. Owned and applied by the render loop;
 // the control API only queues commands that mutate it.
@@ -197,8 +203,15 @@ int runWinService(const WinServeOptions& options) {
     // Drop everything imported from this slot's current ring. Called when the
     // generation moves, which on Windows means either a reallocation or a new
     // producer - both hand out new shared handles AND a new fence pair.
+    const auto traceFrame = [](const char* op, const SlotIn& s, const flFrame& f, int64_t result = 0) {
+        if (vkrtrace::enabled())
+            vkrtrace::record({op, vkrtrace::clockNs(), 0, vkrtrace::id(s.name.c_str()),
+                              f.sequence, f._readyValue, s.generation, f.ptsNs, result});
+    };
     auto dropRing = [&](SlotIn& s) {
+        for (const auto& f : s.pending) traceFrame("av.frame_drop.generation_end", s, f);
         s.pending.clear();
+        for (auto& identity : s.traceSlots) identity = {};
         if (!s.readySem && s.currentSlot < 0 && s.generation == 0) return;
         vkDeviceWaitIdle(vk.device);
         if(s.consumedSem && s.currentReady>s.lastConsumedSignal) {
@@ -206,7 +219,7 @@ int runWinService(const WinServeOptions& options) {
             signal.semaphore=s.consumedSem;signal.value=s.currentReady;
             vkSignalSemaphore(vk.device,&signal); // all old GPU reads retired above
         }
-        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+        for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
             if (!s.imported[i]) continue;
             const uint32_t key = (s.uid << 4) | i;
             pass.removeSlot(vk, key);
@@ -303,7 +316,7 @@ int runWinService(const WinServeOptions& options) {
     auto teardownSceneOut = [&](SceneOut& so) {
         if (!so.channel) return;
         vkDeviceWaitIdle(vk.device);
-        for (uint32_t i = 0; i < proto::kMaxPoolSize; ++i) {
+        for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
             so.converters[i].destroy(vk);
             if (so.images[i]) vkDestroyImage(vk.device, so.images[i], nullptr);
             if (so.memories[i]) vkFreeMemory(vk.device, so.memories[i], nullptr);
@@ -348,8 +361,66 @@ int runWinService(const WinServeOptions& options) {
                 info.width, info.height, info.poolSize);
     };
 
-    AvInput avInput(options.avOptions);
+    // Monitor power-on can take the shared graphics adapter's core resource,
+    // blocking both Vulkan and another process's D3D11 Signal. Request power
+    // during session setup, before acknowledging onSession/PRIMED/GO; never
+    // wait for the first timed adoption to wake the presentation output.
+    // A scheduled drop must not release/reacquire the hold and retrigger wake.
+    // Legacy non-AV slots still hold power only while actually presenting.
+    int powerHeld = 0; // 0 = none, 1 = system, 2 = system+display
+    const bool latePowerControl = getenv("VKR_TEST_AV_LATE_POWER_REQUEST") != nullptr;
+    auto updatePower = [&](bool timedSession) {
+        bool presenting = timedSession && !latePowerControl;
+        for (const auto& slot : inSlots)
+            presenting = presenting || (slot.currentSlot >= 0 && !slot.departing);
+        const bool displaysOut = host.activeDisplayCount() > 0;
+        const int powerWant = !presenting ? 0 : (headless && !displaysOut) ? 1 : 2;
+        if (powerWant == powerHeld) return;
+        const auto previousPower = vkrtrace::call("service.power_request", [&]{
+            return SetThreadExecutionState(powerWant == 0 ? ES_CONTINUOUS :
+                powerWant == 1 ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED) :
+                (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED));
+        });
+        // ES_DISPLAY_REQUIRED requests display-on. Preserve the existing input
+        // nudge policy for appliances that also need to dismiss an idle screen;
+        // it now happens before timed media, not at first-frame adoption.
+        static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
+        if (powerWant == 2 && wakeAllowed) {
+            INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = MOUSEEVENTF_MOVE;
+            const auto sent = vkrtrace::call("service.display_input", [&]{return SendInput(1, &in, sizeof(in));});
+            VKR_LOG("service: display input sent=%u thread=%lu", sent, GetCurrentThreadId());
+        }
+        powerHeld = powerWant; // one bounded attempt per policy transition
+        if (!previousPower) VKR_WARN("service: power request failed");
+        VKR_LOG("service: %s %s (presentation %s, timed_session=%d)",
+                powerWant == 1 ? "system wake" : "display wake",
+                powerWant ? "held" : "released", presenting ? "active" : "idle", timedSession);
+    };
+    struct ReleasePower {
+        ~ReleasePower() { SetThreadExecutionState(ES_CONTINUOUS); }
+    } releasePower; // also clear the hold on failure/cancellation/exception
+
+    AvInput avInput(options.avOptions,true);
+    // Diagnostic preparation delay is elapsed-time bounded and applied once per
+    // session, either before GO or at first use in the explicit legacy control.
+    bool preparationDelayDone=false;
+    const bool lazyPreparationControl=getenv("VKR_TEST_AV_LAZY_PREPARATION")!=nullptr;
+    auto preparationDelay=[&](std::chrono::steady_clock::time_point deadline){
+        if(preparationDelayDone)return;preparationDelayDone=true;
+        const char* value=getenv("VKR_TEST_AV_PREPARE_DELAY_MS");
+        if(!value)return;
+        char* tail=nullptr;const auto ms=std::strtoul(value,&tail,10);
+        if(!tail || *tail || ms>5000)throw std::runtime_error("invalid native preparation fault delay");
+        const auto finish=std::chrono::steady_clock::now()+std::chrono::milliseconds(ms);
+        while(std::chrono::steady_clock::now()<finish){
+            if(avInput.stop.load())throw std::runtime_error("native preparation cancelled");
+            if(std::chrono::steady_clock::now()>=deadline)throw std::runtime_error("native preparation deadline");
+            std::this_thread::sleep_until((std::min)(finish,(std::min)(deadline,std::chrono::steady_clock::now()+std::chrono::milliseconds(10))));
+        }
+    };
+
     bool quit = false;
+    HeadlessPacer headlessPacer(std::chrono::steady_clock::now());
     while (!quit) {
         if(options.avExitOnEnd && avInput.done()){exitCode=avInput.succeeded?0:1;break;}
         vkrtrace::Scope loopTrace("service.iteration");
@@ -361,11 +432,15 @@ int runWinService(const WinServeOptions& options) {
                 exitCode = 2;
                 break;
             }
-            // No vsync without a swapchain; this sleep IS the frame pacing.
+            // No vsync without a swapchain; pace the whole iteration, not an
+            // extra 16ms after conversion/rendering. Never burst to catch up.
             // M43: unless a display output is attached - then its FIFO
             // present paces the loop at the panel's refresh instead.
-            if (host.activeDisplayCount() == 0)
-                { vkrtrace::Scope pacing("service.headless_pacing"); std::this_thread::sleep_for(std::chrono::milliseconds(16)); }
+            if (host.activeDisplayCount() == 0) {
+                vkrtrace::Scope pacing("service.headless_pacing");
+                std::this_thread::sleep_until(headlessPacer.deadline());
+                headlessPacer.advance(std::chrono::steady_clock::now());
+            } else headlessPacer.reset(std::chrono::steady_clock::now());
         }
 
         for(auto&output:sceneOuts)attachSceneOut(output);
@@ -374,15 +449,51 @@ int runWinService(const WinServeOptions& options) {
         // slot with nothing new must cost the render thread nothing, and the
         // ready fence is waited on by the GPU, not here.
         avInput.service([&](const AvInput::Request& request){
-            auto& s=inSlots.front();host.forgetStream(s.uid);dropRing(s);
+            auto& s=inSlots.front();
+            if(request.prepare){
+                vkrtrace::Scope preparationTrace("service.native_preparation");
+                if(lazyPreparationControl)return; // deterministic old first-use control only
+                preparationDelay(request.deadline);
+                if(getenv("VKR_TEST_AV_PREPARE_FAIL"))throw std::runtime_error("injected native preparation failure");
+                auto checkPreparation=[&]{
+                    if(avInput.stop.load())throw std::runtime_error("native preparation cancelled");
+                    if(std::chrono::steady_clock::now()>=request.deadline)throw std::runtime_error("native preparation deadline");
+                };
+                checkPreparation();flChannelInfo info{};
+                if(!s.channel || flQuery(s.channel,&info)!=FL_OK)throw std::runtime_error("native preparation channel unavailable");
+                if(info.generation!=s.generation){
+                    dropRing(s);s.generation=info.generation;s.width=info.width;s.height=info.height;
+                    if(!importSync(s))throw std::runtime_error("native preparation fence import failed");
+                }
+                // These are destination conversion images, never unproduced
+                // source pixels. Prepare the existing bounded ring's targets
+                // before the final epoch, not during its first timed frames.
+                if(info.format!=FL_FORMAT_BGRA8){
+                    if(!ensurePool())throw std::runtime_error("native preparation pool failed");
+                    for(uint32_t slot=0;slot<info.poolSize;++slot){
+                        checkPreparation();const uint32_t key=(s.uid<<4)|slot;
+                        if(!pool.addOwnedSurface(vk,key,info.width,info.height))throw std::runtime_error("native preparation surface failed");
+                        s.imported[slot]=true;
+                        if(passBound && !passNeedsBind && !pass.addSlot(vk,pool,key))throw std::runtime_error("native preparation descriptor failed");
+                    }
+                    if(!passBound || passNeedsBind){passBound=pass.bindPool(vk,pool);passNeedsBind=false;
+                        if(!passBound)throw std::runtime_error("native preparation descriptors failed");}
+                }
+                checkPreparation();
+                std::fprintf(stderr,"AV_NATIVE_PREPARED slots=%u generation=%llu format=%u\n",info.poolSize,(unsigned long long)info.generation,unsigned(info.format));
+                return;
+            }
+            preparationDelayDone=false;
+            host.forgetStream(s.uid);dropRing(s);
             if(s.channel)flClose(s.channel);s.channel=nullptr;s.generation=0;
             if(!request.end){s.name=request.name;
                 if(flCreateChannelOnAdapter(s.name.c_str(),request.config.video.width,request.config.video.height,
-                    (flFormat)request.config.video.format,8,
-                    request.config.video.format==FL_FORMAT_BGRA8?FL_GPU_SYNC:FL_DEFER_RELEASE,
+                    (flFormat)request.config.video.format,avInput.ringSlots(),
+                    FL_GPU_SYNC,
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
             }
+            updatePower(!request.end); // completes before onSession is acknowledged
         });
         for (SlotIn& s : inSlots) {
             if (!s.channel) continue;
@@ -406,13 +517,17 @@ int runWinService(const WinServeOptions& options) {
             flFrame f{};
             const bool scheduled=(&s==&inSlots.front() && avInput.active());
             flResult r=FL_TIMEOUT;
+            AvAcquireBudget acquireBudget;
+            auto acquirePending=[&]{
+                acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
+                    flFrame next{};r=flAcquireFrame(s.channel,&next,0);
+                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                });
+            };
             if(scheduled){
                 // Bookkeeping release does NOT recycle deferred/GPU-sync storage.
                 // This permits a bounded timestamp queue without blocking acquire.
-                if(s.pending.size()<6){flFrame next{};
-                    r=flAcquireFrame(s.channel,&next,0);
-                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
-                }
+                acquirePending();
                 if(!s.pending.empty()){f=s.pending.front();r=FL_OK;}
             }else r=flAcquireFrame(s.channel,&f,0);
             auto releaseFrame=[&]{if(!scheduled)flRelease(s.channel,&f);};
@@ -434,20 +549,40 @@ int runWinService(const WinServeOptions& options) {
             flChannelInfo now{};
             flQuery(s.channel, &now);
             if (now.generation != s.generation) {
+                traceFrame("av.frame_drop.generation_changed", s, f);
                 releaseFrame();
                 continue;
             }
 
             if(&s==&inSlots.front() && avInput.active()){
+                // Queue metadata without waiting for producer GPU work. CPU
+                // mapping still requires completion; observe it without blocking
+                // before scheduling/adopting this pending frame.
+                if(now.format!=FL_FORMAT_BGRA8) {
+                    VkSemaphoreWaitInfo ready{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+                    ready.semaphoreCount=1;ready.pSemaphores=&s.readySem;ready.pValues=&f._readyValue;
+                    const VkResult readyResult=vkWaitSemaphores(vk.device,&ready,0);
+                    if(readyResult==VK_TIMEOUT)continue;
+                    if(readyResult!=VK_SUCCESS)throw std::runtime_error("A/V CPU input readiness failed");
+                }
                 auto decision=avInput.decide(f.ptsNs);
                 if(decision==AvSchedule::Decision::Hold){continue;}
                 s.pending.pop_front();avInput.schedule.queued=s.pending.size();
+                // A full queue skipped the pre-decision acquire. Refill the newly
+                // freed slot now, not one render iteration later: otherwise a
+                // steady 60 Hz source loses one latest-wins frame every queue cycle.
+                // Bookkeeping release retains deferred/GPU-sync ownership; neither
+                // capacity nor consumed-fence retirement is changed here.
+                acquirePending();
             if(decision!=AvSchedule::Decision::Present){
+                    traceFrame(decision==AvSchedule::Decision::Drop ? "av.frame_drop.late" : "av.frame_drop.invalid", s, f);
                     host.forgetStream(s.uid);s.currentSlot=-1;s.pendingConsumed=f._readyValue;
                     releaseFrame();continue;
                 }
             }
+            traceFrame("av.frame_schedule", s, f);
             auto failedAdoption=[&]{
+                traceFrame("av.frame_drop.import_failed", s, f);
                 if(scheduled){
                     ++avInput.schedule.importFailures;
                     // Forget retained sampling before releasing through this
@@ -470,6 +605,7 @@ int runWinService(const WinServeOptions& options) {
             }
             const uint32_t key = (s.uid << 4) | f.slot;
             if(now.format!=FL_FORMAT_BGRA8) {
+                if(scheduled && lazyPreparationControl)preparationDelay(std::chrono::steady_clock::now()+std::chrono::milliseconds(options.avOptions.timeoutMs));
                 if(!uploadFrame(vk,pool,pass,passBound,f.image,key,now)) {failedAdoption();continue;}
                 passNeedsBind=false;s.imported[f.slot]=true;
             }
@@ -494,6 +630,11 @@ int runWinService(const WinServeOptions& options) {
             s.departing = false;
             s.currentSlot = (int64_t)key;
             s.currentReady = f._readyValue;
+            if (vkrtrace::enabled()) {
+                s.traceSlots[f.slot] = {int64_t(key), vkrtrace::id(s.name.c_str()),
+                    s.generation, f.sequence, f._readyValue, f.ptsNs};
+                traceFrame("av.frame_adopt", s, f);
+            }
             slotLastFrameNs[&s - inSlots.data()] = nowNs();
             ++slotFrameCount[&s - inSlots.data()];
             // Release the PREVIOUS frame, not this one: the scene keeps
@@ -558,6 +699,24 @@ int runWinService(const WinServeOptions& options) {
 
         std::vector<SceneHost::StreamRef> streams;
         SceneHost::Extras extras;
+        std::vector<VkSemaphore> retireSems;
+        std::vector<uint64_t> retireValues;
+        std::vector<SlotIn*> retireOwners;
+        static const bool traceRetirement = [] {
+            const char* p = getenv("VKR_TRACE_RETIRE");
+            return p && p[0] == '1';
+        }();
+        // Diagnostic schema: sequence=current ready value, fence=observed or
+        // submitted consumed value, slot=generation, duration_ns=pending depth,
+        // pts_ns=current media PTS. These are NOT GPU duration measurements.
+        const auto retireTrace = [&](const char* op, const SlotIn& s, uint64_t value, int64_t result) {
+            if (!traceRetirement || !vkrtrace::enabled()) return;
+            int64_t pts = -1;
+            for (const auto& frame : s.traceSlots)
+                if (frame.key >= 0 && frame.key == s.currentSlot) {pts=frame.pts;break;}
+            vkrtrace::record({op,vkrtrace::clockNs(),uint64_t(s.pending.size()),
+                vkrtrace::id(s.name.c_str()),s.currentReady,value,s.generation,pts,result});
+        };
         // Reap departures and record liveness. Consumed-fence signals are
         // issued for EVERY live slot - hidden or rotated-out producers must
         // keep flowing, or their rings fill and they stall behind a moderator
@@ -565,24 +724,44 @@ int runWinService(const WinServeOptions& options) {
         bool live[kInSlots] = {};
         for (SlotIn& s : inSlots) {
             const size_t idx = (size_t)(&s - inSlots.data());
+            if (s.departing && s.currentSlot >= 0 &&
+                ((nowNs() - s.departedNs) > 3000000000ll || !host.retainsStream((uint64_t)s.uid))) {
+                dropRing(s);s.departing=false;s.generation=0;
+                continue;
+            }
+            if (traceRetirement && vkrtrace::enabled() && s.consumedSem) {
+                uint64_t completed=0;
+                const auto result=vkGetSemaphoreCounterValue(vk.device,s.consumedSem,&completed);
+                retireTrace("av.retire_observed",s,completed,result);
+            }
             if (s.pendingConsumed && s.consumedSem) {
-                extras.signalSems.push_back(s.consumedSem);
-                extras.signalValues.push_back(s.pendingConsumed);
+                retireSems.push_back(s.consumedSem);
+                retireValues.push_back(s.pendingConsumed);
+                if (traceRetirement && vkrtrace::enabled()) retireOwners.push_back(&s);
                 s.lastConsumedSignal = s.pendingConsumed;
                 s.pendingConsumed = 0;
             }
             if (s.currentSlot < 0) continue;
-            const bool expired =
-                s.departing && (nowNs() - s.departedNs) > 3000000000ll; // 3 s
-            if (s.departing && (expired || !host.retainsStream((uint64_t)s.uid))) {
-                dropRing(s);
-                s.departing = false;
-                s.generation = 0; // force a re-import when someone attaches
-                continue;
-            }
             if (s.departing) continue;
             live[idx] = true;
             mod.ensureOrdered((uint32_t)idx);
+        }
+        // Retired input frames were sampled only by earlier queue submissions.
+        // Signal after those reads, BEFORE acquiring the next swapchain image:
+        // bundling retirement with the new frame also waits for its vsync and
+        // producer-ready semaphore, unnecessarily starving the bounded ring.
+        if (!retireSems.empty()) {
+            VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+            timeline.signalSemaphoreValueCount=uint32_t(retireValues.size());
+            timeline.pSignalSemaphoreValues=retireValues.data();
+            VkSubmitInfo retire{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            retire.pNext=&timeline;retire.signalSemaphoreCount=uint32_t(retireSems.size());
+            retire.pSignalSemaphores=retireSems.data();
+            const auto retireResult=vkQueueSubmit(vk.queue,1,&retire,VK_NULL_HANDLE);
+            for(size_t i=0;i<retireOwners.size();++i)
+                retireTrace("av.retire_submit",*retireOwners[i],retireValues[i],retireResult);
+            if(retireResult!=VK_SUCCESS)
+                throw std::runtime_error("A/V input retirement submit failed");
         }
         // Selection: spotlight, then pinned, then the carousel over the rest
         // (see Moderation::select). Only the SELECTED streams reach the layout
@@ -611,57 +790,8 @@ int runWinService(const WinServeOptions& options) {
                 break;
             }
 
-        // M28: keep the display awake while a presentation is live.
-        //
-        // Not cosmetic. A sleeping display stops the compositor consuming
-        // swapchain images, so FIFO vkQueuePresentKHR blocks ~134 ms and the
-        // ENTIRE scene collapses to ~7 fps - measured on this box after its
-        // monitor had been asleep for three hours, with the GPU otherwise
-        // finishing frames instantly (136k fps under IMMEDIATE). In a meeting
-        // room that is a live failure: the display sleeps after five idle
-        // minutes, someone casts, and every producer's ring starves against a
-        // 7 fps consumer.
-        //
-        // Held only while presenting, so an idle room display is still allowed
-        // to sleep.
-        // Headless (vcam-only) needs the SYSTEM held awake while presenting -
-        // the camera must keep pumping into the meeting - but has no display
-        // to wake and no swapchain for a sleeping panel to starve, so the
-        // panel is left alone entirely.
-        // M43: a headless appliance WITH attached display outputs is back in
-        // the "sleeping panel starves the swapchain" regime above, so the
-        // display hold (and the wake nudge) applies whenever displays are out.
-        const bool displaysOut = host.activeDisplayCount() > 0;
-        static int powerHeld = 0; // 0 = none, 1 = system, 2 = system+display
-        const int powerWant = !presenting ? 0 : (headless && !displaysOut) ? 1 : 2;
-        if (powerWant != powerHeld) {
-            SetThreadExecutionState(powerWant == 0
-                                        ? ES_CONTINUOUS
-                                        : powerWant == 1
-                                              ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
-                                              : (ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
-                                                 ES_DISPLAY_REQUIRED));
-            // ES_DISPLAY_REQUIRED only PREVENTS sleep - it will not wake a
-            // display that is already off, which is exactly the state a room
-            // appliance is in when someone starts casting. Waking needs input,
-            // so synthesise a zero-delta mouse move: it resets the idle timer
-            // and powers the panel without moving the user's cursor.
-            // VKR_NO_DISPLAY_WAKE=1 opts out (useful on a dev box, where a
-            // receiver stealing the display is just rude).
-            static const bool wakeAllowed = getenv("VKR_NO_DISPLAY_WAKE") == nullptr;
-            if (powerWant == 2 && wakeAllowed) {
-                INPUT in{};
-                in.type = INPUT_MOUSE;
-                in.mi.dwFlags = MOUSEEVENTF_MOVE;
-                in.mi.dx = 0;
-                in.mi.dy = 0;
-                SendInput(1, &in, sizeof(in));
-            }
-            powerHeld = powerWant;
-            VKR_LOG("service: %s %s (presentation %s)",
-                    powerWant == 1 ? "system wake" : "display wake",
-                    powerWant ? "held" : "released", presenting ? "active" : "idle");
-        }
+        // Hold across scheduled holds/drops, not just a currently adopted frame.
+        updatePower(avInput.active() && !avInput.finished.load());
         const int64_t scenePts=nowNs();
         for (auto& sceneOut : sceneOuts) {
             vkrtrace::Scope outputTrace("service.output_prepare",vkrtrace::id(sceneOut.name.c_str()));
@@ -698,6 +828,11 @@ int runWinService(const WinServeOptions& options) {
             }
         } // all scene outputs share this render and timestamp
 
+        if (vkrtrace::enabled()) {
+            for (const auto& s : inSlots)
+                for (const auto& identity : s.traceSlots)
+                    if (identity.key >= 0) extras.traceFrames.push_back(identity);
+        }
         if(controlUp && control.previewDue())host.requestPreview();
         if (!host.frame(vk, pool, pass, passBound, streams, extras, &quit)) {
             exitCode = 1;
@@ -711,6 +846,8 @@ int runWinService(const WinServeOptions& options) {
             if(host.takePreview(bgra))
                 control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
             ControlSnapshot snap;
+            snap.presentCalls=host.presentCalls();snap.presentErrors=host.presentErrors();
+            snap.presentFirstNs=host.presentFirstNs();snap.presentLastNs=host.presentLastNs();
             switch (host.layout()) {
                 case SceneLayout::Presentation: snap.layout = "presentation"; break;
                 case SceneLayout::TwoCubes: snap.layout = "two-cubes"; break;

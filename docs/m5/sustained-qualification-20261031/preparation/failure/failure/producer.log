@@ -1,0 +1,2 @@
+{"event":"session-ready","instance":"36a612ce1ac38f6a9db14a3e1ce31da8","generation":1,"format":"NV12","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+FAIL: control read/disconnect: peer closed connection

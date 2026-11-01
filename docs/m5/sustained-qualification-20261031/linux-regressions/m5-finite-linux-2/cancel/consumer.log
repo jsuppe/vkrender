@@ -1,0 +1,3 @@
+{"event":"playback-clock","policy":"producer","system_now_ns":265008130066947,"selected_now_ns":265008130066832,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":265008179981668,"playback_base_ns":265008179981668,"latency_ns":100000000,"resample_slaves":0}
+status=producer-system-clock
+ok=0 sessions=1 clocks=1 ends=1 retries=0 ms=207 error=playback cancelled

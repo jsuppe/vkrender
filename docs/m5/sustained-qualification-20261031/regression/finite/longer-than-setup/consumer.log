@@ -1,0 +1,6 @@
+{"event":"playback-clock","policy":"producer","system_now_ns":1417058073252300,"selected_now_ns":1417058073252000,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":1417058123175450,"playback_base_ns":1417058123175450,"latency_ns":100000000,"resample_slaves":0}
+{"event":"video-schedule-summary","received":200,"scheduled":200,"handed_off":0,"late":0,"overflow":0,"peak_pending":5,"pending_limit":8,"peak_bytes":288000,"byte_limit":134217728}
+{"event":"playback-metrics","peak_queue_buffers":4,"peak_queue_ns":80000000,"queue_empty_events":4,"queue_full_events":4,"late_audio_blocks":0,"arrival_drift_ns":-417000}
+{"event":"playback-complete","audio_master":false,"video_received":200,"video_late":0,"audio_blocks":200,"audio_samples":192000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":0,"audio_end_ns":4000000000,"video_end_ns":4000000000}
+{"role":"consumer","ok":true,"mode":"streaming","sessions":1}

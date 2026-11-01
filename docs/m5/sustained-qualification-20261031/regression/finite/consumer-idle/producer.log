@@ -1,0 +1,12 @@
+{"event":"session-ready","instance":"dcbe3007bd715d9867ccad3180d84698","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1417071945451100}
+{"event":"media-progress","instance":"dcbe3007bd715d9867ccad3180d84698","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"dcbe3007bd715d9867ccad3180d84698","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+{"event":"media-progress","instance":"dcbe3007bd715d9867ccad3180d84698","generation":1,"format":"BGRA","video_frames":50,"audio_blocks":50,"audio_offset_ns":0}
+pipeline error: Could not write to resource. (../gst/gio/gstgiobasesink.c(361): gst_gio_base_sink_render (): /GstPipeline:pipeline0/GstGioStreamSink:audioio:
+Could not write to stream: Socket I/O timed out)
+pipeline error: Internal data stream error. (../libs/gst/base/gstbasesrc.c(3187): gst_base_src_loop (): /GstPipeline:pipeline0/GstAppSrc:audio:
+streaming stopped, reason error (-5))
+pipeline error: Internal data stream error. (../plugins/elements/gstqueue.c(1083): gst_queue_handle_sink_event (): /GstPipeline:pipeline0/GstQueue:queue0:
+streaming stopped, reason error (-5))
+FAIL: audio send failed

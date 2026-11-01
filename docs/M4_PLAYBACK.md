@@ -115,3 +115,21 @@ is a video scheduler deadline error and must not be presented as A/V skew or
 physical lip-sync. A successful transport-offset test does not fill those fields.
 The live smoke test requires populated metrics; the CPU HTTP test checks signed
 values and null unknowns through a real request rather than string matching.
+
+## Windows external-pipeline clock policy
+
+`--av-clock producer` keeps the negotiated producer epoch mapped onto the
+receiver system clock and slaves the audio device with RESAMPLE. Both tracks
+retain their original PTS and one common latency. This avoids a non-running
+WASAPI device clock stalling video while the independent producer advances.
+Legacy `--av-clock audio` remains the default. Producer mode intentionally
+reports `audio_master=false`; it is not an absence of audio playback.
+See FrameLink `docs/M5_PLAYBACK_CLOCK_POLICY.md` for evidence and limitations.
+
+Scheduled input uses a one-attempt-per-iteration acquisition budget. A queue
+that starts full retains that budget until a due frame is popped, then refills
+in the same iteration. This avoids periodic latest-wins gaps without increasing
+queue depth or releasing future GPU buffers. `av_schedule_test` covers full,
+held, and already-attempted budgets; Windows throughput fixtures cover real
+source IDs. `--av-timeout-ms 100..60000` exposes the bounded whole-session deadline
+for longer validation runs; it does not change frame acquisition timeouts.

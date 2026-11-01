@@ -1,0 +1,5 @@
+{"expected_result":true,"case":"prepared","exit":0}
+{"expected_result":true,"case":"late-power-negative","exit":1}
+{"expected_result":true,"case":"lazy-negative","exit":0}
+{"expected_result":true,"case":"failure","exit":0}
+{"expected_result":true,"case":"timeout","exit":0}

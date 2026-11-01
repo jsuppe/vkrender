@@ -1,0 +1,10 @@
+[
+  {
+    "case": "source-stall",
+    "exit_codes": [
+      1,
+      1
+    ],
+    "elapsed_seconds": 2.570636090997141
+  }
+]

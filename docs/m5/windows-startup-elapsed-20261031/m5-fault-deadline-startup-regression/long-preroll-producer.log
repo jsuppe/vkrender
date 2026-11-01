@@ -1,0 +1,7 @@
+{"event":"session-ready","instance":"f2b5c8262a8189cf79d619c662f3692d","generation":1,"format":"BGRA","video_frames":0,"audio_blocks":0,"audio_offset_ns":0}
+{"event":"startup-released","epoch_ns":1404794468758100}
+{"event":"media-progress","instance":"f2b5c8262a8189cf79d619c662f3692d","generation":1,"format":"BGRA","video_frames":1,"audio_blocks":1,"audio_offset_ns":0}
+{"event":"media-progress","instance":"f2b5c8262a8189cf79d619c662f3692d","generation":1,"format":"BGRA","video_frames":25,"audio_blocks":25,"audio_offset_ns":0}
+{"event":"producer-pacing","pacing_ppm":0,"max_push_ns":53600}
+{"event":"session-complete","instance":"f2b5c8262a8189cf79d619c662f3692d","generation":1,"format":"BGRA","video_frames":40,"audio_blocks":40,"audio_offset_ns":0}
+{"role":"producer","ok":true,"sessions":1,"video_frames":40,"audio_blocks":40,"errors":0,"disconnects":0}

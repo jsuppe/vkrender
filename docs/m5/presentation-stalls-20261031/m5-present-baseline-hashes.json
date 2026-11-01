@@ -1,0 +1,12 @@
+[
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "B5E5387D45912EBD4D770440EAC23E595DEB97ADC55A8CA068956B0195D5AF88",
+        "Path":  "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\Release\\vkrenderer.exe"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "EE4EA1FF1BC5C12DE60E0ECB7AE1DDCC6B290D015B892616016593DF4E175643",
+        "Path":  "C:\\Users\\jonsu\\dev\\vkrender-m5-final-validation\\build-final\\framelink\\Release\\framelink.dll"
+    }
+]

@@ -1,0 +1,3 @@
+{"event": "observer_start", "steady_ns": 1414815525595800, "wall_ns": 1793457192871806100, "idle_ms": 88250}
+{"event": "display_state", "steady_ns": 1414815525785900, "wall_ns": 1793457192871992800, "guid": "6fe69556", "value": 1, "length": 4}
+{"event": "observer_end", "steady_ns": 1415116042229600, "wall_ns": 1793457493388437400}

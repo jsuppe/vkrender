@@ -1,0 +1,4 @@
+{"case":"1920x1080-60-BGRA-av","trace":"off","finished":"2026-10-31T12:27:15.1222746Z","exit":0}
+{"case":"1920x1080-60-BGRA-av","trace":"on","finished":"2026-10-31T12:28:02.2804285Z","exit":0}
+{"case":"1920x1080-60-NV12-av","trace":"off","finished":"2026-10-31T12:28:49.1226245Z","exit":0}
+{"case":"1920x1080-60-NV12-av","trace":"on","finished":"2026-10-31T12:29:36.2018636Z","exit":0}

@@ -61,6 +61,8 @@ struct WindowSpec {
 
 class SceneHost {
 public:
+    // Exposed so A/V ownership capacity cannot silently outlive this bound.
+    static constexpr uint32_t kFramesInFlight = 2;
     // vk must already be initialized: window mode with the FIRST spec's size
     // (the host repositions it), or headless (then specs beyond the first are
     // ignored and the offscreen target is the whole canvas).
@@ -73,7 +75,15 @@ public:
     // applies its enable/disable set and the active layout. Extra timeline
     // waits/signals (the Windows service's per-client fences) join the
     // frame's single submit.
+    // Optional software-frame accounting. key is the actual sampled pool slot.
+    // These records describe GPU submissions/completions, never physical scanout.
+    struct TraceFrame {
+        int64_t key = -1;
+        uint64_t channel = 0, generation = 0, sequence = 0, ready = 0;
+        int64_t pts = 0;
+    };
     struct Extras {
+        std::vector<TraceFrame> traceFrames;
         std::vector<VkSemaphore> waitSems;
         std::vector<uint64_t> waitValues;
         std::vector<VkSemaphore> signalSems;
@@ -159,7 +169,14 @@ public:
         std::vector<VkImageView> views;
     };
 
+    // Submission observations, not display scanout timestamps. Includes repeated content.
+    uint64_t presentCalls() const { return presentCalls_; }
+    uint64_t presentErrors() const { return presentErrors_; }
+    int64_t presentFirstNs() const { return presentFirstNs_; }
+    int64_t presentLastNs() const { return presentLastNs_; }
 private:
+    uint64_t presentCalls_ = 0, presentErrors_ = 0;
+    int64_t presentFirstNs_ = 0, presentLastNs_ = 0;
     struct WindowRects {
         float u0, v0, u1, v1; // canvas region
     };
@@ -173,6 +190,8 @@ private:
     };
     void recomputeDisplayRects();
     bool resizeFrameSync(VkContext& vk);
+    bool rebuildPresentSemaphores(VkContext& vk); // device idle, indexed by acquired image
+    std::vector<std::vector<VkSemaphore>> presentSems_;
 
     std::vector<WindowSpec> specs_;
     std::vector<Window> extra_;
@@ -192,16 +211,16 @@ private:
     std::vector<uint64_t> lastStreamIds_; // order snapshot for number keys
 
     VkCommandPool cmdPool_ = VK_NULL_HANDLE;
-    static constexpr uint32_t kFramesInFlight = 2;
     struct FrameSync {
         VkFence inFlight = VK_NULL_HANDLE;
         VkSemaphore testGate = VK_NULL_HANDLE;
         uint64_t testGateValue = 0;
         std::thread testRelease;
         FrameGpuTrace gpuTrace;
+        std::vector<TraceFrame> traceFrames;
+        uint64_t traceSubmission = 0;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         std::vector<VkSemaphore> acquireSems;    // per window
-        std::vector<VkSemaphore> renderDoneSems; // per window
     };
     FrameSync frames_[kFramesInFlight];
     PortableOutput portableOutput_;

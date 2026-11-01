@@ -1,0 +1,44 @@
+[INF] renderer: device: NVIDIA GeForce RTX 5090 (headless)
+[INF] scene: 1 window(s), canvas 1280x720 (aspect 1.78). Controls: L layout, SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit
+[INF] service: 12 framelink input slots ready ('av-smoke.in.0' .. 'av-smoke.in.11')
+[INF] control: moderation API on http://127.0.0.1:50091/api/
+[INF] renderer: stream header 640x360 fmt=44, dynamic win32 surfaces
+[INF] renderer: created owned surface key=23 160x90 (shm upload path, 1 total)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=16 160x90 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=17 160x90 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=18 160x90 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=19 160x90 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=20 160x90 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=21 160x90 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=22 160x90 (shm upload path, 8 total)
+[INF] service: display wake released (presentation idle)
+[INF] renderer: created owned surface key=23 160x90 (shm upload path, 1 total)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=16 160x90 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=17 160x90 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=18 160x90 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=19 160x90 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=20 160x90 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=21 160x90 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=22 160x90 (shm upload path, 8 total)
+[INF] service: display wake released (presentation idle)
+[INF] renderer: created owned surface key=23 160x90 (shm upload path, 1 total)
+[INF] service: system wake held (presentation active)
+[INF] renderer: created owned surface key=17 160x90 (shm upload path, 2 total)
+[INF] renderer: created owned surface key=18 160x90 (shm upload path, 3 total)
+[INF] renderer: created owned surface key=19 160x90 (shm upload path, 4 total)
+[INF] renderer: created owned surface key=20 160x90 (shm upload path, 5 total)
+[INF] renderer: created owned surface key=21 160x90 (shm upload path, 6 total)
+[INF] renderer: created owned surface key=22 160x90 (shm upload path, 7 total)
+[INF] renderer: created owned surface key=16 160x90 (shm upload path, 8 total)
+[INF] scene: 295 frames in 5s (two-cubes, 1/1 streams in scene, 1 windows)
+[INF] service: 103 adoptions in 5s (pool 8 slots, 1 producers)
+[INF] service: display wake released (presentation idle)
+AV_RENDER due_decisions=335 hold_checks=117 late_drops=0 invalid_pts=0 status=ended
+{"event":"playback-clock","policy":"producer","system_now_ns":1386870460280800,"selected_now_ns":1386870460280500,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":1386870457374300,"playback_base_ns":1386870457374300,"latency_ns":100000000,"resample_slaves":0}
+{"event":"playback-clock","policy":"producer","system_now_ns":1386871836784900,"selected_now_ns":1386871836784700,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":1386871833729000,"playback_base_ns":1386871833729000,"latency_ns":100000000,"resample_slaves":0}
+{"event":"playback-clock","policy":"producer","system_now_ns":1386873158825400,"selected_now_ns":1386873158825200,"device_now_ns":18446744073709551615,"mapped_producer_base_ns":1386873156030250,"playback_base_ns":1386873156030250,"latency_ns":100000000,"resample_slaves":0}
+{"event":"playback-metrics","peak_queue_buffers":4,"peak_queue_ns":80000000,"queue_empty_events":5,"queue_full_events":2,"late_audio_blocks":0,"arrival_drift_ns":-159400}
+{"event":"playback-complete","audio_master":false,"video_received":0,"video_late":0,"audio_blocks":300,"audio_samples":288000,"latency_ns":100000000}
+{"event":"playback-timing","audio_first_running_pts_ns":0,"video_first_running_pts_ns":18446744073709551615,"audio_end_ns":6000000000,"video_end_ns":6000000000}

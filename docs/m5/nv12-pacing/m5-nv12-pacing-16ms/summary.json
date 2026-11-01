@@ -1,0 +1,60 @@
+[
+  {
+    "case": "1920x1080-60-BGRA-av",
+    "wall_s": 11.50363940000534,
+    "exit_codes": [
+      0,
+      0
+    ],
+    "commands": [
+      [
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-policy-build\\framelink\\Release\\framelink_av_producer.exe",
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-policy-build\\framelink\\Release\\gstframelink.dll",
+        "--session",
+        "C:\\Users\\jonsu\\dev\\m5-nv12-pacing-16ms\\1920x1080-60-BGRA-av\\session",
+        "--format",
+        "BGRA",
+        "--frames",
+        "600",
+        "--width",
+        "1920",
+        "--height",
+        "1080",
+        "--fps",
+        "60",
+        "--input-pipeline",
+        "C:\\Users\\jonsu\\dev\\m5-nv12-pacing-16ms\\1920x1080-60-BGRA-av\\source.pipeline",
+        "--timeout-ms",
+        "18000"
+      ],
+      [
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-nv12\\build\\Release\\vkrenderer.exe",
+        "--serve",
+        "1920x1080-60-BGRA-av",
+        "--headless",
+        "-1",
+        "--control-port",
+        "60650",
+        "--av-exit-on-end",
+        "--av-session",
+        "C:\\Users\\jonsu\\dev\\m5-nv12-pacing-16ms\\1920x1080-60-BGRA-av\\session",
+        "--av-plugin",
+        "C:\\Users\\jonsu\\dev\\vkrender-m5-policy-build\\framelink\\Release\\gstframelink.dll",
+        "--av-format",
+        "BGRA",
+        "--av-width",
+        "1920",
+        "--av-height",
+        "1080",
+        "--av-fps",
+        "60",
+        "--av-audio-sink",
+        "autoaudiosink",
+        "--av-clock",
+        "producer",
+        "--av-timeout-ms",
+        "18000"
+      ]
+    ]
+  }
+]

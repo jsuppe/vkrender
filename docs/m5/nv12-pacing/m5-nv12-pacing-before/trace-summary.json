@@ -1,0 +1,57 @@
+[
+  {
+    "case": "1920x1080-60-NV12-av",
+    "operations": [
+      {
+        "file": "gst.43308.csv",
+        "operation": "gst.sinkRender",
+        "count": 600,
+        "interval_fps": 60.94587819820745,
+        "interval_p50_ms": 16.6453,
+        "interval_p99_ms": 27.7219,
+        "interval_max_ms": 28.9379,
+        "duration_p50_ms": 0.908
+      },
+      {
+        "file": "renderer.6384.csv",
+        "operation": "scene.frame_cpu",
+        "count": 415,
+        "interval_fps": 38.547909916961004,
+        "interval_p50_ms": 27.329549999999998,
+        "interval_p99_ms": 34.9648,
+        "interval_max_ms": 45.3026,
+        "duration_p50_ms": 0.0674
+      },
+      {
+        "file": "renderer.6384.csv",
+        "operation": "service.iteration",
+        "count": 415,
+        "interval_fps": 38.54791673649985,
+        "interval_p50_ms": 27.3296,
+        "interval_p99_ms": 34.9659,
+        "interval_max_ms": 45.3035,
+        "duration_p50_ms": 27.3268
+      },
+      {
+        "file": "transport.6384.csv",
+        "operation": "flAcquireFrame",
+        "count": 347,
+        "interval_fps": 35.30349666135546,
+        "interval_p50_ms": 27.53925,
+        "interval_p99_ms": 55.5734,
+        "interval_max_ms": 104.2995,
+        "duration_p50_ms": 0.0003
+      },
+      {
+        "file": "transport.43308.csv",
+        "operation": "flSubmit",
+        "count": 491,
+        "interval_fps": 49.97025393159584,
+        "interval_p50_ms": 17.3264,
+        "interval_p99_ms": 36.4597,
+        "interval_max_ms": 92.5999,
+        "duration_p50_ms": 0.0616
+      }
+    ]
+  }
+]

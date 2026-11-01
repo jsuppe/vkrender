@@ -139,3 +139,20 @@ capture before native initialization; files are written to the app's private
 files directory and flushed on normal teardown. `sceneOutputs` enables the
 portable asynchronous readback/CPU-conversion path. Its CPU conversion spans
 are not GPU conversion durations. See `PLATFORM_PARITY.md` for device tests.
+
+
+## Windows A/V power ordering
+
+`service.power_request` and `service.display_input` record execution-state and
+synthetic-input call walls/results, not physical wake completion. Native A/V
+requests power before acknowledging session setup; holds/drops retain it until
+session end. Headless-only output requests system power without display input.
+Primary swapchain startup logs report the actual selected present mode and
+window state rather than relying on the requested environment variable.
+
+The optional `test/native_av_preparation.py --require-early-power` gate checks
+that a successful request completes before the first source receipt.
+`VKR_TEST_AV_LATE_POWER_REQUEST=1` is the explicit old-order negative control.
+See [kernel wait evidence and limits](m5/presentation-stalls-20261031/README.md):
+monitor power-on held the graphics adapter resource across both Vulkan and
+another process's D3D11 calls; a long present wall was not GPU-duration proof.

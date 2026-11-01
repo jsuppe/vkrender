@@ -1,0 +1,29 @@
+windows	Test portable control plane	﻿2026-11-01T12:56:05.5322709Z ##[group]Run ctest --test-dir build -C Release --output-on-failure -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+windows	Test portable control plane	2026-11-01T12:56:05.5325129Z [36;1mctest --test-dir build -C Release --output-on-failure -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"[0m
+windows	Test portable control plane	2026-11-01T12:56:05.5407696Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+windows	Test portable control plane	2026-11-01T12:56:05.5408148Z env:
+windows	Test portable control plane	2026-11-01T12:56:05.5408446Z   FRAMELINK_REF: 21d15d56e51e9c7e200f2b0d6481880b9af6dd45
+windows	Test portable control plane	2026-11-01T12:56:05.5408800Z ##[endgroup]
+windows	Test portable control plane	2026-11-01T12:56:06.5310599Z Test project D:/a/vkrender/vkrender/build
+windows	Test portable control plane	2026-11-01T12:56:06.5759178Z       Start  4: shared_scene_layouts
+windows	Test portable control plane	2026-11-01T12:56:06.5946953Z  1/13 Test  #4: shared_scene_layouts .............   Passed    0.02 sec
+windows	Test portable control plane	2026-11-01T12:56:06.5998704Z       Start  5: shared_moderation
+windows	Test portable control plane	2026-11-01T12:56:06.6116405Z  2/13 Test  #5: shared_moderation ................   Passed    0.01 sec
+windows	Test portable control plane	2026-11-01T12:56:06.6120272Z       Start  6: control_http
+windows	Test portable control plane	2026-11-01T12:56:07.7604243Z  3/13 Test  #6: control_http .....................   Passed    1.15 sec
+windows	Test portable control plane	2026-11-01T12:56:07.7610274Z       Start  7: control_preview_admission
+windows	Test portable control plane	2026-11-01T12:56:09.2794846Z  4/13 Test  #7: control_preview_admission ........   Passed    1.52 sec
+windows	Test portable control plane	2026-11-01T12:56:09.2800797Z       Start  8: android_surface_generations
+windows	Test portable control plane	2026-11-01T12:56:09.2919913Z  5/13 Test  #8: android_surface_generations ......   Passed    0.01 sec
+windows	Test portable control plane	2026-11-01T12:56:09.2924077Z       Start  9: android_stream_owners
+windows	Test portable control plane	2026-11-01T12:56:12.0605986Z  6/13 Test  #9: android_stream_owners ............   Passed    2.77 sec
+windows	Test portable control plane	2026-11-01T12:56:12.0611239Z       Start 10: android_control_mailbox
+windows	Test portable control plane	2026-11-01T12:56:12.0757148Z  7/13 Test #10: android_control_mailbox ..........   Passed    0.01 sec
+windows	Test portable control plane	2026-11-01T12:56:12.0761694Z       Start 11: android_control_aidl
+windows	Test portable control plane	2026-11-01T12:56:12.1338389Z  8/13 Test #11: android_control_aidl .............   Passed    0.06 sec
+windows	Test portable control plane	2026-11-01T12:56:12.1343460Z       Start 12: preview_mailbox
+windows	Test portable control plane	2026-11-01T12:56:12.1457618Z  9/13 Test #12: preview_mailbox ..................   Passed    0.01 sec
+windows	Test portable control plane	2026-11-01T12:56:12.1461331Z       Start 13: av_schedule
+windows	Test portable control plane	2026-11-01T12:56:12.1576083Z 10/13 Test #13: av_schedule ......................   Passed    0.01 sec
+windows	Test portable control plane	2026-11-01T12:56:12.1580963Z       Start 14: av_clock_contract
+windows	Test portable control plane	2026-11-01T12:59:17.3042327Z ##[error]The operation was canceled.
