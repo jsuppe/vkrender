@@ -9,7 +9,7 @@ on:
 
 # Match the renderer API to a reproducible FrameLink revision.
 env:
-  FRAMELINK_REF: 6aba99cd3c33e3eb1abe8bdb30261d32fdf94c0b
+  FRAMELINK_REF: 21d15d56e51e9c7e200f2b0d6481880b9af6dd45
 
 jobs:
   windows:
@@ -60,7 +60,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Test portable control plane
-        run: ctest --test-dir build -C Release --output-on-failure -R "^(shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+        run: ctest --test-dir build -C Release --output-on-failure -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
 
       - name: Package
         shell: pwsh
@@ -115,7 +115,7 @@ jobs:
 
       # No GPU on CI runners; the IPC/fd-passing self-test is the runnable part.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -R "^(ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+        run: ctest --test-dir build --output-on-failure -R "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
 
   # The sender is a Flutter app, so it builds and tests entirely outside the
   # CMake tree and needs its own job. Ubuntu is deliberate: the suite is pure
