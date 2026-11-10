@@ -116,6 +116,19 @@ each occupied slot is one stream on the scene. Demo: `vkr_client_demo.exe`.
 The bespoke `vkrender_client` API this used to ship was retired in M38 —
 one transport, and a published one.
 
+**Fullscreen across every display**: `--serve` and `--wayland` now open one
+borderless window per monitor unless you pass `--window` or `--windowed`. Each
+window's slice of the single scene comes from that monitor's position and size
+in the OS display settings, so rearranging displays there rearranges the scene
+on the next start. `--bezel px` hides content behind each panel's frame.
+
+**On-screen controls**: a Dear ImGui panel on the primary display changes the
+layout, pause, speed, backdrop, camera feed, per-stream hide/pin/solo/kick,
+rotation and which secondary displays are in use, all at runtime. TAB hides it,
+ESC stops the renderer from any display, and `--no-panel` turns it off. It sends
+the same commands as the web console and is drawn after the camera and
+scene-output captures. The console's live preview does show it.
+
 **AirPlay receiver on Android (M18)**: a third APK
 (`dev.vkrender.airplay`, install alongside the renderer app) makes the
 tablet an AirPlay mirroring sink — iPhones/iPads/Macs see "vkrender" in
