@@ -161,39 +161,52 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
     if (specs.empty()) specs.push_back({});
     specs_ = std::move(specs);
     canDisplay_ = vk.canDisplay;
+    // Fullscreen: the OS display arrangement IS the window list. Window 0 goes
+    // on the primary monitor because it carries the panel and the feeds.
+    std::vector<int> monitorIds;
+    fullscreen_ = false;
+    if (fullscreenRequested_ && !vk.headless) {
+        int count = 0;
+        GLFWmonitor** mons = glfwGetMonitors(&count);
+        GLFWmonitor* primary = glfwGetPrimaryMonitor();
+        std::vector<WindowSpec> arranged;
+        for (int pass = 0; pass < 2; ++pass) {
+            for (int i = 0; i < count; ++i) {
+                if ((mons[i] == primary) != (pass == 0)) continue;
+                const GLFWvidmode* vm = glfwGetVideoMode(mons[i]);
+                if (!vm) continue;
+                WindowSpec spec;
+                glfwGetMonitorPos(mons[i], &spec.x, &spec.y);
+                spec.width = vm->width;
+                spec.height = vm->height;
+                spec.bezel = fullscreenBezel_;
+                VKR_LOG("scene: display %d '%s' %dx%d at %d,%d", i, glfwGetMonitorName(mons[i]),
+                        spec.width, spec.height, spec.x, spec.y);
+                arranged.push_back(spec);
+                monitorIds.push_back(i);
+            }
+        }
+        if (arranged.empty()) {
+            VKR_WARN("scene: no monitors reported; staying windowed");
+        } else {
+            specs_ = std::move(arranged);
+            fullscreen_ = true;
+            primaryMonitorId_ = monitorIds[0];
+        }
+    }
     if (vk.headless && specs_.size() > 1) {
         VKR_WARN("scene: headless mode uses a single offscreen canvas; extra --window ignored"
                  " (displays attach at runtime via the moderator)");
         specs_.resize(1);
     }
 
-    // Virtual canvas = union of the window rects.
-    int minX = specs_[0].x, minY = specs_[0].y;
-    int maxX = specs_[0].x + specs_[0].width, maxY = specs_[0].y + specs_[0].height;
-    for (const auto& s : specs_) {
-        minX = std::min(minX, s.x);
-        minY = std::min(minY, s.y);
-        maxX = std::max(maxX, s.x + s.width);
-        maxY = std::max(maxY, s.y + s.height);
-    }
-    float cw = (float)(maxX - minX), ch = (float)(maxY - minY);
-    canvasAspect_ = ch > 0 ? cw / ch : 1.0f;
-    // The canvas spans the panels' PHYSICAL footprints (above), but each panel
-    // only shows the part not hidden by its own frame - so the sub-frustum is
-    // built from the rect inset by `bezel`. Content landing under a frame is
-    // never drawn, which is exactly what makes a shape crossing the wall look
-    // like it passed behind the bezel rather than skipping over it.
-    for (const auto& s : specs_) {
-        const float b = (float)s.bezel;
-        WindowRects r;
-        r.u0 = ((float)(s.x - minX) + b) / cw;
-        r.v0 = ((float)(s.y - minY) + b) / ch;
-        r.u1 = ((float)(s.x - minX + s.width) - b) / cw;
-        r.v1 = ((float)(s.y - minY + s.height) - b) / ch;
-        rects_.push_back(r);
-    }
+    rebuildCanvasFromSpecs();
 
     if (!vk.headless) {
+        if (fullscreen_) {
+            glfwSetWindowAttrib(vk.window, GLFW_DECORATED, GLFW_FALSE);
+            glfwSetWindowAttrib(vk.window, GLFW_FLOATING, GLFW_TRUE);
+        }
         glfwSetWindowPos(vk.window, specs_[0].x, specs_[0].y);
         glfwSetWindowSize(vk.window, specs_[0].width, specs_[0].height);
         glfwSetWindowUserPointer(vk.window, this);
@@ -203,6 +216,23 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
 
         for (size_t i = 1; i < specs_.size(); ++i) {
             const auto& s = specs_[i];
+            if (fullscreen_) {
+                int count = 0;
+                GLFWmonitor** mons = glfwGetMonitors(&count);
+                Window w;
+                if (!createDisplayWindow(vk, mons[monitorIds[i]], w)) return false;
+                extra_.push_back(w);
+                DisplayOut d;
+                d.monitorId = monitorIds[i];
+                const char* n = glfwGetMonitorName(mons[monitorIds[i]]);
+                d.name = n ? n : "display";
+                d.x = s.x;
+                d.y = s.y;
+                d.width = s.width;
+                d.height = s.height;
+                displayOuts_.push_back(std::move(d));
+                continue;
+            }
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
             Window w;
             w.glfw = glfwCreateWindow(s.width, s.height, "vkrender", nullptr, nullptr);
@@ -222,6 +252,10 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
             if (!createWindowSwapchain(vk, w)) return false;
             extra_.push_back(w);
         }
+        if (fullscreen_) glfwFocusWindow(vk.window);
+        // After the key callback above: the panel chains to it.
+        if (panelRequested_ && !panel_.init(vk))
+            VKR_WARN("scene: on-screen controls unavailable");
     }
 
     if (!background_.init(vk, shaderDir)) VKR_WARN("scene: backdrop unavailable");
@@ -265,13 +299,53 @@ bool SceneHost::init(VkContext& vk, const std::string& shaderDir,
         VKR_LOG("scene: starting layout %s", layoutName(layout_));
     }
     VKR_LOG("scene: %zu window(s), canvas %.0fx%.0f (aspect %.2f). Controls: L layout, "
-            "SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, ESC quit",
-            windowCount, cw, ch, canvasAspect_);
+            "SPACE pause, -/= speed, B backdrop, 1-9 toggle stream, 0 all, TAB panel, ESC quit",
+            windowCount, canvasW_, canvasH_, canvasAspect_);
     return true;
 }
 
+// One world space, whose extent is the union of every window's rect. A gap
+// between two rects is canvas that no window shows, so content passes through
+// it exactly as it would through the physical space between two screens.
+void SceneHost::rebuildCanvasFromSpecs() {
+    int minX = specs_[0].x, minY = specs_[0].y;
+    int maxX = specs_[0].x + specs_[0].width, maxY = specs_[0].y + specs_[0].height;
+    for (const auto& s : specs_) {
+        minX = std::min(minX, s.x);
+        minY = std::min(minY, s.y);
+        maxX = std::max(maxX, s.x + s.width);
+        maxY = std::max(maxY, s.y + s.height);
+    }
+    const float cw = (float)(maxX - minX), ch = (float)(maxY - minY);
+    canvasW_ = cw;
+    canvasH_ = ch;
+    canvasAspect_ = ch > 0 ? cw / ch : 1.0f;
+    // The canvas spans the panels' PHYSICAL footprints (above), but each panel
+    // only shows the part not hidden by its own frame - so the sub-frustum is
+    // built from the rect inset by `bezel`. Content landing under a frame is
+    // never drawn, which is exactly what makes a shape crossing the wall look
+    // like it passed behind the bezel rather than skipping over it.
+    rects_.clear();
+    for (const auto& s : specs_) {
+        const float b = (float)s.bezel;
+        WindowRects r;
+        r.u0 = ((float)(s.x - minX) + b) / cw;
+        r.v0 = ((float)(s.y - minY) + b) / ch;
+        r.u1 = ((float)(s.x - minX + s.width) - b) / cw;
+        r.v1 = ((float)(s.y - minY + s.height) - b) / ch;
+        rects_.push_back(r);
+    }
+}
+
 void SceneHost::handleKey(int key) {
+    if (panel_.wantsKeyboard()) return; // typing into a panel field
     switch (key) {
+        case GLFW_KEY_ESCAPE:
+            quitRequested_ = true;
+            break;
+        case GLFW_KEY_TAB:
+            panel_.toggle();
+            break;
         case GLFW_KEY_L:
             layout_ = (SceneLayout)(((int)layout_ + 1) % (int)SceneLayout::Count);
             VKR_LOG("scene: layout -> %s", layoutName(layout_));
@@ -343,6 +417,13 @@ std::vector<SceneHost::DisplayInfo> SceneHost::listDisplays() const {
             d.height = vm->height;
         }
         d.primary = mons[i] == prim;
+        if (fullscreen_ && i == primaryMonitorId_ && !rects_.empty()) {
+            d.active = true;
+            d.u0 = rects_[0].u0;
+            d.v0 = rects_[0].v0;
+            d.u1 = rects_[0].u1;
+            d.v1 = rects_[0].v1;
+        }
         for (size_t j = 0; j < displayOuts_.size(); ++j) {
             if (displayOuts_[j].monitorId != i) continue;
             d.active = true;
@@ -441,9 +522,13 @@ bool SceneHost::resizeFrameSync(VkContext& vk) {
 }
 
 bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
-    if (!vk.headless) {
-        VKR_WARN("scene: display toggles are for the headless appliance; windows are"
+    if (!vk.headless && !fullscreen_) {
+        VKR_WARN("scene: display toggles need fullscreen or headless mode; these windows are"
                  " configured with --window");
+        return false;
+    }
+    if (fullscreen_ && id == primaryMonitorId_) {
+        VKR_WARN("scene: the primary display cannot be detached");
         return false;
     }
     if (!canDisplay_) {
@@ -467,37 +552,9 @@ bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
         glfwGetMonitorPos(m, &mx, &my);
         const GLFWvidmode* vm = glfwGetVideoMode(m);
         if (!vm) return false;
-        // Borderless window covering the monitor - no exclusive fullscreen, no
-        // mode switch, and focus is NOT stolen from whoever is at the desk.
-        glfwDefaultWindowHints();
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-        glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
-        glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
-        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
         Window w;
-        w.glfw = glfwCreateWindow(vm->width, vm->height, "vkrender", nullptr, nullptr);
-        glfwDefaultWindowHints();
-        if (!w.glfw) {
-            VKR_ERR("scene: display %d window creation failed", id);
-            return false;
-        }
-        glfwSetWindowPos(w.glfw, mx, my);
-        bool ok = glfwCreateWindowSurface(vk.instance, w.glfw, nullptr, &w.surface) ==
-                  VK_SUCCESS;
-        if (ok) {
-            VkBool32 present = VK_FALSE;
-            vkGetPhysicalDeviceSurfaceSupportKHR(vk.phys, vk.queueFamily, w.surface,
-                                                 &present);
-            ok = present == VK_TRUE && createWindowSwapchain(vk, w);
-        }
-        if (!ok) {
+        if (!createDisplayWindow(vk, m, w)) {
             VKR_ERR("scene: cannot present to display %d", id);
-            vkDeviceWaitIdle(vk.device);
-            for (VkImageView v : w.views) vkDestroyImageView(vk.device, v, nullptr);
-            if (w.swapchain) vkDestroySwapchainKHR(vk.device, w.swapchain, nullptr);
-            if (w.surface) vkDestroySurfaceKHR(vk.instance, w.surface, nullptr);
-            glfwDestroyWindow(w.glfw);
             return false;
         }
         extra_.push_back(w);
@@ -513,6 +570,15 @@ bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
         VKR_LOG("scene: display %d '%s' attached (%dx%d at %d,%d), %zu active",
                 id, displayOuts_.back().name.c_str(), vm->width, vm->height, mx, my,
                 displayOuts_.size());
+        if (fullscreen_) {
+            WindowSpec spec;
+            spec.x = mx;
+            spec.y = my;
+            spec.width = vm->width;
+            spec.height = vm->height;
+            spec.bezel = fullscreenBezel_;
+            specs_.push_back(spec);
+        }
     } else {
         vkDeviceWaitIdle(vk.device);
         Window& w = extra_[have];
@@ -522,10 +588,54 @@ bool SceneHost::setDisplayActive(VkContext& vk, int id, bool on) {
         if (w.glfw) glfwDestroyWindow(w.glfw);
         extra_.erase(extra_.begin() + have);
         displayOuts_.erase(displayOuts_.begin() + have);
+        if (fullscreen_) specs_.erase(specs_.begin() + 1 + have);
         VKR_LOG("scene: display %d detached, %zu active", id, displayOuts_.size());
     }
-    recomputeDisplayRects();
+    if (fullscreen_) rebuildCanvasFromSpecs();
+    else recomputeDisplayRects();
     return resizeFrameSync(vk);
+}
+
+// A borderless window covering one monitor: no exclusive fullscreen, no mode
+// switch, and focus is NOT stolen from whoever is at the desk. On failure
+// everything created here is released.
+bool SceneHost::createDisplayWindow(VkContext& vk, GLFWmonitor* monitor, Window& w) {
+    int mx = 0, my = 0;
+    glfwGetMonitorPos(monitor, &mx, &my);
+    const GLFWvidmode* vm = glfwGetVideoMode(monitor);
+    if (!vm) return false;
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+    glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
+    glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
+    glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+    // Above the taskbar, which a window without focus would otherwise sit under.
+    glfwWindowHint(GLFW_FLOATING, fullscreen_ ? GLFW_TRUE : GLFW_FALSE);
+    w.glfw = glfwCreateWindow(vm->width, vm->height, "vkrender", nullptr, nullptr);
+    glfwDefaultWindowHints();
+    if (!w.glfw) return false;
+    glfwSetWindowPos(w.glfw, mx, my);
+    if (fullscreen_) {
+        // ESC and the scene hotkeys work from whichever display has focus.
+        glfwSetWindowUserPointer(w.glfw, this);
+        glfwSetKeyCallback(w.glfw, keyCallback);
+    }
+    bool ok = glfwCreateWindowSurface(vk.instance, w.glfw, nullptr, &w.surface) == VK_SUCCESS;
+    if (ok) {
+        VkBool32 present = VK_FALSE;
+        vkGetPhysicalDeviceSurfaceSupportKHR(vk.phys, vk.queueFamily, w.surface, &present);
+        ok = present == VK_TRUE && createWindowSwapchain(vk, w);
+    }
+    if (!ok) {
+        vkDeviceWaitIdle(vk.device);
+        for (VkImageView v : w.views) vkDestroyImageView(vk.device, v, nullptr);
+        if (w.swapchain) vkDestroySwapchainKHR(vk.device, w.swapchain, nullptr);
+        if (w.surface) vkDestroySurfaceKHR(vk.instance, w.surface, nullptr);
+        glfwDestroyWindow(w.glfw);
+        w = Window{};
+    }
+    return ok;
 }
 
 bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, bool passBound,
@@ -538,7 +648,7 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
         if (glfwWindowShouldClose(vk.window)) *quit = true;
         for (auto& w : extra_)
             if (glfwWindowShouldClose(w.glfw)) *quit = true;
-        if (glfwGetKey(vk.window, GLFW_KEY_ESCAPE) == GLFW_PRESS) *quit = true;
+        if (quitRequested_) *quit = true;
         if (*quit) return true;
     } else if (!extra_.empty()) {
         // M43: display windows need their message pumps serviced. A closed
@@ -666,6 +776,22 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
     }
     vkResetFences(vk.device, 1, &f.inFlight);
 
+    // Here rather than after input polling: every return above abandons the
+    // frame, and ImGui requires each NewFrame to be matched by a Render.
+    if (panel_.enabled()) {
+        ScenePanel::Bindings panelState;
+        panelState.speed = &speed_;
+        panelState.backdrop = &backgroundOn_;
+        panelState.quit = &quitRequested_;
+        panelState.snapshot = &panelSnapshot_;
+        panelState.commands = &panelCommands_;
+        panelState.canvasWidth = canvasW_;
+        panelState.canvasHeight = canvasH_;
+        panelState.windows = windowCount;
+        panel_.build(panelState);
+    }
+    const bool drawPanel = panel_.drawable();
+
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     {
@@ -766,16 +892,21 @@ bool SceneHost::frame(VkContext& vk, ExternalVideoPool& pool, VideoPass& pass, b
             VkImageMemoryBarrier2 back{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
             back.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
             back.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-            back.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            back.dstStageMask = drawPanel ? VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+                                          : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
             back.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            back.newLayout =
-                vk.headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            back.newLayout = drawPanel ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                             : vk.headless ? VK_IMAGE_LAYOUT_GENERAL
+                                           : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
             back.image = image;
             back.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             dep.pImageMemoryBarriers = &back;
             vkCmdPipelineBarrier2(f.cmd, &dep);
-            continue; // final transition handled above
+            if (!drawPanel) continue; // final transition handled above
         }
+
+        // After the captures above, so the panel stays out of the feeds.
+        if (w == 0 && drawPanel) panel_.record(f.cmd, image, view, extent);
 
         VkImageMemoryBarrier2 fin{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         fin.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -959,6 +1090,7 @@ void SceneHost::snapshot(VkContext& vk) {
 
 void SceneHost::destroy(VkContext& vk) {
     const VkResult drained = vkDeviceWaitIdle(vk.device);
+    panel_.destroy(vk);
     if (drained == VK_SUCCESS && vkrtrace::enabled()) {
         for (auto& f : frames_) {
             for (const auto& i : f.traceFrames)

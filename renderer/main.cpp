@@ -99,6 +99,8 @@ int main(int argc, char** argv) {
     std::string waylandSocket = "vkrender-0";
     int headlessFrames = 0; // 0 = windowed mode
     std::vector<vkr::WindowSpec> windowSpecs; // M15: --window WxH+X+Y (repeatable)
+    bool windowed = false; // keep a normal window instead of filling every display
+    bool panel = true;     // on-screen controls
     int defaultBezel = 0;                     // M29: --bezel applies to all panels
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--pipe") && i + 1 < argc) pipe = argv[++i];
@@ -161,6 +163,10 @@ int main(int argc, char** argv) {
                 return 1;
             }
             windowSpecs.push_back(spec);
+        } else if (!strcmp(argv[i], "--windowed")) {
+            windowed = true;
+        } else if (!strcmp(argv[i], "--no-panel")) {
+            panel = false;
         } else if (!strcmp(argv[i], "--bezel") && i + 1 < argc) {
             // Uniform bezel applied to every window given so far AND to any
             // that follow - the common case is one wall of identical panels.
@@ -176,11 +182,13 @@ int main(int argc, char** argv) {
             fprintf(stderr,
                     "usage: vkrenderer [--av-session PRIVATE_DIR --av-plugin PATH --av-format BGRA|NV12 --av-audio-sink SINK --av-clock audio|producer --av-timeout-ms N --av-media-run-ms N --av-exit-on-end] [--pipe name] [--pacing latest|pts] "
                     "[--wayland [socket]] [--serve [pipe]] [--scene-output channel (repeatable)] "
-                    "[--window WxH+X+Y[:bezel]]... [--bezel px] "
+                    "[--window WxH+X+Y[:bezel]]... [--bezel px] [--windowed] [--no-panel] "
                     "[--headless N [--dump out.ppm]]\n");
             return 1;
         }
     }
+    // Fill every display unless the caller placed windows or asked not to.
+    const bool fullscreen = windowSpecs.empty() && !windowed && headlessFrames == 0;
     // --bezel given before any --window still applies to them all.
     if (defaultBezel > 0)
         for (auto& s : windowSpecs)
@@ -201,6 +209,9 @@ int main(int argc, char** argv) {
         sopts.dumpPath = dumpPath;
         sopts.shaderDir = exeDir() + "/shaders";
         sopts.windows = windowSpecs;
+        sopts.fullscreen = fullscreen;
+        sopts.bezel = defaultBezel;
+        sopts.panel = panel;
         return vkr::runWinService(sopts);
     }
 #else
@@ -218,6 +229,9 @@ int main(int argc, char** argv) {
         wopts.dumpPath = dumpPath;
         wopts.shaderDir = exeDir() + "/shaders";
         wopts.windows = windowSpecs;
+        wopts.fullscreen = fullscreen;
+        wopts.bezel = defaultBezel;
+        wopts.panel = panel;
         return vkr::runWaylandCompositor(wopts);
     }
 #endif

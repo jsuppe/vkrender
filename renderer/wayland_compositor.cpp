@@ -1006,6 +1006,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
 
     SceneHost host;
     host.setOutputs(options.sceneOutputs);
+    host.configureDesktop(options.fullscreen, options.bezel, options.panel);
     if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
     Ctx ctx;
@@ -1141,7 +1142,9 @@ int runWaylandCompositor(const WaylandOptions& options) {
         for(auto* stream:ctx.streams)if(stream->controlSlot<0 && stream->currentSlot>=0 && !hasContentChild(ctx,stream)) {
             for(size_t i=kFlSlots;i<controlSlots;i++)if(!owners[i]){owners[i]=stream;stream->controlSlot=(int)i;break;}
         }
-        for(const auto& c:control.drainCommands()) {
+        std::vector<ControlCommand> commands=control.drainCommands();
+        host.takePanelCommands(commands);
+        for(const auto& c:commands) {
             using T=ControlCommand::Type;
             if(c.type==T::Layout) {
                 if(c.str=="wall")host.setLayout(SceneLayout::Wall);
@@ -1221,8 +1224,9 @@ int runWaylandCompositor(const WaylandOptions& options) {
             exitCode = 1;
             break;
         }
-        if(controlUp) {
+        if(controlUp || host.panelEnabled()) {
             ControlSnapshot snap=initial;
+            snap.displaysAvailable=initial.displaysAvailable || host.fullscreen();
             snap.presentCalls=host.presentCalls();snap.presentErrors=host.presentErrors();
             snap.presentFirstNs=host.presentFirstNs();snap.presentLastNs=host.presentLastNs();
             const char* layouts[]={"two-cubes","single-cube","wall","presentation"};
@@ -1256,6 +1260,7 @@ int runWaylandCompositor(const WaylandOptions& options) {
             }
             for(const auto& d:host.listDisplays())snap.displays.push_back({d.id,d.name,d.x,d.y,d.width,d.height,d.primary,d.active,d.u0,d.v0,d.u1,d.v1});
             control.publish(snap);
+            host.setPanelSnapshot(snap);
             std::vector<uint8_t> bgra;
             if(host.takePreview(bgra))control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
         }

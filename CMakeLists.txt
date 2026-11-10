@@ -40,6 +40,22 @@ FetchContent_Declare(glfw
     GIT_TAG 3.4)
 FetchContent_MakeAvailable(glfw)
 
+# --- Dear ImGui (on-screen controls, desktop only) ----------------------------
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.9b)
+FetchContent_MakeAvailable(imgui)
+add_library(vkr_imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+target_include_directories(vkr_imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_compile_definitions(vkr_imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
+target_link_libraries(vkr_imgui PUBLIC volk glfw)
+
 # --- glslang (SPIR-V compiler for build-time shader compilation) -------------
 set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
@@ -138,11 +154,12 @@ add_executable(vkrenderer
     renderer/portable_output.cpp
     renderer/portable_input.cpp
     renderer/dump_util.cpp
-    renderer/scene_host.cpp)
+    renderer/scene_host.cpp
+    renderer/scene_panel.cpp)
 if(NOT WIN32)
     target_sources(vkrenderer PRIVATE renderer/gpu_output.cpp)
 endif()
-target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw)
+target_link_libraries(vkrenderer PRIVATE vkr_common volk glfw vkr_imgui)
 add_dependencies(vkrenderer vkr_shaders)
 target_sources(vkrenderer PRIVATE renderer/control_api.cpp third_party/civetweb/civetweb.c)
 target_include_directories(vkrenderer PRIVATE third_party/civetweb third_party/stb)

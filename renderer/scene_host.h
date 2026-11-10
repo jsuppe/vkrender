@@ -15,7 +15,14 @@
 //   SPACE     pause/resume animation        -/=  slow down / speed up
 //   B         toggle vaporwave backdrop
 //   1..9      toggle stream N in the scene  0    re-enable all streams
+//   TAB       show/hide the on-screen control panel
 //   ESC       quit
+//
+// Fullscreen (the default for --serve/--wayland with no --window): one
+// borderless window per monitor, each using the monitor's rect from the OS
+// display settings as its WindowSpec. Left/right/above placement, vertical
+// offsets, portrait sizes and any gaps therefore become the scene's geometry
+// with no further work: every window is a viewport into the same canvas.
 
 #ifndef __ANDROID__
 
@@ -31,8 +38,11 @@
 #include "background_pass.h"
 #include "external_video_image.h"
 #include "scene_layout.h"
+#include "scene_panel.h"
 #include "video_pass.h"
 #include "vk_context.h"
+
+struct GLFWmonitor;
 
 namespace vkr {
 
@@ -67,6 +77,21 @@ public:
     // (the host repositions it), or headless (then specs beyond the first are
     // ignored and the offscreen target is the whole canvas).
     void setOutputs(const std::vector<std::string>& names) { portableOutput_.configure(names); }
+    // Before init. Ignored when headless.
+    void configureDesktop(bool fullscreen, int bezel, bool panel) {
+        fullscreenRequested_ = fullscreen;
+        fullscreenBezel_ = bezel;
+        panelRequested_ = panel;
+    }
+    bool fullscreen() const { return fullscreen_; }
+    bool panelEnabled() const { return panel_.enabled(); }
+    // The render loop's latest state, for the panel to show.
+    void setPanelSnapshot(const ControlSnapshot& snap) { panelSnapshot_ = snap; }
+    // Commands the panel issued last frame; apply them with the console's.
+    void takePanelCommands(std::vector<ControlCommand>& out) {
+        out.insert(out.end(), panelCommands_.begin(), panelCommands_.end());
+        panelCommands_.clear();
+    }
     bool init(VkContext& vk, const std::string& shaderDir, std::vector<WindowSpec> specs);
     void destroy(VkContext& vk);
 
@@ -189,13 +214,25 @@ private:
         int x = 0, y = 0, width = 0, height = 0;
     };
     void recomputeDisplayRects();
+    void rebuildCanvasFromSpecs();
+    bool createDisplayWindow(VkContext& vk, GLFWmonitor* monitor, Window& out);
     bool resizeFrameSync(VkContext& vk);
     bool rebuildPresentSemaphores(VkContext& vk); // device idle, indexed by acquired image
     std::vector<std::vector<VkSemaphore>> presentSems_;
 
     std::vector<WindowSpec> specs_;
     std::vector<Window> extra_;
-    std::vector<DisplayOut> displayOuts_; // headless only, parallel to extra_
+    std::vector<DisplayOut> displayOuts_; // parallel to extra_ (headless or fullscreen)
+    bool fullscreenRequested_ = false;
+    bool fullscreen_ = false;
+    int fullscreenBezel_ = 0;
+    int primaryMonitorId_ = -1; // fullscreen: the monitor window 0 covers
+    bool panelRequested_ = false;
+    ScenePanel panel_;
+    ControlSnapshot panelSnapshot_;
+    std::vector<ControlCommand> panelCommands_;
+    bool quitRequested_ = false;
+    float canvasW_ = 0, canvasH_ = 0;
     bool canDisplay_ = false;             // copied from vk.canDisplay at init
     std::vector<WindowRects> rects_; // per window incl. primary
     float canvasAspect_ = 16.0f / 9.0f;
