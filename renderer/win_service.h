@@ -28,6 +28,9 @@ struct WinServeOptions {
     std::string dumpPath = "headless.ppm";
     std::string shaderDir;
     std::vector<WindowSpec> windows; // M15: canvas-spanning windows
+    bool fullscreen = false; // one borderless window per monitor
+    int bezel = 0;           // applied to every fullscreen window
+    bool panel = true;       // on-screen controls
     // M42: the moderation API's localhost port; 0 disables it.
     int controlPort = 8875;
 };
