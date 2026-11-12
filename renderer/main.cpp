@@ -128,14 +128,16 @@ int main(int argc, char** argv) {
                   !strcmp(argv[i],"--av-channels") || !strcmp(argv[i],"--av-timeout-ms") || !strcmp(argv[i],"--av-latency-ms")) && i+1<argc) {
             std::string option=argv[i];char* end=nullptr;
             unsigned long n=std::strtoul(argv[++i],&end,10);
-            if(!end || *end || !n || n>192000){fprintf(stderr,"invalid A/V numeric option\n");return 1;}
+            // Zero is a valid explicit playback latency, not a valid geometry,
+            // rate or timeout. Keep the default and all other numeric bounds.
+            if(!end || end==argv[i] || *end || (!n && option!="--av-latency-ms") || n>192000){fprintf(stderr,"invalid A/V numeric option\n");return 1;}
             if(option=="--av-width")avOptions.width=n;
             else if(option=="--av-height")avOptions.height=n;
             else if(option=="--av-fps")avOptions.fps=n;
             else if(option=="--av-rate")avOptions.rate=n;
             else if(option=="--av-channels")avOptions.channels=n;
             else if(option=="--av-timeout-ms"){if(n<100 || n>60000){fprintf(stderr,"--av-timeout-ms must be 100..60000\n");return 1;}avOptions.timeoutMs=n;}
-            else avOptions.latencyMs=n;
+            else {if(n>2000){fprintf(stderr,"--av-latency-ms must be 0..2000\n");return 1;}avOptions.latencyMs=n;}
         }
         else if (!strcmp(argv[i], "--control-port") && i + 1 < argc)
             controlPort = atoi(argv[++i]);

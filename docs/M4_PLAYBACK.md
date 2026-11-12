@@ -11,7 +11,7 @@ vkrenderer --wayland m4 --av-session /private/session --av-plugin /path/libgstfr
 ```
 
 Options: `--av-audio-sink` (default autoaudiosink), `--av-width`, `--av-height`,
-`--av-fps`, `--av-rate`, `--av-channels`, `--av-latency-ms` (default100),
+`--av-fps`, `--av-rate`, `--av-channels`, `--av-latency-ms` (0..2000, default100),
 `--av-exit-on-end` (bounded test lifecycle; otherwise renderer remains running).
 Default offer:160x90,50fps,48kHz stereo. Use identical offer at producer.
 For headless testing use `--headless -1 --av-audio-sink fakesink`.
