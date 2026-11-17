@@ -14,7 +14,7 @@ for name,extra,timeout in [('prepared',{'VKR_TEST_AV_PREPARE_DELAY_MS':'250'},15
  env.update(extra,VKR_TRACE=str(d/'renderer'),FRAMELINK_TRACE=str(d/'transport'),FRAMELINK_GST_TRACE=str(d/'gst'),VKR_TRACE_EVENTS='262144',FRAMELINK_TRACE_EVENTS='262144',FRAMELINK_GST_TRACE_EVENTS='262144')
  with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
  pipeline=d/'source.pipeline';pipeline.write_text('videotestsrc num-buffers=180 pattern=ball ! @VIDEO_SINK@ audiotestsrc num-buffers=180 samplesperbuffer=800 volume=0.0 ! @AUDIO_SINK@')
- rc=[str(r),'--serve','prepare-'+name,'--control-port',str(port),'--av-exit-on-end','--av-session',str(d/'session'),'--av-plugin',str(b/'gstframelink.dll'),'--av-format','NV12','--av-width','1920','--av-height','1080','--av-fps','60','--av-audio-sink','autoaudiosink','--av-clock','producer','--av-timeout-ms',str(timeout)]
+ rc=[str(r),'--serve','prepare-'+name,'--windowed','--control-port',str(port),'--av-exit-on-end','--av-session',str(d/'session'),'--av-plugin',str(b/'gstframelink.dll'),'--av-format','NV12','--av-width','1920','--av-height','1080','--av-fps','60','--av-audio-sink','autoaudiosink','--av-clock','producer','--av-timeout-ms',str(timeout)]
  if a.headless:rc+=['--headless','-1']
  pc=[str(b/'framelink_av_producer.exe'),str(b/'gstframelink.dll'),'--session',str(d/'session'),'--format','NV12','--width','1920','--height','1080','--fps','60','--frames','180','--input-pipeline',str(pipeline),'--timeout-ms',str(timeout)]
  if a.media_run_ms:

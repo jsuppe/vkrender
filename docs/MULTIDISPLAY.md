@@ -50,6 +50,16 @@ across both seams with no discontinuity.
 
 The premise holds. The spanning model needed no changes to run at three.
 
+### Built: fullscreen from the OS arrangement
+
+With no `--window`, `SceneHost` makes one borderless window per monitor, using
+`glfwGetMonitorPos` and the video mode as each `WindowSpec`. Nothing else is
+special-cased, because that rect is already both desktop position and canvas
+region: side-by-side, stacked, offset and portrait arrangements, and gaps, fall
+out of the canvas union. Window 0 is the primary monitor, so the feeds and
+preview show the primary display's slice, not the whole canvas. The arrangement
+is read at startup; hotplug and live rearrangement are not handled.
+
 ## Gaps
 
 1. **Android duplicates the scene.** `scene_host.cpp` is `#ifndef __ANDROID__`;

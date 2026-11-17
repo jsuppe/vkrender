@@ -156,6 +156,7 @@ int runWinService(const WinServeOptions& options) {
     ExternalVideoPool pool;
 
     SceneHost host;
+    host.configureDesktop(options.fullscreen, options.bezel, options.panel);
     if (!host.init(vk, options.shaderDir, options.windows)) return 1;
 
     // M38: no D3D11 device here any more. The service used to keep one to
@@ -661,7 +662,9 @@ int runWinService(const WinServeOptions& options) {
         }
 
         // M42: apply the moderator's commands before deciding what is shown.
-        for (const ControlCommand& c : control.drainCommands()) {
+        std::vector<ControlCommand> commands = control.drainCommands();
+        host.takePanelCommands(commands);
+        for (const ControlCommand& c : commands) {
             using T = ControlCommand::Type;
             const uint32_t sl = c.slot >= 0 && c.slot < (int)kInSlots ? (uint32_t)c.slot : 0;
             switch (c.type) {
@@ -842,7 +845,7 @@ int runWinService(const WinServeOptions& options) {
 
         // Preview is captured on demand by SceneHost before presentation,
         // while the selected swapchain image is still acquired.
-        if (controlUp) {
+        if (controlUp || host.panelEnabled()) {
             std::vector<uint8_t> bgra;
             if(host.takePreview(bgra))
                 control.publishPreview(bgra.data(),vk.swapExtent.width,vk.swapExtent.height);
@@ -875,7 +878,7 @@ int runWinService(const WinServeOptions& options) {
             snap.rotateSeconds = mod.rotateSeconds;
             snap.spotlightSlot = mod.spotlight;
             snap.cameraOn = cameraOn;
-            snap.displaysAvailable = headless && vk.canDisplay;
+            snap.displaysAvailable = (headless && vk.canDisplay) || host.fullscreen();
             for (const auto& d : host.listDisplays()) {
                 ControlDisplayInfo cd;
                 cd.id = d.id;
@@ -913,6 +916,7 @@ int runWinService(const WinServeOptions& options) {
                 snap.presenting = snap.presenting || st.connected;
             }
             control.publish(snap);
+            host.setPanelSnapshot(snap);
         }
 
         // The submit carrying the blit is queued and will signal the value we
