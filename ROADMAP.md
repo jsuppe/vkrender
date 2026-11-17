@@ -1,6 +1,16 @@
 # Roadmap
 
-## Active execution scope — 2026-10-29
+## Current status — 2026-11-17
+
+- **FrameLink integration:** the renderer tracks FrameLink M1–M5b (PRs #10–#13) and is pinned to FrameLink `c6d7db7` (PR #16). That pin is the merge of FrameLink's M6 Windows work, whose code is the frozen Windows API `060c54e4`. FrameLink's own status is in its [STATUS.md](https://github.com/jsuppe/framelink/blob/master/docs/STATUS.md).
+- **Renderer M6 repair not on `master`:** FrameLink's Windows readiness cites renderer commit `a6a1906`, which accepts `--av-latency-ms 0` (and caps the option at 2000) without changing the 100 ms default. That commit exists only on the local branch `work/m6-explicit-zero-latency` and has not been pushed. Until it is merged, `master` rejects an explicit 0 ms setting.
+- **Tooling:** builds use `CMakePresets.json` and Ninja on Linux and Windows, with output in `build/Release` on both (PR #17). CI runners are pinned.
+- **Open PR:** #15, fullscreen across all displays with on-screen runtime controls. It needs a rebase onto current `master` and a multi-monitor test.
+- **Milestones M27–M43** were built 2026-08-07 → 2026-08-13 but never got sections here; see [M27–M43](#m27m43--recorded-from-history). M24 and M25 below are still marked in progress; their remaining items have not been re-checked since August.
+
+## Execution scope — 2026-10-29 (historical)
+
+Since that date the renderer CI/merge work landed (PRs #10–#13), and the FrameLink audio/video work it waited on shipped in FrameLink M1–M5b. The list below is as written then.
 
 The current delivery plan is GPU/parity integration plus synchronized audio/video
 session evaluation. Older milestones below remain historical/deferred proposals,
@@ -672,6 +682,22 @@ Productize the Windows receiver stack:
 - **Installer** (Inno Setup): renderer + Miracast/WebRTC receivers +
   virtual camera DLLs (registered at install) + launcher; GStreamer
   runtime check; AirPlay receiver bundled from vkrender-airplay.
+
+## M27–M43 — recorded from history
+
+These milestones were committed without roadmap sections. Each row is the commit's own summary; the linked documents hold the details. Dates are commit dates.
+
+| Milestone | Date | Summary (from commits) |
+|---|---|---|
+| M27 | 2026-08-07 | RTSP multi-source receiver (pull-side ingest); Linux receiver verified cross-machine; Android RTSP module ([RTSP](docs/RTSP.md)) |
+| M28 | 2026-08-07 | Receivers wait for the renderer instead of exiting; keep the display awake while presenting |
+| M29–M33 | 2026-08-08 → 08-09 | Multi-display spanning ([design](docs/MULTIDISPLAY.md)): arrangement from canvas aspect, 3-window spanning with bezel compensation (M29); three Android surfaces in one activity (M30); tile entry/reflow/exit animation (M31, M31.1); sender picks which display or window to share (M32, M32.1); tiles take their stream's aspect (M33). M34 from the design has no commits |
+| M35–M36 | 2026-08-10 | The virtual camera becomes a FrameLink consumer that owns its ring, then moves out to framecam ([virtual camera](docs/VIRTUAL_CAMERA.md)) |
+| M37 | 2026-08-11 | Measure the producer → renderer hop; record the pre-migration baseline |
+| M38–M40 | 2026-08-11 | Migration to FrameLink everywhere: the renderer consumes twelve FrameLink input slots and every receiver becomes a FrameLink producer; the legacy client path is deleted (M38 Windows, M39 Linux, M40 Android) ([FrameLink](docs/FRAMELINK.md)) |
+| M41 | 2026-08-11 → 08-12 | Headless virtual-camera appliance; `vkr_web`, the appliance's web front door (senders, downloads, WHIP proxy) |
+| M42 | 2026-08-12 | Moderator console: real-time room control from a web page ([moderator](docs/MODERATOR.md)) |
+| M43 | 2026-08-13 | Runtime display outputs and camera toggle in the moderator console |
 
 ## Backlog — cloud calling via self-hosted LiveKit (M26 proposal)
 

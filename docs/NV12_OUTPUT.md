@@ -65,8 +65,8 @@ luma placement and chroma downsampling. There are 24 received frames per test.
 130x66 deliberately exercises padded row pitches; 1920x1080 tests HD output.
 
 ```sh
-cmake --build build --config Release --target vkrenderer vkr_nv12_output_test
-ctest --test-dir build -C Release -R nv12_gpu --output-on-failure
+cmake --build --preset ci --target vkrenderer vkr_nv12_output_test
+ctest --test-dir build -R nv12_gpu --output-on-failure
 ```
 
 `test/nv12_service.ps1` exercises the actual service with three separate processes:
