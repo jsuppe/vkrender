@@ -13,8 +13,9 @@ assumed, and analyses whether it can serve as a Microsoft Teams Rooms
 | DirectShow (softcam) | default | `@device_sw_{860BB310-…}\DirectShow Softcam` | DirectShow apps only |
 | Media Foundation | `--mf` | `SWD\VCAMDEVAPI\<hash>` | MF **and** DirectShow apps |
 
-Both are fed by the same consumer loop in
-[client/vcam_win.cpp](../client/vcam_win.cpp). The MF tier is the one that
+Both are fed by the same consumer loop in `vcam_win.cpp`, which now lives in the
+separate [framecam](https://github.com/jsuppe/framecam) repository (M36); vkrender
+builds it when a framecam checkout sits beside this one. The MF tier is the one that
 matters for modern apps: `MFCreateVirtualCamera` registrations are bridged into
 DirectShow automatically, so one registration covers everything. OBS Virtual
 Camera and NVIDIA Broadcast still use the legacy DirectShow-only path.

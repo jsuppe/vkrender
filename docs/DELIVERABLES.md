@@ -1,5 +1,12 @@
 # Deliverables: two sub-projects, and vkrender as their demonstration
 
+> **Status (2026-11-17):** this is the August 2026 proposal, kept for its reasoning.
+> It has since been carried out: FrameLink is its own repository
+> ([jsuppe/framelink](https://github.com/jsuppe/framelink), M6 for Windows), the virtual
+> camera is [framecam](https://github.com/jsuppe/framecam), the Windows AirPlay receiver is
+> [vkrender-airplay](https://github.com/jsuppe/vkrender-airplay), and the receivers that stay
+> here are FrameLink producers. Current status is in [ROADMAP.md](../ROADMAP.md).
+
 What exists today, what is verified, and what is missing — written to make the
 repo split reviewable before any files move.
 
@@ -41,7 +48,7 @@ renderer is merely the first such application and nothing about it is special.
 
 | | |
 |---|---|
-| Code | `client/vcam_win.cpp`, vendored MIT `softcam` (DirectShow filter), `vkrender_vcam_source.dll` (Media Foundation source), `vcam_shared.h` |
+| Code (now in [framecam](https://github.com/jsuppe/framecam)) | `vcam_win.cpp`, vendored MIT `softcam` (DirectShow filter), `vkrender_vcam_source.dll` (Media Foundation source), `vcam_shared.h` |
 | Tiers | DirectShow softcam (default) and `--mf` MFCreateVirtualCamera, which Windows also bridges into DirectShow |
 
 **Verified.** An ordinary DirectShow client enumerated `vkrender Camera

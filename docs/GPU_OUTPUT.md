@@ -1,7 +1,7 @@
 # GPU-only FrameLink scene output (2026-10-29)
 
 Status: implemented and hardware-qualified as below, **not universal NV12 GPU support**.
-Changes are on `feature/platform-parity`; this document does not imply master includes them.
+Merged to `master` (renderer PRs #11–#13). The results below are from 2026-10-29.
 
 ## Enable explicitly
 

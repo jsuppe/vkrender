@@ -1,8 +1,9 @@
-param([string]$RendererBuild='C:\Users\jonsu\dev\vkrender-nv12-20261029\build-trace', [string]$FrameLinkBuild='C:\Users\jonsu\dev\framelink-nv12-20261029\build-trace', [int]$Frames=18000)
+param([Parameter(Mandatory=$true)][string]$RendererBuild, [Parameter(Mandatory=$true)][string]$FrameLinkBuild, [int]$Frames=18000)
 $ErrorActionPreference='Stop'
 $r=$RendererBuild;$f=$FrameLinkBuild
-$env:PATH="$r\Release;$f\Release;"+$env:GSTREAMER_1_0_ROOT_MSVC_X86_64+'bin;'+$env:PATH
-$env:GST_PLUGIN_PATH="$f\Release"
+$fb=if(Test-Path "$f\Release"){"$f\Release"}else{$f} # Visual Studio layout, or a Ninja/preset build
+$env:PATH="$r\Release;$fb;"+$env:GSTREAMER_1_0_ROOT_MSVC_X86_64+'bin;'+$env:PATH
+$env:GST_PLUGIN_PATH="$fb"
 $channel="gpu-stress-$PID"
 $log=Join-Path $r $channel
 New-Item -ItemType Directory -Force $log|Out-Null
@@ -20,8 +21,8 @@ function Sample($phase){
  $render.Refresh();$memory.Add([pscustomobject]@{utc=[DateTime]::UtcNow.ToString('o');phase=$phase;pid=$render.Id;private_bytes=$render.PrivateMemorySize64;working_set=$render.WorkingSet64;handles=$render.HandleCount})
 }
 function Capture($name,$size,$count,$interrupt='none'){
- $left=Launch "$f\Release\framelink_consumer.exe" "--channel $channel.rgb --format bgra --size $size --frames $count --verify 0 --map-cpu 0 --gpu-sync 1 --deadline-ms 30000" "$name-rgb"
- $right=Launch "$f\Release\framelink_consumer.exe" "--channel $channel.nv12 --format nv12 --size $size --frames $count --verify 0 --map-cpu 0 --gpu-sync 1 --deadline-ms 30000" "$name-nv12"
+ $left=Launch "$fb\framelink_consumer.exe" "--channel $channel.rgb --format bgra --size $size --frames $count --verify 0 --map-cpu 0 --gpu-sync 1 --deadline-ms 30000" "$name-rgb"
+ $right=Launch "$fb\framelink_consumer.exe" "--channel $channel.nv12 --format nv12 --size $size --frames $count --verify 0 --map-cpu 0 --gpu-sync 1 --deadline-ms 30000" "$name-nv12"
  $sw=[Diagnostics.Stopwatch]::StartNew();$done=$false
  while(!$left.HasExited -or !$right.HasExited){
   if($sw.Elapsed.TotalSeconds -gt 600){throw "capture timeout $name"}
@@ -49,8 +50,8 @@ try {
  Capture 'resize1080' '1920x1080' 300
  Capture 'surviving-consumers' '1920x1080' 600 'renderer'
  # Kill consumers with slots outstanding, then recreate their channel names.
- $a=Launch "$f\Release\framelink_consumer.exe" "--channel $channel.rgb --format bgra --size 640x360 --frames 999999 --verify 0 --gpu-sync 1 --delay-ms 30" 'abrupt-rgb'
- $b=Launch "$f\Release\framelink_consumer.exe" "--channel $channel.nv12 --format nv12 --size 640x360 --frames 999999 --verify 0 --gpu-sync 1 --delay-ms 30" 'abrupt-nv12'
+ $a=Launch "$fb\framelink_consumer.exe" "--channel $channel.rgb --format bgra --size 640x360 --frames 999999 --verify 0 --gpu-sync 1 --delay-ms 30" 'abrupt-rgb'
+ $b=Launch "$fb\framelink_consumer.exe" "--channel $channel.nv12 --format nv12 --size 640x360 --frames 999999 --verify 0 --gpu-sync 1 --delay-ms 30" 'abrupt-nv12'
  Start-Sleep -Seconds 3;Stop-Process -Id $a.Id,$b.Id -Force
  Capture 'after-consumer-crash' '1920x1080' 300
  Stop-Process -Id $script:producer.Id,$render.Id -Force

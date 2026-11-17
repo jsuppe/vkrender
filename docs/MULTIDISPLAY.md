@@ -3,8 +3,9 @@
 Render one scene across N displays on Windows, Linux and Android, with
 presentations that can span the wall or animate across it as they arrive.
 
-Status: **design**. Nothing here is built yet except the canvas model, which
-has existed since M15 and is the reason the rest is tractable.
+Status: **partly built.** The canvas model (M15), the animation layer (M31),
+desktop exits (M31.1) and fullscreen from the OS arrangement (PR #15, 2026-11-17)
+are built; their sections say so. The rest of this document is still design.
 
 ## What already exists
 

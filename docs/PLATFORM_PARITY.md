@@ -3,7 +3,17 @@
 Scope: all functional gaps across FrameLink and vkrender, not tracing alone.
 This ledger is in-progress, not a blanket parity certification.
 
-## Current qualification checkpoint
+## Status — 2026-11-17
+
+This ledger records the 2026-10-29/30 parity work and is kept as history. Since then
+the renderer merged that work (PRs #11–#13) and moved to FrameLink M6 (pin `c6d7db7`,
+`FL_VERSION` 6), so the wire version below is superseded. The Android control,
+preview and secondary-display Binder work described in
+[ANDROID_CONTROL.md](ANDROID_CONTROL.md) is merged. Current status:
+[ROADMAP.md](../ROADMAP.md) and FrameLink's
+[STATUS.md](https://github.com/jsuppe/framelink/blob/master/docs/STATUS.md).
+
+## Qualification checkpoint (2026-10-30)
 
 The sections below retain incremental test history; this checkpoint supersedes
 older statements that the baseline stress or Binder lifecycle work is outstanding.
@@ -50,7 +60,7 @@ older statements that the baseline stress or Binder lifecycle work is outstandin
   refused Android resize preserves producer counters and outstanding ownership.
 - Android API tracing matches desktop operation/metadata coverage.
 
-**Wire version is now 5.** Rebuild both ends together; old peers are refused.
+**Wire version was 5 at this checkpoint (now 6).** Rebuild both ends together; old peers are refused.
 Native handle APIs are necessarily platform-specific, with equivalent ownership
 and completion contracts. Android abstract sockets remain subject to app UID /
 SELinux boundaries; renderer cross-app input uses its existing Binder Surface API.

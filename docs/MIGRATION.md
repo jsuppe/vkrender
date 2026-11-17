@@ -2,7 +2,7 @@
 
 **Windows is done.** Every Windows receiver is a framelink producer, the
 legacy transport is deleted, and the latency did not move. What follows is the
-design, the measurements, and what is left (Linux, Android).
+design, the measurements, and the Linux and Android phases, which are now done too.
 
 ## Where the line is now
 

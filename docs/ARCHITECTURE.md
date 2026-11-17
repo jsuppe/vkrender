@@ -1,5 +1,12 @@
 # Decomposing vkrender into components
 
+> **Status (2026-11-17):** this is the August 2026 proposal, kept for its reasoning.
+> It has since been carried out: FrameLink is its own repository
+> ([jsuppe/framelink](https://github.com/jsuppe/framelink), M6 for Windows), the virtual
+> camera is [framecam](https://github.com/jsuppe/framecam), the Windows AirPlay receiver is
+> [vkrender-airplay](https://github.com/jsuppe/vkrender-airplay), and the receivers that stay
+> here are FrameLink producers. Current status is in [ROADMAP.md](../ROADMAP.md).
+
 A proposal: vkrender stops being one program and becomes three, joined by
 framelink. Written to be argued with before anything moves, and before the
 repository is renamed and published.
