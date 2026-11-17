@@ -85,6 +85,7 @@ struct SceneOut {
     VkDeviceMemory memories[FL_MAX_POOL_SIZE] = {};
     VkSemaphore readySem = VK_NULL_HANDLE;           // we signal, consumer waits
     int pendingSlot = -1;                            // blit recorded this frame
+    flImage* pendingImage = nullptr;                 // the acquired buffer's image
     uint64_t pendingValue = 0;
     int64_t nextRetryNs = 0;                         // the consumer may not exist yet
 };
@@ -327,7 +328,7 @@ int runWinService(const WinServeOptions& options) {
         so.readySem = VK_NULL_HANDLE;
         flClose(so.channel);
         so.channel = nullptr;
-        so.pendingSlot = -1;
+        so.pendingSlot = -1; so.pendingImage = nullptr;
         VKR_LOG("service: scene channel '%s' released", so.name.c_str());
     };
 
@@ -795,7 +796,7 @@ int runWinService(const WinServeOptions& options) {
         const int64_t scenePts=nowNs();
         for (auto& sceneOut : sceneOuts) {
             vkrtrace::Scope outputTrace("service.output_prepare",vkrtrace::id(sceneOut.name.c_str()));
-            sceneOut.pendingSlot = -1;
+            sceneOut.pendingSlot = -1; sceneOut.pendingImage = nullptr;
             if (sceneOut.channel && presenting && cameraOn) {
                 flBuffer buf{};
                 // Non-blocking: if the consumer is behind, skip this frame rather
@@ -819,7 +820,7 @@ int runWinService(const WinServeOptions& options) {
                     }
                     uint64_t value=0;
                     if(nv12 ? (value=++sceneOut.convertValue,true) : flBeginSubmit(sceneOut.channel,&buf,&value)==FL_OK){
-                        sceneOut.pendingSlot=(int)slot;sceneOut.pendingValue=value;
+                        sceneOut.pendingSlot=(int)slot;sceneOut.pendingImage=buf.image;sceneOut.pendingValue=value;
                         extras.blits.push_back({nv12?sceneOut.converters[slot].image:sceneOut.images[slot],sceneOut.width,sceneOut.height});
                         extras.signalSems.push_back(nv12?sceneOut.converters[slot].inputReady:sceneOut.readySem);
                         extras.signalValues.push_back(value);
@@ -921,7 +922,9 @@ int runWinService(const WinServeOptions& options) {
             if (sceneOut.pendingSlot >= 0) {
                 flBuffer buf{};
                 buf.slot = (uint32_t)sceneOut.pendingSlot;
-                buf.image = nullptr; // only the slot matters to flEndSubmit
+                // framelink requires the exact acquired buffer, image included;
+                // a rebuilt one is refused with FL_INVALID.
+                buf.image = sceneOut.pendingImage;
                 flResult result=FL_INTERNAL;
                 if(sceneOut.format==FL_FORMAT_NV12){
                     // Wait and convert on the GPU, then signal FrameLink from that

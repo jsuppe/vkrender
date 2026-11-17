@@ -40,6 +40,23 @@
           "name": "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
         }
       }
+    },
+    {
+      "name": "hardware",
+      "displayName": "GPU tests for the opt-in hardware runner",
+      "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 120,
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
+          "name": "^(nv12_gpu_[0-9]+x[0-9]+|scene_output_(rgba|rgb10)_nv12|mixed_rgb_nv12_input|vulkan_sync_fd_contract|gpu_output_pixels_.*)$"
+        }
+      }
     }
   ]
 }

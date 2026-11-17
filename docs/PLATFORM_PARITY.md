@@ -147,9 +147,13 @@ Reproduce Windows integration (isolated build directories, not the live demo):
 
 ```powershell
 ./test/parity_windows_input.ps1 -RendererBuild build-trace -FrameLinkBuild ../framelink/build-trace
-./test/parity_windows_output.ps1 -RendererBuild build-trace -FrameLinkBuild ../framelink/build-trace
-./test/parity_windows_output.ps1 -RendererBuild build-trace -FrameLinkBuild ../framelink/build-trace -Rgb10
+./test/parity_windows_output.ps1 -BinDir build/Release -PluginDir build/framelink
+./test/parity_windows_output.ps1 -BinDir build/Release -PluginDir build/framelink -Rgb10
 ```
+
+The output script is also registered as `scene_output_rgba_nv12` and
+`scene_output_rgb10_nv12` in the `hardware` test preset
+(`ctest --preset hardware` after `cmake --build --preset ci`).
 
 The input script checks finite renderer completion; inspect `parity-nvinput.ppm`
 for its red fixture. The output script checks 20 timestamp-matched frame pairs,
