@@ -66,7 +66,7 @@ luma placement and chroma downsampling. There are 24 received frames per test.
 
 ```sh
 cmake --build --preset ci --target vkrenderer vkr_nv12_output_test
-ctest --test-dir build -R nv12_gpu --output-on-failure
+ctest --preset hardware -R nv12_gpu
 ```
 
 `test/nv12_service.ps1` exercises the actual service with three separate processes:

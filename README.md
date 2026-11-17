@@ -93,6 +93,10 @@ cmake --preset ci
 cmake --build --preset ci && ctest --preset ci
 ```
 
+`ctest --preset ci` runs the GPU-free tests that hosted CI runs. On a machine
+with a GPU, `ctest --preset hardware` runs the GPU tests as well, including the
+Windows scene-output check (`scene_output_rgba_nv12`, `scene_output_rgb10_nv12`).
+
 ## Run
 
 Start the decoder (it waits for the renderer on the pipe), then the renderer:
