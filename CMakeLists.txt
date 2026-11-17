@@ -396,6 +396,21 @@ endif()
 add_executable(vkr_portable_output_check test/portable_output_check.cpp)
 target_link_libraries(vkr_portable_output_check PRIVATE framelink)
 
+# Scene output end to end on Windows (GPU + GStreamer plugin; the hardware
+# test preset, not hosted CI). Would have caught the renderer rebuilding the
+# buffer it submits, which framelink refuses.
+if(WIN32 AND TARGET gstframelink)
+    foreach(variant "rgba;" "rgb10;-Rgb10")
+        list(GET variant 0 name)
+        list(GET variant 1 flag)
+        add_test(NAME scene_output_${name}_nv12 COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/test/parity_windows_output.ps1
+            -BinDir $<TARGET_FILE_DIR:vkrenderer> -PluginDir $<TARGET_FILE_DIR:gstframelink>
+            -LogDir ${CMAKE_CURRENT_BINARY_DIR}/scene_output_${name} ${flag})
+        set_tests_properties(scene_output_${name}_nv12 PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+    endforeach()
+endif()
+
 if(UNIX AND NOT ANDROID AND TARGET vkr_wl_dmabuf_client)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     enable_testing()
