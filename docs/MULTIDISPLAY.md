@@ -60,6 +60,11 @@ out of the canvas union. Window 0 is the primary monitor, so the feeds and
 preview show the primary display's slice, not the whole canvas. The arrangement
 is read at startup; hotplug and live rearrangement are not handled.
 
+Tested 2026-11-17 with three `--window` windows on one monitor (panel on the
+primary window only, absent from the scene-output feed; ESC from any window;
+scene continuous across the windows). The per-monitor fullscreen path and the
+display on/off checkboxes still need a test on two or more real displays.
+
 ## Gaps
 
 1. **Android duplicates the scene.** `scene_host.cpp` is `#ifndef __ANDROID__`;
