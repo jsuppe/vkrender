@@ -9,7 +9,7 @@ on:
 
 # Match the renderer API to a reproducible FrameLink revision.
 env:
-  FRAMELINK_REF: 3ba77d4a3d493d51c622397b7b5ff3ead4bddf6d
+  FRAMELINK_REF: c6d7db75cfdbf953bc0d9a5b4c3e5ffe49e3c43d
 
 jobs:
   windows:
@@ -109,13 +109,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            ninja-build \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libgstreamer-plugins-bad1.0-dev \
             libva-dev libdrm-dev libgbm-dev \
             xorg-dev libwayland-dev libwayland-bin libxkbcommon-dev wayland-protocols
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFRAMELINK_DIR="$GITHUB_WORKSPACE/deps/framelink"
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFRAMELINK_DIR="$GITHUB_WORKSPACE/deps/framelink"
 
       - name: Build
         run: cmake --build build --parallel 4
