@@ -1,0 +1,18 @@
+--------- beginning of main
+11-17 09:31:07.543 26730 26768 I vkrender: renderer: device: Mali-G52 MC2
+11-17 09:31:07.545 26730 26768 I vkrender: renderer: external format resolve available (null attachment=1)
+11-17 09:31:07.545 26730 26768 I vkrender: renderer: VK_GOOGLE_display_timing available
+11-17 09:31:07.602 26730 26768 I vkrender: swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=6 extent=1200x1920
+11-17 09:31:07.636 26730 26768 I vkrender: renderer: stream service ready (up to 12 producers)
+11-17 09:31:07.674 26730 26768 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+11-17 09:31:11.827 26814 26828 I vkrender: fltest: producing 150 frames on 'vkrender.in.0'
+11-17 09:31:11.847 26814 26828 I vkrender: fltest: on 'vkrender.in.0' 960x540 ring of 4 gen 3
+11-17 09:31:11.859 26730 26768 I vkrender: renderer: stream header 960x540 fmt=44, awaiting dma-buf surfaces
+11-17 09:31:11.860 26730 26768 I vkrender: renderer: imported AHardwareBuffer surface key=2128725929 extFmt=0x28 (1 total, zero-copy)
+11-17 09:31:11.893 26730 26768 I vkrender: renderer: imported AHardwareBuffer surface key=2128736521 extFmt=0x28 (2 total, zero-copy)
+11-17 09:31:12.641 26730 26768 I vkrender: renderer: 22 adoptions / 298 presents in 5s (pool 2 buffers, 1 streams) hop avg 9.31 ms max 23.88 ms over 22
+11-17 09:31:12.756 26730 26768 I vkrender: renderer: imported AHardwareBuffer surface key=2128741833 extFmt=0x28 (3 total, zero-copy)
+11-17 09:31:17.657 26730 26768 I vkrender: renderer: 123 adoptions / 302 presents in 5s (pool 3 buffers, 1 streams) hop avg 8.25 ms max 16.83 ms over 123
+11-17 09:31:17.870 26814 26828 I vkrender: fltest: submitted 150 frames
+11-17 09:31:17.871 26730 26768 I vkrender: renderer: departure retired 'vkrender.in.0'
+11-17 09:31:22.671 26730 26768 I vkrender: renderer: 5 adoptions / 302 presents in 5s (pool 3 buffers, 0 streams) hop avg 7.94 ms max 14.25 ms over 5

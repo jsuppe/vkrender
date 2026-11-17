@@ -1,0 +1,61 @@
+{
+  "state": "failed",
+  "serial": "<android-device>",
+  "steps": [
+    {
+      "step": "pull-installed-apk",
+      "exit": 0
+    },
+    {
+      "step": "device-build",
+      "exit": 0
+    },
+    {
+      "step": "temporary-screen-timeout",
+      "exit": 0
+    },
+    {
+      "step": "push-diagnostic",
+      "exit": 0
+    },
+    {
+      "step": "chmod-diagnostic",
+      "exit": 0
+    },
+    {
+      "step": "raw-vulkan-fence",
+      "exit": 0
+    },
+    {
+      "step": "eventfd-control",
+      "exit": 0
+    },
+    {
+      "step": "original-sync-contract",
+      "exit": 0
+    },
+    {
+      "step": "framelink-stop",
+      "exit": 0
+    },
+    {
+      "step": "framelink-wake",
+      "exit": 0
+    },
+    {
+      "step": "framelink-launch",
+      "exit": 0
+    },
+    {
+      "step": "framelink-producer",
+      "exit": 0
+    }
+  ],
+  "apk_sha256": "d9a9faae91d36c2704753fb5bb4f70ec38d3d01c0e339dbd1de6f94072b4c687",
+  "framelink_pin": "b3b67a5fff798f8f72da5c0a4606bcf5dc49d00a",
+  "scope": "Physical-device functional rendering/Binder/lifecycle and fence diagnostics; not endurance or optical/acoustic qualification",
+  "current": "framelink-producer",
+  "diagnostic_sha256": "36d9cbb455c3a7ec7cf1de63009f03fcf9ecf594ed034fa699a08681090f15c0",
+  "error": "renderer not focused; no screen capture",
+  "screen_timeout_restored": true
+}

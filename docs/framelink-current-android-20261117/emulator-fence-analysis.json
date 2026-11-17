@@ -1,0 +1,22 @@
+{
+  "raw_probe_exit": 0,
+  "raw_probe": [
+    {
+      "case": "raw-vulkan-fence",
+      "before_pollin": true,
+      "scm_before_pollin": true,
+      "event_before": 4,
+      "completion_before": 1,
+      "after_pollin": true,
+      "scm_after_pollin": true,
+      "completion_after": 0
+    }
+  ],
+  "eventfd_control_exit": 0,
+  "original_contract_exit": 1,
+  "eventfd_is_gpu_proof": false,
+  "original_failure_retained": true,
+  "raw_export_early_readiness": true,
+  "finding": "Exported FD is readable before event release and Vulkan queue completion, before FrameLink receives it; generic FrameLink FD wait/reuse controls pass.",
+  "boundary": "Raw emulator Vulkan/native-fence export or readiness path; exact underlying driver/emulator cause not isolated."
+}

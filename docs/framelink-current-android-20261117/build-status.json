@@ -1,0 +1,98 @@
+{
+  "state": "finished",
+  "steps": [
+    {
+      "step": "configure-arm64-v8a",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "build-arm64-v8a",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "configure-x86_64",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "build-x86_64",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "renderer-apk",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "device-build",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "device-directory",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "push-vkr_gpu_output_caps",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "chmod-vkr_gpu_output_caps",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "run-vkr_gpu_output_caps",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "push-vkr_gpu_sync_fd_test",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "chmod-vkr_gpu_sync_fd_test",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "run-vkr_gpu_sync_fd_test",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "push-vkr_gpu_output_pixels",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "chmod-vkr_gpu_output_pixels",
+      "exit": 0,
+      "outcome": "pass"
+    },
+    {
+      "step": "run-vkr_gpu_output_pixels",
+      "exit": 0,
+      "outcome": "pass"
+    }
+  ],
+  "renderer_base": "a6a19061360761729db41bfa427f364037985b1a",
+  "framelink_revision": "b3b67a5fff798f8f72da5c0a4606bcf5dc49d00a",
+  "source_sha256": {
+    "CMakeLists.txt": "45c68dcbcfe4f50d33f435dce5d3238f2e09b59489d31100628ad6d13d358c0a",
+    "README.md": "ebb99de5a09e32e3e904263fb521475ecebe87c7f21f54dcb0f9ab571005912a",
+    "cmake/FrameLinkDependency.cmake": "926a8ea6a8b60581de1aeebb04c9c5bf15c31f700c8a8d665b2768bb6c757389",
+    "cmake/framelink-revision.txt": "d80fcd3d3b7f33291435e5489ceb453a8ad0e614a8ab90366d0ae134617b8c02",
+    "android/renderer/src/main/cpp/CMakeLists.txt": "a2803061311508fb82ef34e6ec8ea75429e78fd9b3173a265f1544d5a6f8f462",
+    "docs/FRAMELINK_CURRENT.md": "c11983f9d501454e6d30816c196297ef9cb10e99a48637af37c32e5e8671b816",
+    "scripts/validate_android_framelink.py": "edeeb7cfc745bae006974bf179dceb219a49c408c0985cce768b276096feaa9a"
+  },
+  "current": "run-vkr_gpu_output_pixels",
+  "apk_sha256": "d9a9faae91d36c2704753fb5bb4f70ec38d3d01c0e339dbd1de6f94072b4c687"
+}

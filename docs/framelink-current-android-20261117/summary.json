@@ -1,0 +1,22 @@
+{
+  "pass": true,
+  "scope": "bounded Android tablet functional UI/lifecycle validation",
+  "model": "TCL 8483A",
+  "android": "15",
+  "gpu": "Mali-G52 MC2",
+  "framelink_pin": "b3b67a5fff798f8f72da5c0a4606bcf5dc49d00a",
+  "apk_sha256": "d9a9faae91d36c2704753fb5bb4f70ec38d3d01c0e339dbd1de6f94072b4c687",
+  "framelink_frames_submitted": 150,
+  "framelink_adoptions": 150,
+  "visual_review": true,
+  "control_preview_pause_resume": "pass",
+  "surface_tracked_stale_and_process_death": "pass",
+  "surface_legacy": "pass",
+  "rapid_generations": 20,
+  "native_gpu_sync_contract": "pass (prior hardware run reused)",
+  "skipped": [
+    "secondary display: none attached"
+  ],
+  "emulator_native_sync_issue": "retained, raw export readiness mismatch; not reproduced on tablet",
+  "windows_or_linux_playback_qualified": false
+}

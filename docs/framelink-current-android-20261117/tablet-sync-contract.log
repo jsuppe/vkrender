@@ -1,0 +1,11 @@
+initializing Vulkan
+Could not open module param file '/sys/module/mali_kbase/parameters/large_page_conf'
+channel connected
+queue event-gated signal
+export SYNC_FD
+export complete
+ready-before-signal result=1 (timeout)
+queue event-gated signal
+export SYNC_FD
+export complete
+PASS: real Vulkan SYNC_FD ready/consumed handoff and timeout/reuse ordering

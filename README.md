@@ -84,6 +84,26 @@ renderer) should work there.
 
 ## Build
 
+FrameLink is pinned to the exact revision in
+[`cmake/framelink-revision.txt`](cmake/framelink-revision.txt) (protocol **6**).
+Use a clean checkout at that revision and explicitly select it with
+`-DFRAMELINK_DIR=/path/to/framelink`. CMake rejects older/mismatched revisions
+and edited implementation files. The sibling `../framelink` default is only
+a convenience path, not permission to use an arbitrary installed version.
+Do not reset another agent's checkout; create a dedicated worktree instead.
+
+Android renderer APK (Gradle 8.14, SDK 36, NDK 27.0.12077973):
+
+```sh
+gradle -p android --configure-on-demand :renderer:assembleDebug \
+  -PframelinkDir=/path/to/pinned/framelink
+```
+
+This builds arm64-v8a and x86_64; compilation does not establish emulator/device
+runtime support. Surface/Binder input remains available alongside native
+FrameLink input. Windows retained-device owners are not an Android requirement.
+See [integration status](docs/FRAMELINK_CURRENT.md) for validation boundaries.
+
 No Vulkan SDK required on either OS — Vulkan-Headers, volk, GLFW and glslang
 are fetched by CMake.
 
