@@ -23,6 +23,10 @@ FetchContent_Declare(volk
     GIT_REPOSITORY https://github.com/zeux/volk.git
     GIT_TAG vulkan-sdk-1.3.296.0)
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
+# The renderer does not use the Vulkan C++ module. Vulkan-Headers enables it by
+# default with GCC 14+ and MSVC 19.41+, and the Makefiles generator cannot build
+# C++ modules, which broke the Linux configure on the ubuntu-26.04 runner.
+set(VULKAN_HEADERS_ENABLE_MODULE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(vulkan_headers volk)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES)
