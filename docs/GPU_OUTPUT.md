@@ -79,7 +79,7 @@ pretending its current native YUV AHB can be written through Vulkan.
   Linux RGBA, Pi RGBA and tablet NV12 passed with zero byte error.
 - Linux all four formats passed with zero byte error; tablet all four passed;
   Pi BGRA/RGBA passed. Unsupported Pi formats skip, not pass.
-- `python3 test/gpu_output_integration.py BUILD`: live scene RGB/NV12 comparison;
+- `python3 test/gpu_output_integration.py build/Release`: live scene RGB/NV12 comparison;
   Linux 20 timestamp-matched distinct pairs passed, maximum YUV error 1 (limit 3).
 - Linux full renderer suite: 9/9; FrameLink: 25/25.
 - Linux NV12 lifecycle test ran with `VK_LAYER_KHRONOS_validation`, no reported errors. The 4K Linux RGBA lifecycle test also ran with validation
