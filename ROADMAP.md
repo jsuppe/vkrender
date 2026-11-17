@@ -3,7 +3,7 @@
 ## Current status — 2026-11-17
 
 - **FrameLink integration:** the renderer tracks FrameLink M1–M5b (PRs #10–#13) and is pinned to FrameLink `c6d7db7` (PR #16). That pin is the merge of FrameLink's M6 Windows work, whose code is the frozen Windows API `060c54e4`. FrameLink's own status is in its [STATUS.md](https://github.com/jsuppe/framelink/blob/master/docs/STATUS.md).
-- **Renderer M6 repair not on `master`:** FrameLink's Windows readiness cites renderer commit `a6a1906`, which accepts `--av-latency-ms 0` (and caps the option at 2000) without changing the 100 ms default. That commit exists only on the local branch `work/m6-explicit-zero-latency` and has not been pushed. Until it is merged, `master` rejects an explicit 0 ms setting.
+- **Renderer M6 repair:** FrameLink's Windows readiness cites renderer commit `a6a1906`. It accepts `--av-latency-ms 0`, caps the option at 2000 and leaves the 100 ms default unchanged. It is on `master` as `86853d6` (cherry-picked unchanged onto current `master`).
 - **Tooling:** builds use `CMakePresets.json` and Ninja on Linux and Windows, with output in `build/Release` on both (PR #17). CI runners are pinned.
 - **Open PR:** #15, fullscreen across all displays with on-screen runtime controls. It needs a rebase onto current `master` and a multi-monitor test.
 - **Milestones M27–M43** were built 2026-08-07 → 2026-08-13 but never got sections here; see [M27–M43](#m27m43--recorded-from-history). M24 and M25 below are still marked in progress; their remaining items have not been re-checked since August.
