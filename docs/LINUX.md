@@ -139,9 +139,9 @@ needed. Fedora equivalents: `ffmpeg-free-devel libva-devel libdrm-devel
 wayland-devel libxkbcommon-devel` + the X11 devel group.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build          # runs vkr_ipc_test (no GPU needed)
+cmake --preset ci               # Ninja, Release; binaries in build/Release/
+cmake --build --preset ci
+ctest --preset ci               # the GPU-free tests CI runs
 ```
 
 ### No sudo? Home-prefix bootstrap
@@ -156,7 +156,7 @@ meson setup build --prefix=$HOME/.local --libdir=lib && ninja -C build install
 
 # then configure the project with:
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --preset ci
 ```
 
 At runtime add `export LD_LIBRARY_PATH=$HOME/.local/lib`.

@@ -66,23 +66,31 @@ renderer) should work there.
 No Vulkan SDK required on either OS — Vulkan-Headers, volk, GLFW and glslang
 are fetched by CMake.
 
-**Windows** (VS 2022 C++ workload, CMake 3.24+, and the GStreamer MSVC
-x86_64 **runtime + devel** MSIs from gstreamer.freedesktop.org):
+The same preset builds every desktop platform (Ninja, Release; see
+`CMakePresets.json`). Binaries land in `build/Release/` on Linux and Windows
+alike. FrameLink is built from a checkout beside this one (`../framelink`) or
+from `-DFRAMELINK_DIR=<path>`; CI uses the revision pinned in
+`.github/workflows/build.yml`.
+
+**Windows** (Visual Studio C++ build tools, CMake 3.24+, Ninja, and the
+GStreamer MSVC x86_64 **runtime + devel** MSIs from gstreamer.freedesktop.org).
+Run from a Visual Studio x64 developer prompt so Ninja finds MSVC:
 
 ```bash
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --parallel
+cmake --preset ci
+cmake --build --preset ci
+ctest --preset ci
 ```
 
 **Linux** (GStreamer ≥ 1.22 + libva from the distro; full details, NVIDIA
 setup, and no-sudo bootstrap in [docs/LINUX.md](docs/LINUX.md)):
 
 ```bash
-sudo apt install cmake g++ pkg-config libgstreamer1.0-dev \
+sudo apt install cmake ninja-build g++ pkg-config libgstreamer1.0-dev \
   libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
   libva-dev libdrm-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel && ctest --test-dir build
+cmake --preset ci
+cmake --build --preset ci && ctest --preset ci
 ```
 
 ## Run
@@ -222,9 +230,10 @@ scripts/   Android GStreamer prebuilt fetch/prune, legacy FFmpeg cross-build
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) — all milestones through M9 (GStreamer decode
-pipelines on Windows, Linux, and Android) are complete; the backlog and
-future ideas live there and in the GitHub issues.
+See [ROADMAP.md](ROADMAP.md), which opens with the current status. Renderer
+milestones through M43 have been built; FrameLink integration tracks FrameLink
+M6 for Windows (pin `c6d7db7`). The backlog and future ideas live there and in
+the GitHub issues.
 
 ### NV12 FrameLink scene output (Windows)
 
