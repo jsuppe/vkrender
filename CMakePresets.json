@@ -1,0 +1,45 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ci",
+      "displayName": "Release desktop build (CI and local)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ci",
+      "displayName": "GPU-free tests run by hosted CI",
+      "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 60,
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
+          "name": "^(av_schedule|av_clock_contract|headless_pacer|nv12_cpu|ipc|control_preview_short_write|shared_scene_layouts|shared_moderation|control_http|control_preview_admission|android_surface_generations|android_stream_owners|android_control_mailbox|android_control_aidl|preview_mailbox)$"
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,15 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# One build-tree layout on every desktop platform and generator: every
+# executable and DLL, including sub-projects such as framelink, lands in
+# build/<config>/ (build/Release in CI) beside the renderer that loads it.
+# The generator expression makes single-config Ninja match multi-config
+# Visual Studio, so scripts and docs can use the same paths everywhere.
+if(NOT ANDROID)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>")
+endif()
+
 if(WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
@@ -178,13 +187,15 @@ if(WIN32)
     set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
 
-    # Sub-projects default to their own binary dirs, which would leave
+    # Sub-projects could set their own output dirs, which would leave
     # framelink.dll somewhere the appliance cannot load it and the installer
-    # cannot package it. Put every sub-project artefact beside vkrender's.
+    # cannot package it. Pin every sub-project artefact to the same
+    # build/<config>/ that CMAKE_RUNTIME_OUTPUT_DIRECTORY gives vkrender.
     function(vkr_colocate)
         foreach(_t ${ARGN})
             if(TARGET ${_t})
                 set_target_properties(${_t} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
                     RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_BINARY_DIR}/Debug"
                     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
                     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/RelWithDebInfo")
@@ -389,7 +400,7 @@ if(UNIX AND NOT ANDROID AND TARGET vkr_wl_dmabuf_client)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     enable_testing()
     add_test(NAME mixed_rgb_nv12_input COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/mixed_formats.py ${CMAKE_CURRENT_BINARY_DIR})
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/mixed_formats.py $<TARGET_FILE_DIR:vkrenderer>)
     set_tests_properties(mixed_rgb_nv12_input PROPERTIES TIMEOUT 30)
 endif()
 
