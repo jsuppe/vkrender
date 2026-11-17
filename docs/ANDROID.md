@@ -44,7 +44,7 @@ android:name="dev.vkrender.renderer"/></queries>` for API-30+ package
 visibility, then binds with an explicit `ComponentName`. Both debug APKs are
 signed with the same debug key, satisfying the signature check.
 
-- **AIDL** ([IVkRendererService.aidl](../android/app/src/main/aidl/dev/vkrender/IVkRendererService.aidl)):
+- **AIDL** ([IVkRendererService.aidl](../android/renderer/src/main/aidl/dev/vkrender/IVkRendererService.aidl)):
   `Surface acquireInputSurface()`. `Surface` is Parcelable, so the Binder
   handoff is trivial; the native bridge converts the reader's window with
   `ANativeWindow_toSurface`. Because *any* Surface producer works —
@@ -89,7 +89,8 @@ the SDK, JDK 17+, and the GStreamer Android prebuilts (§3).
 
 ```bash
 # android/local.properties must point at your SDK: sdk.dir=...
-gradle -p android assembleDebug     # builds BOTH APKs (or open android/ in Android Studio)
+gradle -p android assembleDebug     # builds every APK: renderer, decoder, airplay, webrtc, rtsp, wall
+                                    # (or open android/ in Android Studio)
 adb install -r android/renderer/build/outputs/apk/debug/renderer-debug.apk
 adb install -r android/decoder/build/outputs/apk/debug/decoder-debug.apk
 ```

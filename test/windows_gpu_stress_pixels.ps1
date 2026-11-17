@@ -2,8 +2,9 @@ param([Parameter(Mandatory=$true)][string]$RendererBuild, [Parameter(Mandatory=$
 $ErrorActionPreference='Stop'
 $r=(Resolve-Path $RendererBuild).Path
 $f=(Resolve-Path $FrameLinkBuild).Path
-$env:PATH="$r\Release;$f\Release;"+$env:GSTREAMER_1_0_ROOT_MSVC_X86_64+'bin;'+$env:PATH
-$env:GST_PLUGIN_PATH="$f\Release"
+$fb=if(Test-Path "$f\Release"){"$f\Release"}else{$f} # Visual Studio layout, or a Ninja/preset build
+$env:PATH="$r\Release;$fb;"+$env:GSTREAMER_1_0_ROOT_MSVC_X86_64+'bin;'+$env:PATH
+$env:GST_PLUGIN_PATH="$fb"
 $env:VKR_CHECK_FRAMES="$Frames";$env:VKR_CHECK_TIMEOUT="$TimeoutSeconds"
 $check=$null;$render=$null;$producer=$null
 try {

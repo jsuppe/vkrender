@@ -7,6 +7,8 @@
 - **Tooling:** builds use `CMakePresets.json` and Ninja on Linux and Windows, with output in `build/Release` on both (PR #17). CI runners are pinned.
 - **Scene output repair (PR #20):** since FrameLink `12326e17` (2026-11-01) a producer must submit the exact buffer it acquired. The Windows scene output rebuilt it without its image, so FrameLink refused every frame and no scene output (virtual camera included) delivered anything from then until the fix on 2026-11-17. The fix passes the acquired buffer back. The existing end-to-end check now runs as `scene_output_rgba_nv12` and `scene_output_rgb10_nv12` in a new `hardware` test preset; both fail without the fix and pass with it. Hosted CI has no GPU, so the preset is run by hand on a Windows GPU machine.
 - **Fullscreen across all displays with on-screen controls (PR #15, merged 2026-11-17):** one borderless window per monitor, and a Dear ImGui panel on the primary display. Tested with three `--window` windows on one monitor: the panel shows only on the primary window and is absent from the scene-output feed; panel controls, ESC from any window and the scene spanning the windows all work. **Not yet tested:** the one-window-per-monitor fullscreen path on two or more real displays, and the display on/off checkboxes (refused in `--window` mode by design).
+- **Checked end to end on Windows (2026-11-17), from current `master` with FrameLink `c6d7db7`:** `ctest --preset hardware` 5/5 and `ctest --preset ci` 13/13; the scene-output, NV12-service, NV12-input and 600-frame GPU pixel scripts pass; and the virtual camera works end to end (test producer → renderer → scene output → framecam `--mf` → 90 frames captured from "vkrender Camera" by a Media Foundation client).
+- **Open item:** the appliance (`vkr_appliance`, `vkrender.ini`) always passes `--window`, so it cannot use the fullscreen-across-displays mode from PR #15.
 - **Milestones M27–M43** were built 2026-08-07 → 2026-08-13 but never got sections here; see [M27–M43](#m27m43--recorded-from-history). M24 and M25 below are still marked in progress; their remaining items have not been re-checked since August.
 
 ## Execution scope — 2026-10-29 (historical)
@@ -310,7 +312,7 @@ platforms:
   streams on the two-cube vaporwave scene. Sync is fully GPU-side: submit
   waits each client's readySem at its frame value and signals consumedSem
   per the M2 contract.
-- **`vkrender_client.dll`** ([client/vkrender_client.h](client/vkrender_client.h)):
+- **`vkrender_client.dll`** (`client/vkrender_client.h`, retired in M38):
   a four-call C API — `vkrConnect` (pass your D3D11 device or let the
   library create one on the renderer's adapter), `vkrDequeueBuffer`
   (backpressure via a GPU-driven consumed-fence wait), `vkrQueueBuffer`
@@ -441,12 +443,12 @@ aspect; measured at 0.6949 against a 0.6963 source, 0.2% error.
 feeding the cast into the scene as a producer stream - the same vendored
 UxPlay core as Android (M18), ported to **MSVC**:
 
-- **Win32 pthread/unistd shim** ([third_party/win_compat](third_party/win_compat)):
+- **Win32 pthread/unistd shim** ([third_party/win_compat](https://github.com/jsuppe/vkrender-airplay/tree/main/third_party/win_compat), now in vkrender-airplay):
   the UxPlay core is written for pthread; a ~150-line shim maps it onto
   CRITICAL_SECTION / CONDITION_VARIABLE / CreateThread, with **lazy mutex
   init** so a zero-initialized handle (POSIX `PTHREAD_MUTEX_INITIALIZER`
   semantics, which `httpd_t`'s `run_mutex` relies on) is still lockable.
-- **Native discovery**: `client/dnssd_win.c` registers `_raop._tcp` /
+- **Native discovery**: `client/dnssd_win.c` (now vkrender-airplay `src/dnssd_win.c`) registers `_raop._tcp` /
   `_airplay._tcp` through Win32 `DnsServiceRegister` (dnsapi) - **no Bonjour
   install**. Confirmed advertising on the LAN (avahi-browse from another
   host sees the machine's `vkrender` service).

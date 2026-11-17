@@ -1,4 +1,25 @@
-# vkrender — two-process zero-copy RTSP → Vulkan video pipeline
+# vkrender — a Vulkan presentation compositor
+
+vkrender composites live presentation streams onto one animated Vulkan scene and
+publishes the result: to windows or every display, to other processes over
+[FrameLink](https://github.com/jsuppe/framelink), and from there to an OS virtual
+camera. Streams arrive through FrameLink as zero-copy GPU frames.
+
+| Part | What it does |
+|---|---|
+| `vkrenderer --serve [pipe]` (Windows) | The compositor service. Pre-creates twelve FrameLink input slots (`<pipe>.in.0` … `.in.11`), publishes the scene to `<pipe>.scene` or `--scene-output` channels (BGRA, RGBA, RGB10A2 or NV12), and serves the control API on `127.0.0.1:8875` |
+| `vkrenderer --wayland [socket]` (Linux) | The same scene as a minimal Wayland compositor: each Wayland client is a stream |
+| Android APKs | Renderer service that hands out Surfaces over Binder, plus receiver apps (see [docs/ANDROID.md](docs/ANDROID.md)) |
+| Receivers | `vkr_miracast`, `vkr_webrtc` (WHIP), `vkr_rtsp`, and AirPlay in [vkrender-airplay](https://github.com/jsuppe/vkrender-airplay); each is a FrameLink producer on an input slot |
+| A/V sessions | `--av-session` plays one FrameLink audio/video session in slot zero on the audio clock ([docs/M4_PLAYBACK.md](docs/M4_PLAYBACK.md)) |
+| Virtual camera | [framecam](https://github.com/jsuppe/framecam) consumes the scene output and registers a Windows camera |
+| Control | HTTP API, the moderator console `vkr_web` ([docs/MODERATOR.md](docs/MODERATOR.md)) and an on-screen panel |
+| Appliance | `vkr_appliance` launcher and an installer ([installer/README.md](installer/README.md)) |
+| `vkdecoder` | The original two-process RTSP pipeline, below |
+
+Current status, milestones and open items: [ROADMAP.md](ROADMAP.md).
+
+## The original two-process RTSP → Vulkan pipeline
 
 Two cooperating processes that share decoded video frames through GPU memory,
 with **zero copies between processes**: the texture the decoder writes is the
@@ -93,13 +114,15 @@ cmake --preset ci
 cmake --build --preset ci && ctest --preset ci
 ```
 
-`ctest --preset ci` runs the GPU-free tests that hosted CI runs. On a machine
+`ctest --preset ci` runs the GPU-free tests that hosted CI runs. On Windows, put
+GStreamer's `bin` directory on `PATH` first; otherwise the A/V tests cannot load
+their DLLs and fail with exit code `0xc00004bc`. On a machine
 with a GPU, `ctest --preset hardware` runs the GPU tests as well, including the
 Windows scene-output check (`scene_output_rgba_nv12`, `scene_output_rgb10_nv12`).
 
 ## Run
 
-Start the decoder (it waits for the renderer on the pipe), then the renderer:
+The original pipeline: start the decoder (it waits for the renderer on the pipe), then the renderer:
 
 ```bash
 build/Release/vkdecoder.exe --url rtsp://camera:8554/stream
@@ -238,11 +261,17 @@ Validation layers are enabled automatically in Debug builds when
 ## Layout
 
 ```
-common/    protocol + IPC (named pipe on Windows, SEQPACKET UDS on POSIX)
-decoder/   GStreamer RTSP + platform decode, shared pool, fences (vkdecoder)
-renderer/  Vulkan context, external-memory import, video pass   (vkrenderer)
-android/   two APKs: renderer service app (Vulkan cube) + decoder client app (see docs/ANDROID.md)
-scripts/   Android GStreamer prebuilt fetch/prune, legacy FFmpeg cross-build
+renderer/   vkrenderer: Vulkan scene, FrameLink inputs/outputs, control API, Wayland compositor
+client/     receivers (Miracast, WebRTC/WHIP, RTSP), vkr_web console, vkr_appliance, client demo
+decoder/    vkdecoder: GStreamer RTSP + platform decode (original pipeline)
+common/     protocol + IPC for the original pipeline (named pipe / SEQPACKET UDS)
+android/    renderer service app and receiver/decoder apps (see docs/ANDROID.md)
+sender/     Flutter WebRTC/WHIP sender
+installer/  Windows appliance installer
+test/       ctest programs and the Windows/Linux integration scripts
+examples/   FrameLink BGRA/NV12 side-by-side comparison
+scripts/    Android GStreamer prebuilt fetch/prune, web payload, legacy FFmpeg cross-build
+docs/       design notes, platform guides and dated evidence
 ```
 
 ## Roadmap

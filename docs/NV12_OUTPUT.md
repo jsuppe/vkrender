@@ -2,9 +2,14 @@
 
 The Windows `--serve` renderer now follows the consumer-owned scene channel's
 format: BGRA keeps the existing scene blit; NV12 produces BT.709 limited-range
-4:2:0 output using the Windows GPU video processor. Requires FrameLink protocol
-v4 with Windows NV12 support (`jsuppe/framelink`, `feature/nv12`, commit 0921163
-or later). Existing receiver/source checkouts are not silently replaced.
+4:2:0 output using the Windows GPU video processor. Build against the FrameLink
+revision pinned in `.github/workflows/build.yml` (currently `c6d7db7`,
+`FL_VERSION` 6); peers with a different `FL_VERSION` are refused.
+
+**Note (2026-11-17):** from FrameLink `12326e17` (2026-11-01) until renderer
+PR #20, no Windows scene output delivered frames, BGRA or NV12: the renderer
+submitted a rebuilt buffer, which FrameLink refuses. The end-to-end check now runs
+as `scene_output_rgba_nv12` and `scene_output_rgb10_nv12` in `ctest --preset hardware`.
 
 ## Use
 
@@ -73,8 +78,11 @@ ctest --preset hardware -R nv12_gpu
 a FrameLink input producer, the renderer, and a GStreamer scene consumer. It checks
 30 output frames, output byte count including GStreamer row padding, changing
 frame identities and (NV12) non-neutral chroma. It stops only its own processes.
-Build FrameLink's tests/plugin first so `fl_produce.exe` and `gstframelink.dll`
-are available. Run once for each format:
+Build FrameLink's tests/plugin first (`cmake --preset ci` and
+`cmake --build --preset ci` in the FrameLink checkout) so `fl_produce.exe` and
+`gstframelink.dll` are available. `-FrameLinkBuild` accepts either that build
+directory or an older Visual Studio build with a `Release` subdirectory. Run once
+for each format:
 
 ```powershell
 ./test/nv12_service.ps1 -RendererBuild ./build -FrameLinkBuild ../framelink/build -Format NV12

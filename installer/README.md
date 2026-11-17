@@ -6,9 +6,14 @@ virtual camera, packaged as a turn-key presentation appliance.
 ## Build
 
 ```bash
-cmake --build build --config Release --parallel
+cmake --preset ci
+cmake --build --preset ci
 "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer\vkrender.iss
 ```
+
+The virtual camera (`framecam.exe`, `softcam.dll`, `vkrender_vcam_source.dll`) is
+built from a [framecam](https://github.com/jsuppe/framecam) checkout beside this one;
+without it CMake skips the camera and those installer entries fail.
 
 The AirPlay receiver comes from the sibling
 [vkrender-airplay](https://github.com/jsuppe/vkrender-airplay) checkout

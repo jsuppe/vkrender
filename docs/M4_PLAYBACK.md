@@ -41,7 +41,8 @@ scheduler decisions, not measured scanout or guaranteed successful imports.
 `POST /api/audio?on=1` mutes selected audio; on=0 unmutes. This never changes clock.
 Audio session selection is currently startup-only, one session. There is no mixer.
 `POST /api/pause` rejects active A/V with409 rather than freezing only video while
-audio continues. Coordinated pause/reset/reconnect remains outstanding.
+audio continues. (Superseded: coordinated suspension was added later; see
+[Resume checkpoint](#resume-checkpoint-coordinated-suspension).)
 
 ## Evidence and limits
 
