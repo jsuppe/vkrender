@@ -1,4 +1,25 @@
-# Current FrameLink dependency update — 2026-11-17
+# Current FrameLink dependency
+
+## 2026-11-26: pin moved to FrameLink master `0d72a94b`
+
+Pin: `0d72a94b7fb0610bcaa284c0198314916b876862` (FrameLink `master`, PR #46
+merge), still protocol 6. Renderer base: vkrender `master` `b650398`, which
+brings in fullscreen across displays (PR #15) and the scene-output fix (PR #20).
+
+Changes since `b3b67a5f` are additive: no public symbol is removed. Windows
+gains only the `FL_VULKAN_IMPORT` flag, which it accepts and ignores. Linux and
+Android gain `framelink_vulkan.h`, consumer pool snapshots and the M6.9/M6.8
+source fixes. The Windows API and behaviour match the frozen `060c54e4`.
+
+- Linux (local, NVIDIA): 238/238 targets built, CTest 22/22 passed, none skipped.
+  No compositor playback run.
+- Hosted CI: Linux, Windows and Android jobs build from this pin; CI now reads
+  `cmake/framelink-revision.txt` instead of its own revision.
+- Not re-run at this pin: the Android device and emulator checks below, which
+  were recorded at `b3b67a5f`, and Windows GPU qualification at 1080p60/4K30.
+
+## 2026-11-17: pin `b3b67a5f`
+
 
 Renderer starting point: `a6a19061360761729db41bfa427f364037985b1a`, the M6
 renderer baseline. The legacy `vkrender-src` tree and its unrelated edits are not
