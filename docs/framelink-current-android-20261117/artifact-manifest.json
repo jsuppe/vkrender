@@ -1,0 +1,77 @@
+{
+  "ui-status.json": {
+    "original_sha256": "70dc3781b296be21221c57dbe9eb00b82431dd801207f751b5ca9e6d26c72358",
+    "committed_sha256": "7e49a75ef25fc6fc0940e7a199465aec67d1126b24f5c27691f4d9a47cfb62a1",
+    "normalization": "device serial and local home path only"
+  },
+  "lifecycle-status.json": {
+    "original_sha256": "ae384d9fedc79581194105eb31f5714a22765e544368e7a1af8aac7733e6eb02",
+    "committed_sha256": "06f6d044e6afc839424653bb71318f017155975b59a0fdf43312b31d3069801f",
+    "normalization": "device serial and local home path only"
+  },
+  "framelink-runtime.log": {
+    "original_sha256": "e41a6cdbb267e0ad6fb18d403f3c4d10c3fa9ae38f955bf3b9d832ce7abcd2c9",
+    "committed_sha256": "e41a6cdbb267e0ad6fb18d403f3c4d10c3fa9ae38f955bf3b9d832ce7abcd2c9",
+    "normalization": "device serial and local home path only"
+  },
+  "binder-control-runtime.log": {
+    "original_sha256": "7d2406f4fa4cd8ceaf4b1f650af5671c610532325a66555189dded1d97c8c655",
+    "committed_sha256": "7d2406f4fa4cd8ceaf4b1f650af5671c610532325a66555189dded1d97c8c655",
+    "normalization": "device serial and local home path only"
+  },
+  "surface-tracked-runtime.log": {
+    "original_sha256": "f83b3ee41b4e0236e9e5b2cf3c7cfa02519f6f2dbbd6228fb710a448c1223ba5",
+    "committed_sha256": "f83b3ee41b4e0236e9e5b2cf3c7cfa02519f6f2dbbd6228fb710a448c1223ba5",
+    "normalization": "device serial and local home path only"
+  },
+  "surface-legacy-runtime.log": {
+    "original_sha256": "855118e1d378b46c4f91715ce6f4615c7b2f02c2e39f7bde8626206604d7c225",
+    "committed_sha256": "855118e1d378b46c4f91715ce6f4615c7b2f02c2e39f7bde8626206604d7c225",
+    "normalization": "device serial and local home path only"
+  },
+  "surface-rapid-runtime.log": {
+    "original_sha256": "a3a8803473996f2e2679f35dc2454d2bcf8ef94f14cecab77fada471946fd1e7",
+    "committed_sha256": "a3a8803473996f2e2679f35dc2454d2bcf8ef94f14cecab77fada471946fd1e7",
+    "normalization": "device serial and local home path only"
+  },
+  "tablet-raw-fence.log": {
+    "original_sha256": "be6a30b98ad3acf199f41e2c610d0fcd0a1a253509e890a8659cc0b9b12f9603",
+    "committed_sha256": "be6a30b98ad3acf199f41e2c610d0fcd0a1a253509e890a8659cc0b9b12f9603",
+    "normalization": "device serial and local home path only"
+  },
+  "tablet-eventfd-control.log": {
+    "original_sha256": "a002e2f0aed54a1c0b168d2b6c498eb936f0b27d8c5430dff5cb96dac45ffe65",
+    "committed_sha256": "a002e2f0aed54a1c0b168d2b6c498eb936f0b27d8c5430dff5cb96dac45ffe65",
+    "normalization": "device serial and local home path only"
+  },
+  "tablet-sync-contract.log": {
+    "original_sha256": "4189a54535bf280ad899b4ec9f80cb0ac9670c784f377896f8cd5db55867f7ca",
+    "committed_sha256": "4189a54535bf280ad899b4ec9f80cb0ac9670c784f377896f8cd5db55867f7ca",
+    "normalization": "device serial and local home path only"
+  },
+  "tablet-gpu-pixels.log": {
+    "original_sha256": "d4e830f874d406262f509dda08d264b6d5c58aec3ed8f7de53e890814b43fa80",
+    "committed_sha256": "d4e830f874d406262f509dda08d264b6d5c58aec3ed8f7de53e890814b43fa80",
+    "normalization": "device serial and local home path only"
+  },
+  "emulator-fence-analysis.json": {
+    "original_sha256": "b55271a104828b2c2bc5124a768294f97fe494acf60a3340b9139ae94bfef8c3",
+    "committed_sha256": "b55271a104828b2c2bc5124a768294f97fe494acf60a3340b9139ae94bfef8c3",
+    "normalization": "device serial and local home path only"
+  },
+  "emulator-raw-fence.log": {
+    "original_sha256": "66a74f06e9fcafdcd54619e75f070771de75796e2da0125f4ed2ddc8ec8c4579",
+    "committed_sha256": "66a74f06e9fcafdcd54619e75f070771de75796e2da0125f4ed2ddc8ec8c4579",
+    "normalization": "device serial and local home path only"
+  },
+  "build-status.json": {
+    "original_sha256": "663a1a0769181d27a4957a4c3a43d4fdc8ed88fdd8949f8d3dd895f0512cb8d9",
+    "committed_sha256": "663a1a0769181d27a4957a4c3a43d4fdc8ed88fdd8949f8d3dd895f0512cb8d9",
+    "normalization": "device serial and local home path only"
+  },
+  "initial-focus-failure.json": {
+    "original_sha256": "5957b0b5168b1b1c2523345c212341d589a8430fe97b0d124480d336a398f844",
+    "committed_sha256": "7e876e36462eb1b1cb4112f89a2214a6652d3f2cad2c509ab6559ad5fa32e057",
+    "normalization": "device serial and local home path only"
+  }
+}

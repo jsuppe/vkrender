@@ -84,6 +84,26 @@ renderer) should work there.
 
 ## Build
 
+FrameLink is pinned to the exact revision in
+[`cmake/framelink-revision.txt`](cmake/framelink-revision.txt) (protocol **6**).
+Use a clean checkout at that revision and explicitly select it with
+`-DFRAMELINK_DIR=/path/to/framelink`. CMake rejects older/mismatched revisions
+and edited implementation files. The sibling `../framelink` default is only
+a convenience path, not permission to use an arbitrary installed version.
+Do not reset another agent's checkout; create a dedicated worktree instead.
+
+Android renderer APK (Gradle 8.14, SDK 36, NDK 27.0.12077973):
+
+```sh
+gradle -p android --configure-on-demand :renderer:assembleDebug \
+  -PframelinkDir=/path/to/pinned/framelink
+```
+
+This builds arm64-v8a and x86_64; compilation does not establish emulator/device
+runtime support. Surface/Binder input remains available alongside native
+FrameLink input. Windows retained-device owners are not an Android requirement.
+See [integration status](docs/FRAMELINK_CURRENT.md) for validation boundaries.
+
 No Vulkan SDK required on either OS — Vulkan-Headers, volk, GLFW and glslang
 are fetched by CMake.
 
@@ -278,7 +298,8 @@ docs/       design notes, platform guides and dated evidence
 
 See [ROADMAP.md](ROADMAP.md), which opens with the current status. Renderer
 milestones through M43 have been built; FrameLink integration tracks FrameLink
-M6 for Windows (pin `c6d7db7`). The backlog and future ideas live there and in
+M6 (pin `0d72a94b` in `cmake/framelink-revision.txt`; see
+[docs/FRAMELINK_CURRENT.md](docs/FRAMELINK_CURRENT.md)). The backlog and future ideas live there and in
 the GitHub issues.
 
 ### NV12 FrameLink scene output (Windows)

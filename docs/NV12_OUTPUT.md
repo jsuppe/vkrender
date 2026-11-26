@@ -3,7 +3,7 @@
 The Windows `--serve` renderer now follows the consumer-owned scene channel's
 format: BGRA keeps the existing scene blit; NV12 produces BT.709 limited-range
 4:2:0 output using the Windows GPU video processor. Build against the FrameLink
-revision pinned in `.github/workflows/build.yml` (currently `c6d7db7`,
+revision pinned in `cmake/framelink-revision.txt` (currently `0d72a94b`,
 `FL_VERSION` 6); peers with a different `FL_VERSION` are refused.
 
 **Note (2026-11-17):** from FrameLink `12326e17` (2026-11-01) until renderer

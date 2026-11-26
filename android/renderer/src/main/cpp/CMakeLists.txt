@@ -21,12 +21,8 @@ target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_ANDROID_
 
 # M40: framelink - the renderer consumes vkrender.in.0..11 slot channels
 # beside the AIDL Surface API. Sibling checkout, like the desktop builds.
-set(FRAMELINK_DIR "${REPO}/../framelink" CACHE PATH "Path to the framelink checkout")
-if(NOT EXISTS "${FRAMELINK_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "framelink not found at '${FRAMELINK_DIR}'")
-endif()
-set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
+include("${REPO}/cmake/FrameLinkDependency.cmake")
+vkr_add_framelink("${REPO}")
 
 # The renderer app has NO GStreamer/decode dependency at all: its input is the
 # AImageReader Surface it exports over Binder (see the decoder app).

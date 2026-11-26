@@ -1,0 +1,10 @@
+initializing Vulkan
+Could not open module param file '/sys/module/mali_kbase/parameters/large_page_conf'
+raw Vulkan device=Mali-G52 MC2 api=4206870 driver=205524992
+queue event-gated signal
+export SYNC_FD
+export complete
+fd stage=export-before-signal target=anon_inode:sync_file sync_info_rc=0 status=0 fences=1
+raw-before original_revents=0 scm_rights_revents=0 event=4 completion=1
+fd stage=export-after-signal target=anon_inode:sync_file sync_info_rc=0 status=1 fences=1
+{"case":"raw-vulkan-fence","before_pollin":false,"scm_before_pollin":false,"event_before":4,"completion_before":1,"after_pollin":true,"scm_after_pollin":true,"completion_after":0}

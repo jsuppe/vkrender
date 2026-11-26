@@ -1,0 +1,4 @@
+initializing Vulkan
+eventfd ready-before=1 (timeout)
+eventfd consumed-before=1 (timeout)
+PASS: eventfd transport control preserves readiness and consumed waits (not GPU proof)

@@ -1,0 +1,10 @@
+{
+  "reviewed": true,
+  "artifacts": {
+    "framelink-frame-a.png": "5c804f355a60e059e9fa62cab2a027316692712a3cbc71c59b902719efe6da32",
+    "framelink-frame-b.png": "91b1dfea8a4247f6a364fdeb298fa34b08385bb30be6dabed3b2be23b285f0fe",
+    "preview.jpg": "aff47cbf462d88cfbcf97ecc1e7c206e031ab0332543345226faa01b4ec59188"
+  },
+  "observed": "Two textured cubes at different orientations and colors, white moving bars, rendered gradient/sun/grid background. Binder preview shows the expected green stream in the scene.",
+  "physical_scanout_qualified": false
+}

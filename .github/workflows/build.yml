@@ -7,9 +7,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Match the renderer API to a reproducible FrameLink revision.
-env:
-  FRAMELINK_REF: c6d7db75cfdbf953bc0d9a5b4c3e5ffe49e3c43d
+# FrameLink comes from the one source pin, cmake/framelink-revision.txt, which
+# CMake also enforces. Each job reads it into FRAMELINK_REF before checkout.
 
 jobs:
   # One job definition for the desktop platforms. Only dependency installation,
@@ -31,6 +30,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read FrameLink pin
+        shell: bash
+        run: echo "FRAMELINK_REF=$(tr -d '[:space:]' < cmake/framelink-revision.txt)" >> "$GITHUB_ENV"
 
       - name: Check out FrameLink
         uses: actions/checkout@v4
@@ -166,6 +169,10 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read FrameLink pin
+        shell: bash
+        run: echo "FRAMELINK_REF=$(tr -d '[:space:]' < cmake/framelink-revision.txt)" >> "$GITHUB_ENV"
 
       - name: Check out FrameLink
         uses: actions/checkout@v4

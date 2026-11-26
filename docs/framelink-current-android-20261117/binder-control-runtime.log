@@ -1,0 +1,26 @@
+--------- beginning of main
+11-17 09:31:26.294 26890 26918 I vkrender: renderer: device: Mali-G52 MC2
+11-17 09:31:26.296 26890 26918 I vkrender: renderer: external format resolve available (null attachment=1)
+11-17 09:31:26.297 26890 26918 I vkrender: renderer: VK_GOOGLE_display_timing available
+11-17 09:31:26.361 26890 26918 I vkrender: swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=6 extent=1200x1920
+11-17 09:31:26.396 26890 26918 I vkrender: renderer: stream service ready (up to 12 producers)
+11-17 09:31:26.433 26890 26918 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+11-17 09:31:30.606 26890 26900 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:31:30.721 26890 26918 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+11-17 09:31:30.722 26890 26918 I vkrender: renderer: imported AHardwareBuffer surface key=2128708649 extFmt=0x28 (1 total, zero-copy)
+11-17 09:31:30.756 26890 26918 I vkrender: renderer: imported AHardwareBuffer surface key=2128725481 extFmt=0x28 (2 total, zero-copy)
+11-17 09:31:30.772 26890 26918 I vkrender: renderer: imported AHardwareBuffer surface key=2128719241 extFmt=0x28 (3 total, zero-copy)
+11-17 09:31:30.805 26890 26918 I vkrender: renderer: imported AHardwareBuffer surface key=2128727081 extFmt=0x28 (4 total, zero-copy)
+11-17 09:31:31.404 26890 26918 I vkrender: renderer: 35 adoptions / 299 presents in 5s (pool 4 buffers, 1 streams)
+11-17 09:31:33.516 26962 26976 I RendererControlTest: PASS hidden producer posted120frames without stall
+11-17 09:31:34.918 26962 26976 I RendererControlTest: preview luminance min=3 max=169 center=ff01ff02
+11-17 09:31:35.723 26962 26976 I RendererControlTest: PASS asynchronous bounded JPEG preview and no idle readback
+11-17 09:31:35.729 26962 26976 I RendererControlTest: SKIP no eligible secondary display attached
+11-17 09:31:35.885 26890 26918 I vkrender: renderer: stream departing uid 10294 slot 0 generation 1
+11-17 09:31:35.886 26890 26918 I vkrender: renderer: stream generation 1 departure completed
+11-17 09:31:35.914 26962 26976 I RendererControlTest: PASS control version/capabilities/status, validation, queued actions, hidden progress, pause/resume bounds and kick
+11-17 09:31:35.919 26890 26918 I vkrender: renderer: stream generation 1 GPU retirement (4 imports)
+11-17 09:31:36.404 26890 26918 I vkrender: renderer: 173 adoptions / 301 presents in 5s (pool 0 buffers, 0 streams)
+11-17 09:31:41.419 26890 26918 I vkrender: renderer: 0 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)
+11-17 09:31:46.433 26890 26918 I vkrender: renderer: 0 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)
+11-17 09:31:51.448 26890 26918 I vkrender: renderer: 0 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)

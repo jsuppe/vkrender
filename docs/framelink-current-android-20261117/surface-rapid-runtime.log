@@ -1,0 +1,149 @@
+--------- beginning of main
+11-17 09:32:45.770 27449 27479 I vkrender: renderer: device: Mali-G52 MC2
+11-17 09:32:45.772 27449 27479 I vkrender: renderer: external format resolve available (null attachment=1)
+11-17 09:32:45.772 27449 27479 I vkrender: renderer: VK_GOOGLE_display_timing available
+11-17 09:32:45.843 27449 27479 I vkrender: swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=6 extent=1200x1920
+11-17 09:32:45.883 27449 27479 I vkrender: renderer: stream service ready (up to 12 producers)
+11-17 09:32:45.934 27449 27479 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+11-17 09:32:50.074 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.205 27449 27479 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+11-17 09:32:50.206 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128726857 extFmt=0x28 (1 total, zero-copy)
+11-17 09:32:50.239 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 1
+11-17 09:32:50.239 27449 27479 I vkrender: renderer: stream generation 1 departure completed
+11-17 09:32:50.256 27449 27462 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.272 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128720393 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.272 27449 27479 I vkrender: renderer: stream generation 1 GPU retirement (1 imports)
+11-17 09:32:50.306 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128735369 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.322 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128733769 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.338 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 2
+11-17 09:32:50.339 27449 27479 I vkrender: renderer: stream generation 2 departure completed
+11-17 09:32:50.339 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.355 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128731465 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.372 27449 27479 I vkrender: renderer: stream generation 2 GPU retirement (3 imports)
+11-17 09:32:50.389 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128734217 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.405 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128725929 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.421 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 3
+11-17 09:32:50.421 27449 27479 I vkrender: renderer: stream generation 3 departure completed
+11-17 09:32:50.422 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.438 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739977 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.455 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128745289 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:50.455 27449 27479 I vkrender: renderer: stream generation 3 GPU retirement (3 imports)
+11-17 09:32:50.488 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128737673 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.504 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 4
+11-17 09:32:50.504 27449 27479 I vkrender: renderer: stream generation 4 departure completed
+11-17 09:32:50.505 27449 27462 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.521 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128731241 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.538 27449 27479 I vkrender: renderer: stream generation 4 GPU retirement (3 imports)
+11-17 09:32:50.555 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128712809 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.571 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128740905 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.587 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 5
+11-17 09:32:50.588 27449 27479 I vkrender: renderer: stream generation 5 departure completed
+11-17 09:32:50.588 27449 27462 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.604 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128721545 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.621 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128707721 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:50.621 27449 27479 I vkrender: renderer: stream generation 5 GPU retirement (3 imports)
+11-17 09:32:50.654 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128745065 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.670 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 6
+11-17 09:32:50.671 27449 27479 I vkrender: renderer: stream generation 6 departure completed
+11-17 09:32:50.671 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.688 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739305 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.704 27449 27479 I vkrender: renderer: stream generation 6 GPU retirement (3 imports)
+11-17 09:32:50.721 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732393 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.737 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128722249 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.753 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 7
+11-17 09:32:50.754 27449 27479 I vkrender: renderer: stream generation 7 departure completed
+11-17 09:32:50.754 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.770 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128709801 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.786 27449 27479 I vkrender: renderer: stream generation 7 GPU retirement (3 imports)
+11-17 09:32:50.804 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128727081 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:50.820 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128710025 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.836 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 8
+11-17 09:32:50.837 27449 27479 I vkrender: renderer: stream generation 8 departure completed
+11-17 09:32:50.837 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.854 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128736521 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.870 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739529 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:50.870 27449 27479 I vkrender: renderer: stream generation 8 GPU retirement (3 imports)
+11-17 09:32:50.888 27449 27479 I vkrender: renderer: 24 adoptions / 297 presents in 5s (pool 2 buffers, 1 streams)
+11-17 09:32:50.903 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732841 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:50.919 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 9
+11-17 09:32:50.920 27449 27479 I vkrender: renderer: stream generation 9 departure completed
+11-17 09:32:50.920 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:50.937 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732393 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:50.954 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739305 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:50.954 27449 27479 I vkrender: renderer: stream generation 9 GPU retirement (3 imports)
+11-17 09:32:50.986 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128745065 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.002 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 10
+11-17 09:32:51.003 27449 27479 I vkrender: renderer: stream generation 10 departure completed
+11-17 09:32:51.003 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.020 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128710025 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.036 27449 27479 I vkrender: renderer: stream generation 10 GPU retirement (3 imports)
+11-17 09:32:51.053 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128601513 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:51.070 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128722249 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.085 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 11
+11-17 09:32:51.086 27449 27479 I vkrender: renderer: stream generation 11 departure completed
+11-17 09:32:51.086 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.103 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128721545 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.119 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128703113 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.119 27449 27479 I vkrender: renderer: stream generation 11 GPU retirement (3 imports)
+11-17 09:32:51.152 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128712809 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.168 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 12
+11-17 09:32:51.169 27449 27479 I vkrender: renderer: stream generation 12 departure completed
+11-17 09:32:51.169 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.186 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128733769 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.202 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128737673 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.202 27449 27479 I vkrender: renderer: stream generation 12 GPU retirement (3 imports)
+11-17 09:32:51.236 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739529 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.252 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 13
+11-17 09:32:51.252 27449 27479 I vkrender: renderer: stream generation 13 departure completed
+11-17 09:32:51.252 27449 27462 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.269 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128721545 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.285 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128706345 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.285 27449 27479 I vkrender: renderer: stream generation 13 GPU retirement (3 imports)
+11-17 09:32:51.318 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128731241 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.335 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 14
+11-17 09:32:51.335 27449 27479 I vkrender: renderer: stream generation 14 departure completed
+11-17 09:32:51.335 27449 27462 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.352 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128734217 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.368 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128742057 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.368 27449 27479 I vkrender: renderer: stream generation 14 GPU retirement (3 imports)
+11-17 09:32:51.402 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739529 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.417 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 15
+11-17 09:32:51.418 27449 27479 I vkrender: renderer: stream generation 15 departure completed
+11-17 09:32:51.418 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.435 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128712809 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.451 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739753 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.451 27449 27479 I vkrender: renderer: stream generation 15 GPU retirement (3 imports)
+11-17 09:32:51.485 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732617 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.500 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 16
+11-17 09:32:51.501 27449 27479 I vkrender: renderer: stream generation 16 departure completed
+11-17 09:32:51.501 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.518 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128724553 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.534 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128725929 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.534 27449 27479 I vkrender: renderer: stream generation 16 GPU retirement (3 imports)
+11-17 09:32:51.568 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128740905 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.584 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 17
+11-17 09:32:51.584 27449 27479 I vkrender: renderer: stream generation 17 departure completed
+11-17 09:32:51.584 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.601 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128742761 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.617 27449 27479 I vkrender: renderer: stream generation 17 GPU retirement (3 imports)
+11-17 09:32:51.634 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128726857 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:51.651 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128738153 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.667 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 18
+11-17 09:32:51.667 27449 27479 I vkrender: renderer: stream generation 18 departure completed
+11-17 09:32:51.667 27449 27490 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.684 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732841 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.700 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128739305 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.701 27449 27479 I vkrender: renderer: stream generation 18 GPU retirement (3 imports)
+11-17 09:32:51.734 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128732393 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.750 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 19
+11-17 09:32:51.750 27449 27479 I vkrender: renderer: stream generation 19 departure completed
+11-17 09:32:51.750 27449 27460 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:51.767 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128736521 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:51.783 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128702665 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:51.784 27449 27479 I vkrender: renderer: stream generation 19 GPU retirement (3 imports)
+11-17 09:32:51.818 27449 27479 I vkrender: renderer: imported AHardwareBuffer surface key=2128720393 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:51.833 27449 27479 I vkrender: renderer: stream departing uid 10294 slot 0 generation 20
+11-17 09:32:51.834 27449 27479 I vkrender: renderer: stream generation 20 departure completed
+11-17 09:32:51.867 27449 27479 I vkrender: renderer: stream generation 20 GPU retirement (3 imports)
+11-17 09:32:52.824 27523 27537 I SurfaceLifecycleTest: PASS 20 rapid release/reacquire generations
+11-17 09:32:55.903 27449 27479 I vkrender: renderer: 34 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)

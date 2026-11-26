@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(vkrender LANGUAGES C CXX)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FrameLinkDependency.cmake")
 
 option(VKR_DISABLE_TRACE "Compile out performance tracing" OFF)
 if(VKR_DISABLE_TRACE)
@@ -194,15 +195,7 @@ if(WIN32)
     # CONSUMER of it - the virtual camera owns a channel and the renderer
     # attaches as a producer - which is the whole point of extracting it.
     # FRAMELINK_DIR overrides the sibling-checkout default.
-    set(FRAMELINK_DIR "${CMAKE_SOURCE_DIR}/../framelink" CACHE PATH
-        "Path to the framelink checkout")
-    if(NOT EXISTS "${FRAMELINK_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "framelink not found at '${FRAMELINK_DIR}'. Clone it beside vkrender "
-            "or pass -DFRAMELINK_DIR=<path>.")
-    endif()
-    set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
+    vkr_add_framelink("${CMAKE_SOURCE_DIR}")
 
     # Sub-projects could set their own output dirs, which would leave
     # framelink.dll somewhere the appliance cannot load it and the installer
@@ -304,17 +297,7 @@ endif()
 if(NOT WIN32)
     # M39: framelink input slots on Linux too - the compositor consumes them
     # alongside the Wayland socket, and the receivers produce into them.
-    set(FRAMELINK_DIR "${CMAKE_SOURCE_DIR}/../framelink" CACHE PATH
-        "Path to the framelink checkout")
-    if(NOT EXISTS "${FRAMELINK_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "framelink not found at '${FRAMELINK_DIR}'. Clone it beside vkrender "
-            "or pass -DFRAMELINK_DIR=<path>.")
-    endif()
-    if(NOT TARGET framelink)
-        set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")
-    endif()
+    vkr_add_framelink("${CMAKE_SOURCE_DIR}")
     target_link_libraries(vkrenderer PRIVATE framelink)
 
     pkg_check_modules(WLSERVER REQUIRED IMPORTED_TARGET wayland-server>=1.20)

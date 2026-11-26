@@ -1,0 +1,37 @@
+--------- beginning of main
+11-17 09:32:13.634 27114 27146 I vkrender: renderer: device: Mali-G52 MC2
+11-17 09:32:13.634 27114 27146 I vkrender: renderer: external format resolve available (null attachment=1)
+11-17 09:32:13.635 27114 27146 I vkrender: renderer: VK_GOOGLE_display_timing available
+11-17 09:32:13.698 27114 27146 I vkrender: swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=6 extent=1200x1920
+11-17 09:32:13.737 27114 27146 I vkrender: renderer: stream service ready (up to 12 producers)
+11-17 09:32:13.776 27114 27146 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+11-17 09:32:17.929 27114 27124 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:18.093 27114 27146 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+11-17 09:32:18.094 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128725481 extFmt=0x28 (1 total, zero-copy)
+11-17 09:32:18.127 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128733769 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:18.144 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128714633 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:18.177 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128687913 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:18.742 27114 27146 I vkrender: renderer: 30 adoptions / 298 presents in 5s (pool 4 buffers, 1 streams)
+11-17 09:32:19.405 27114 27146 I vkrender: renderer: stream departing uid 10294 slot 0 generation 1
+11-17 09:32:19.405 27114 27146 I vkrender: renderer: stream generation 1 departure completed
+11-17 09:32:19.405 27114 27229 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:19.422 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128711881 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:19.438 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128699433 extFmt=0x28 (6 total, zero-copy)
+11-17 09:32:19.439 27114 27146 I vkrender: renderer: stream generation 1 GPU retirement (4 imports)
+11-17 09:32:19.472 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128745065 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:19.505 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128736521 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:22.258 27195 27209 I SurfaceLifecycleTest: PASS tracked release/reacquire and stale release; waiting last-stream exit
+11-17 09:32:22.261 27114 27146 I vkrender: renderer: stream departing uid 10294 slot 0 generation 2
+11-17 09:32:22.262 27114 27146 I vkrender: renderer: stream generation 2 departure completed
+11-17 09:32:22.295 27114 27146 I vkrender: renderer: stream generation 2 GPU retirement (4 imports)
+11-17 09:32:23.758 27114 27146 I vkrender: renderer: 149 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)
+11-17 09:32:24.770 27114 27125 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:24.803 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128711881 extFmt=0x28 (1 total, zero-copy)
+11-17 09:32:24.820 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128742761 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:24.853 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128599433 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:24.902 27114 27146 I vkrender: renderer: imported AHardwareBuffer surface key=2128598985 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:26.175 27195 27209 I SurfaceLifecycleTest: PASS drawing before intentional producer process death
+11-17 09:32:26.229 27114 27146 I vkrender: renderer: stream departing uid 10294 slot 0 generation 3
+11-17 09:32:26.230 27114 27146 I vkrender: renderer: stream generation 3 departure completed
+11-17 09:32:26.263 27114 27146 I vkrender: renderer: stream generation 3 GPU retirement (4 imports)
+11-17 09:32:28.772 27114 27146 I vkrender: renderer: 60 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)

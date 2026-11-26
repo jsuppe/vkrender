@@ -1,0 +1,27 @@
+--------- beginning of main
+11-17 09:32:33.698 27306 27336 I vkrender: renderer: device: Mali-G52 MC2
+11-17 09:32:33.700 27306 27336 I vkrender: renderer: external format resolve available (null attachment=1)
+11-17 09:32:33.702 27306 27336 I vkrender: renderer: VK_GOOGLE_display_timing available
+11-17 09:32:33.769 27306 27336 I vkrender: swapchain: primary selected_present_mode=mailbox(1) requested=default-mailbox images=6 extent=1200x1920
+11-17 09:32:33.806 27306 27336 I vkrender: renderer: stream service ready (up to 12 producers)
+11-17 09:32:33.848 27306 27336 I vkrender: renderer: 12 framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.11')
+11-17 09:32:37.992 27306 27319 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:38.118 27306 27336 I vkrender: renderer: stream header 1920x1080 fmt=1000156003, awaiting dma-buf surfaces
+11-17 09:32:38.118 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128692745 extFmt=0x28 (1 total, zero-copy)
+11-17 09:32:38.151 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128715561 extFmt=0x28 (2 total, zero-copy)
+11-17 09:32:38.168 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128725929 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:38.185 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128735369 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:38.816 27306 27336 I vkrender: renderer: 32 adoptions / 299 presents in 5s (pool 4 buffers, 1 streams)
+11-17 09:32:39.429 27306 27336 I vkrender: renderer: stream departing uid 10294 slot 0 generation 1
+11-17 09:32:39.430 27306 27336 I vkrender: renderer: stream generation 1 departure completed
+11-17 09:32:39.431 27306 27339 I vkrender: renderer: stream created for uid 10294 slot 0 (1 total)
+11-17 09:32:39.446 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128734217 extFmt=0x28 (5 total, zero-copy)
+11-17 09:32:39.463 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128709801 extFmt=0x28 (6 total, zero-copy)
+11-17 09:32:39.463 27306 27336 I vkrender: renderer: stream generation 1 GPU retirement (4 imports)
+11-17 09:32:39.496 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128722473 extFmt=0x28 (3 total, zero-copy)
+11-17 09:32:39.530 27306 27336 I vkrender: renderer: imported AHardwareBuffer surface key=2128727081 extFmt=0x28 (4 total, zero-copy)
+11-17 09:32:40.841 27306 27336 I vkrender: renderer: stream departing uid 10294 slot 0 generation 2
+11-17 09:32:40.842 27306 27336 I vkrender: renderer: stream generation 2 departure completed
+11-17 09:32:40.849 27380 27394 I SurfaceLifecycleTest: PASS legacy release/reacquire
+11-17 09:32:40.874 27306 27336 I vkrender: renderer: stream generation 2 GPU retirement (4 imports)
+11-17 09:32:43.832 27306 27336 I vkrender: renderer: 86 adoptions / 302 presents in 5s (pool 0 buffers, 0 streams)

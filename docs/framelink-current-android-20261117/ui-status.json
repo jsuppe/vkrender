@@ -1,0 +1,59 @@
+{
+  "state": "finished_with_skips",
+  "serial": "<android-device>",
+  "steps": [
+    {
+      "step": "pull-installed-apk",
+      "exit": 0
+    },
+    {
+      "step": "device-build",
+      "exit": 0
+    },
+    {
+      "step": "temporary-screen-timeout",
+      "exit": 0
+    },
+    {
+      "step": "framelink-stop",
+      "exit": 0
+    },
+    {
+      "step": "framelink-wake",
+      "exit": 0
+    },
+    {
+      "step": "framelink-launch",
+      "exit": 0
+    },
+    {
+      "step": "framelink-producer",
+      "exit": 0
+    },
+    {
+      "step": "binder-control-stop",
+      "exit": 0
+    },
+    {
+      "step": "binder-control-wake",
+      "exit": 0
+    },
+    {
+      "step": "binder-control-launch",
+      "exit": 0
+    },
+    {
+      "step": "binder-control-start",
+      "exit": 0
+    }
+  ],
+  "suite": "ui",
+  "native_checks_reused": true,
+  "apk_sha256": "d9a9faae91d36c2704753fb5bb4f70ec38d3d01c0e339dbd1de6f94072b4c687",
+  "framelink_pin": "b3b67a5fff798f8f72da5c0a4606bcf5dc49d00a",
+  "scope": "Physical-device functional rendering/Binder/lifecycle and fence diagnostics; not endurance or optical/acoustic qualification",
+  "current": "binder-control-start",
+  "secondary_display": "skipped: no eligible secondary display",
+  "screenshots": "Saved; human/model visual inspection still required.",
+  "screen_timeout_restored": true
+}
