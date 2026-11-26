@@ -298,7 +298,8 @@ docs/       design notes, platform guides and dated evidence
 
 See [ROADMAP.md](ROADMAP.md), which opens with the current status. Renderer
 milestones through M43 have been built; FrameLink integration tracks FrameLink
-M6 for Windows (pin `c6d7db7`). The backlog and future ideas live there and in
+M6 (pin `0d72a94b` in `cmake/framelink-revision.txt`; see
+[docs/FRAMELINK_CURRENT.md](docs/FRAMELINK_CURRENT.md)). The backlog and future ideas live there and in
 the GitHub issues.
 
 ### NV12 FrameLink scene output (Windows)
