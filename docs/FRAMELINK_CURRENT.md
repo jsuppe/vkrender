@@ -13,10 +13,19 @@ source fixes. The Windows API and behaviour match the frozen `060c54e4`.
 
 - Linux (local, NVIDIA): 238/238 targets built, CTest 22/22 passed, none skipped.
   No compositor playback run.
-- Hosted CI: Linux, Windows and Android jobs build from this pin; CI now reads
-  `cmake/framelink-revision.txt` instead of its own revision.
-- Not re-run at this pin: the Android device and emulator checks below, which
-  were recorded at `b3b67a5f`, and Windows GPU qualification at 1080p60/4K30.
+- Hosted CI (run 45898770499): Linux 15/15 and Windows 13/13 GPU-free tests,
+  Android APKs (renderer, decoder, airplay, webrtc) and sender 15/15 all pass.
+  CI now reads `cmake/framelink-revision.txt` instead of its own revision.
+- Android, TCL 8483A (Android 15, Mali-G52 MC2), `validate_android_framelink.py`
+  with Gradle 8.14: arm64-v8a and x86_64 builds, renderer APK, and on-device
+  GPU capability, SYNC_FD ready/consumed (PASS) and RGBA output pixels
+  (23 frames, worst byte error 0) all pass. Two earlier attempts stopped at the
+  APK step: one used Gradle 8.5 (AGP needs 8.7), and one failed
+  `validateSigningDebug` without a recorded cause. That failure did not recur
+  when the task ran alone or in the third, passing run.
+- Not re-run at this pin: the tablet UI/Binder/Surface lifecycle checks and the
+  emulator checks below (recorded at `b3b67a5f`), Linux compositor playback,
+  and Windows GPU qualification at 1080p60/4K30.
 
 ## 2026-11-17: pin `b3b67a5f`
 
