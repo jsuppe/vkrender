@@ -4,5 +4,8 @@
         <service android:name=".SurfaceLifecycleTestService"
                  android:process=":surface_lifecycle_test" android:exported="true" />
         <service android:name=".ControlTestService" android:process=":control_test" android:exported="true" />
+        <!-- Debug-only: FrameLink's A/V producer for the 6a identity captures
+             (FrameLink decision 12); needs an APK built with VKR_GST_ANDROID_ROOT. -->
+        <service android:name=".AvProducerService" android:process=":avproducer" android:exported="true" />
     </application>
 </manifest>
