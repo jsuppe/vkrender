@@ -419,6 +419,9 @@ void android_main(android_app* app) {
         if (!freopen((base + "-renderer.log").c_str(), "w", stderr))
             VKR_WARN("renderer: cannot redirect stderr for the A/V session");
         setvbuf(stderr, nullptr, _IOLBF, 0);
+        // FrameLink's playback prints its records (playback-clock, -complete,
+        // -metrics) to stdout: the same file, as the desktop captures collect both.
+        fflush(stdout); dup2(fileno(stderr), fileno(stdout)); setvbuf(stdout, nullptr, _IOLBF, 0);
         av::PlaybackOptions o;
         o.externalVideo = true; o.session = base; o.plugin = "static"; o.audioSink = "fakesink";
         o.format = envOr("VKR_AV_FORMAT", "NV12");

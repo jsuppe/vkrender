@@ -6,6 +6,7 @@
 // capture collects (Android discards a process's stderr otherwise).
 #include <jni.h>
 #include <android/log.h>
+#include "framelink.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@ Java_dev_vkrender_renderer_AvProducerService_nativeRun(JNIEnv* env, jclass, jobj
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
     const int rc = flProducerMain((int)args.size(), argv.data());
+    flTraceFlush();
     fflush(stderr);
     __android_log_print(ANDROID_LOG_INFO, "vkrender", "avproducer: exit %d", rc);
     return rc;

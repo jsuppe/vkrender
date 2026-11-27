@@ -78,7 +78,9 @@ public:
     drainUntil_=std::chrono::steady_clock::now()+std::chrono::nanoseconds(latency_+budgetNs_+frameNs);
     cv_.wait(l,[this]{return !request_||stop.load();});};
    cb.onMetrics=[this](const av::PlaybackMetrics& m){std::lock_guard<std::mutex> l(m_);metrics_=m;metricsValid_=true;};
-   cb.onStatus=[this](const std::string& s){std::lock_guard<std::mutex> l(m_);status_=s;};
+   // Every status, not only the last: a recovery retry would otherwise hide the
+   // first failure behind its own (6a, 2026-11-27).
+   cb.onStatus=[this](const std::string& s){std::lock_guard<std::mutex> l(m_);status_=s;std::fprintf(stderr,"AV_STATUS %s\n",s.c_str());};
    std::string error;bool ok=av::runPlayback(options,cb,stop,error);
    std::lock_guard<std::mutex> l(m_);status_=ok?"ended":error;succeeded=ok;finished=true;
   });

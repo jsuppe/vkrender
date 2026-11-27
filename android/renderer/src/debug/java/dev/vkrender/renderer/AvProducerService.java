@@ -39,6 +39,19 @@ public class AvProducerService extends Service {
             "--height", Integer.toString(height), "--fps", Integer.toString(fps),
             "--timeout-ms", "15000", "--media-run-ms", Integer.toString(seconds * 1000)};
         final String log = new File(getFilesDir(), session + "-producer.log").getAbsolutePath();
+        // Producer-side traces (6a): transport and GStreamer element, beside the
+        // renderer's, before the library loads (trace settings are cached).
+        if (intent.getBooleanExtra("trace", false)) {
+            try {
+                String prefix = new File(getFilesDir(), session).getAbsolutePath();
+                android.system.Os.setenv("FRAMELINK_TRACE", prefix + "-ptransport", true);
+                android.system.Os.setenv("FRAMELINK_GST_TRACE", prefix + "-pgst", true);
+                android.system.Os.setenv("FRAMELINK_TRACE_EVENTS", "262144", true);
+                android.system.Os.setenv("FRAMELINK_GST_TRACE_EVENTS", "262144", true);
+            } catch (android.system.ErrnoException e) {
+                Log.e("vkrender", "avproducer: cannot configure tracing", e);
+            }
+        }
         new Thread(() -> {
             try {
                 System.loadLibrary("vkr_av_producer");
@@ -52,7 +65,8 @@ public class AvProducerService extends Service {
             Log.i("vkrender", "avproducer: exit " + rc);
             stopSelf();
             // The producer's GStreamer state is process-wide; one run per process.
-            android.os.Process.killProcess(android.os.Process.myPid());
+            // exit() (not killProcess) so the trace recorders flush at teardown.
+            System.exit(0);
         }, "fl-av-producer").start();
         return START_NOT_STICKY;
     }
