@@ -858,7 +858,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
             auto acquirePending=[&]{
                 acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
                     flFrame next{};r=flAcquireFrame(s.channel,&next,0);
-                    if(r==FL_OK){s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                    if(r!=FL_OK)return false;s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);return true;
                 });
             };
             if(scheduled){
@@ -1151,8 +1151,11 @@ int runWaylandCompositor(const WaylandOptions& options) {
                 if(flCreateChannelEx(s.name.c_str(),request.config.video.width,request.config.video.height,
                     (flFormat)request.config.video.format,avInput.ringSlots(),FL_MAP_CPU|FL_DEFER_RELEASE,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
+                // Two unread frames (AvRingBudget::mailboxSlots): see av_schedule.h.
+                if(flSetReceiveQueue(s.channel,AvRingBudget::mailboxSlots)!=FL_OK)
+                    throw std::runtime_error("A/V receive queue configuration failed");
             }
-        });
+        },!flSlots.front().pending.empty()); // a session end waits for frames still pending
         flPollSlots(ctx, flSlots, avInput, host, &hopSamples, &hopTotalUs, &hopMaxUs);
         // Stable slots while each Wayland surface lives; FrameLink owns 0..11.
         for(size_t i=kFlSlots;i<controlSlots;i++)if(owners[i]) {
