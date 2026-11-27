@@ -15,13 +15,15 @@ param(
  [ValidateSet('cpu','gpu')][string]$OutputMode='gpu',
  [int]$Seconds=1800,
  [int]$Warmup=10,
- [int]$VerifyEvery=0,
+ [int]$VerifyEvery=-1,
  [string]$Out
 )
 $ErrorActionPreference='Stop'
 $r=(Resolve-Path $RendererBuild).Path; $bin="$r\Release"
 $w,$h,$fps,$budget = if($Cell -eq '1080p60'){1920,1080,60,17}else{3840,2160,30,34}
-if(!$VerifyEvery){$VerifyEvery=$fps} # about one verified frame per second
+# About one verified frame per second on CPU output. GPU outputs are timed only:
+# mapping them stalls acquisition, and gpu_output_pixels_* ctests cover their pixels.
+if($VerifyEvery -lt 0){$VerifyEvery=if($OutputMode -eq 'cpu'){$fps}else{0}}
 $name="rate-$Cell-$($Format.ToLower())-$OutputMode-$PID"
 if(!$Out){$Out=Join-Path $r $name}
 New-Item -ItemType Directory -Force $Out|Out-Null; $Out=(Resolve-Path $Out).Path
