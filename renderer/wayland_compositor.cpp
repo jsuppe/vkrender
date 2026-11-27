@@ -22,6 +22,7 @@
 #include "wayland_compositor.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -926,11 +927,18 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
             if(scheduled && failAdoption && av.schedule.presented>=20 && av.schedule.presented<60){
                 failedAdoption();continue;
             }
-        if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
+        // BGRA and NV12 rings are imported on the GPU as dma-bufs; NV12 as two
+        // planes with the pool's YCbCr sampler, like a Wayland client's NV12
+        // buffer. Reading a linear GBM ring on the CPU instead cost 1.2-2.8 s per
+        // 1080p NV12 frame on a discrete GPU (FrameLink M6.8; 6a, 2026-11-27).
+        // Other formats keep the CPU conversion.
+        const bool nv12 = now.format == FL_FORMAT_NV12;
+        const bool gpuImport = now.format == FL_FORMAT_BGRA8 || nv12;
+        if (!ensurePool(ctx, s.width, s.height, nv12)) {
             failedAdoption();
             continue;
         }
-        if(now.format!=FL_FORMAT_BGRA8) {
+        if(!gpuImport) {
             if(!s.imported[f.slot])s.keys[f.slot]=ctx.nextSlotKey++;
             if(!uploadFrame(*ctx.vk,*ctx.pool,*ctx.pass,ctx.passBound,f.image,s.keys[f.slot],now)) {
                 failedAdoption();continue;
@@ -939,31 +947,47 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         }
         if (!s.imported[f.slot]) {
             flDmabuf db{};
-            if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < 1) {
+            const uint32_t planes = nv12 ? 2u : 1u;
+            if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < planes) {
                 failedAdoption();
                 continue;
             }
             proto::SurfaceDescMsg desc{};
             desc.slotKey = ctx.nextSlotKey++;
-            desc.numPlanes = 1;
-            desc.numObjects = 1;
+            desc.numPlanes = planes;
             desc.drmModifier = db.modifier;
-            desc.plane[0].offset = db.offset[0];
-            desc.plane[0].pitch = (uint32_t)db.stride[0];
-            desc.planeObject[0] = 0;
-            const off_t size = lseek(db.fd[0], 0, SEEK_END);
-            desc.objectSize[0] = size > 0 ? (uint64_t)size : 0;
-            // Dup: framelink's fds die with the channel, and Vulkan needs the
-            // buffer to outlive any reallocation that races an in-flight frame.
-            int dupFd = fcntl(db.fd[0], F_DUPFD_CLOEXEC, 0);
-            const bool ok = dupFd >= 0 &&
-                            ctx.pool->addSurface(*ctx.vk, desc, &dupFd, 1) &&
+            // One memory object when every plane is the same buffer (FrameLink's
+            // GBM rings), as for a single-object Wayland NV12 buffer.
+            struct stat first{};
+            bool shared = fstat(db.fd[0], &first) == 0;
+            for (uint32_t i = 1; shared && i < planes; ++i) {
+                struct stat other{};
+                shared = fstat(db.fd[i], &other) == 0 && other.st_dev == first.st_dev && other.st_ino == first.st_ino;
+            }
+            desc.numObjects = shared ? 1u : planes;
+            int dupFds[4] = {-1, -1, -1, -1};
+            bool dupped = true;
+            for (uint32_t i = 0; i < planes; ++i) {
+                desc.plane[i].offset = db.offset[i];
+                desc.plane[i].pitch = (uint32_t)db.stride[i];
+                desc.planeObject[i] = shared ? 0u : i;
+                if (i < desc.numObjects) {
+                    const off_t size = lseek(db.fd[i], 0, SEEK_END);
+                    desc.objectSize[i] = size > 0 ? (uint64_t)size : 0;
+                    // Dup: framelink's fds die with the channel, and Vulkan needs the
+                    // buffer to outlive any reallocation that races an in-flight frame.
+                    dupFds[i] = fcntl(db.fd[i], F_DUPFD_CLOEXEC, 0);
+                    dupped = dupped && dupFds[i] >= 0;
+                }
+            }
+            const bool ok = dupped &&
+                            ctx.pool->addSurface(*ctx.vk, desc, dupFds, desc.numObjects) &&
                             bindSlot(ctx, desc.slotKey);
             if (!ok) {
-                VKR_ERR("compositor: framelink dmabuf import failed ('%s' slot %u, "
+                VKR_ERR("compositor: framelink dmabuf import failed ('%s' slot %u, %s, "
                         "mod 0x%llx)",
-                        s.name.c_str(), f.slot, (unsigned long long)db.modifier);
-                if (dupFd >= 0) close(dupFd);
+                        s.name.c_str(), f.slot, nv12 ? "NV12" : "BGRA", (unsigned long long)db.modifier);
+                for (int fd : dupFds) if (fd >= 0) close(fd);
                 failedAdoption();
                 continue;
             }
