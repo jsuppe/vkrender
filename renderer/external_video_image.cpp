@@ -495,9 +495,15 @@ bool ExternalVideoPool::addSurface(VkContext& vk, const proto::SurfaceDescMsg& d
         dedicatedInfo.pNext = &importInfo;
         dedicatedInfo.image = slot.image[0];
         VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        alloc.pNext = dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation
-                          ? (void*)&dedicatedInfo
-                          : (void*)&importInfo;
+        // Always dedicated, whatever the driver prefers. NVIDIA Linux (580.x,
+        // RTX 3090) reports no preference for a linear dma-buf image, yet
+        // without VkMemoryDedicatedAllocateInfo the second such import in a
+        // device reads zeros on the GPU for its whole life while the buffer
+        // holds the frame: one FrameLink ring slot rendered black in every
+        // frame (FrameLink 6a, 2026-11-27; reproduced without vkrender). A
+        // dedicated import of one buffer per image is always valid.
+        (void)dedicated;
+        alloc.pNext = &dedicatedInfo;
         alloc.allocationSize =
             desc.objectSize[0] ? desc.objectSize[0] : req.memoryRequirements.size;
         alloc.memoryTypeIndex = (uint32_t)memType;
