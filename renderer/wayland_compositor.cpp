@@ -803,12 +803,26 @@ struct FlSlotIn {
     uint64_t adopted=0;
     bool departing = false;
     int64_t departedNs = 0;
+    // Sampled identity per pool slot for frame accounting (VKR_TRACE), as on
+    // Windows: the scene host records render, GPU-complete and present-call
+    // events for the identities it actually samples.
+    SceneHost::TraceFrame traceSlots[FL_MAX_POOL_SIZE]{};
 };
 
 constexpr uint32_t kFlSlots = 12;
 
+// Identity-bearing input events, the Windows service's schema: channel id,
+// sequence, ready value, generation, PTS. Software events, never scanout.
+void flTraceFrame(const char* op, const FlSlotIn& s, const flFrame& f, int64_t result = 0) {
+    if (vkrtrace::enabled())
+        vkrtrace::record({op, vkrtrace::clockNs(), 0, vkrtrace::id(s.name.c_str()),
+                          f.sequence, f._readyValue, s.generation, f.ptsNs, result});
+}
+
 void flDropRing(Ctx& ctx, FlSlotIn& s) {
+    for (const auto& f : s.pending) flTraceFrame("av.frame_drop.generation_end", s, f);
     s.pending.clear();
+    for (auto& identity : s.traceSlots) identity = {};
     for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
         if (!s.imported[i]) continue;
         ctx.slotsToRemove.push_back(s.keys[i]);
@@ -869,6 +883,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         flChannelInfo now{};
         flQuery(s.channel, &now);
         if (now.generation != s.generation || f.slot >= FL_MAX_POOL_SIZE) {
+            flTraceFrame("av.frame_drop.generation_changed", s, f);
             releaseFrame();
             continue;
         }
@@ -884,6 +899,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                 // capacity nor consumed-fence retirement is changed here.
                 acquirePending();
             if(decision!=AvSchedule::Decision::Present){
+                flTraceFrame(decision==AvSchedule::Decision::Drop ? "av.frame_drop.late" : "av.frame_drop.invalid", s, f);
                 // Stop sampling before retiring ALL values through the dropped
                 // frame. Existing frame fences still protect previous draws.
                 host.forgetStream(s.uid);s.currentSlot=-1;
@@ -891,7 +907,9 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                 releaseFrame();continue;
             }
         }
+            flTraceFrame("av.frame_schedule", s, f);
             auto failedAdoption=[&]{
+                flTraceFrame("av.frame_drop.import_failed", s, f);
                 if(scheduled){
                     ++av.schedule.importFailures;
                     // Forget retained sampling before releasing through this
@@ -966,6 +984,11 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         releaseFrame(); // bookkeeping only; storage stays pinned
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
+        if (vkrtrace::enabled()) {
+            s.traceSlots[f.slot] = {int64_t(s.keys[f.slot]), vkrtrace::id(s.name.c_str()),
+                s.generation, f.sequence, f._readyValue, f.ptsNs};
+            flTraceFrame("av.frame_adopt", s, f);
+        }
         s.lastAdoptNs=nowNs();if(!s.firstAdoptNs)s.firstAdoptNs=s.lastAdoptNs;++s.adopted;
         ++ctx.adoptions;
         ++ctx.videoFramesSeen;
@@ -1220,6 +1243,11 @@ int runWaylandCompositor(const WaylandOptions& options) {
         streams=std::move(filtered);
         if(controlUp && control.previewDue())host.requestPreview();
         SceneHost::Extras extras; // wayland sync is CPU-side (sync-file polls)
+        if (vkrtrace::enabled()) {
+            for (const auto& s : flSlots)
+                for (const auto& identity : s.traceSlots)
+                    if (identity.key >= 0) extras.traceFrames.push_back(identity);
+        }
         if (!host.frame(vk, pool, pass, ctx.passBound, streams, extras, &quit)) {
             exitCode = 1;
             break;
