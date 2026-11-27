@@ -23,9 +23,25 @@ source fixes. The Windows API and behaviour match the frozen `060c54e4`.
   APK step: one used Gradle 8.5 (AGP needs 8.7), and one failed
   `validateSigningDebug` without a recorded cause. That failure did not recur
   when the task ran alone or in the third, passing run.
+- Windows, RTX 5090 test host, 2026-11-26, from vkrender master `1afa005`
+  (PR #23 merge), FrameLink `0d72a94b` and framecam `5dd1a7a`. All are fresh
+  clones built with `cmake --preset ci` under the Windows validation mutex:
+  - `ctest --preset hardware` 5/5 and `ctest --preset ci` 13/13 passed.
+  - `nv12_service.ps1` NV12 and BGRA each passed (30/30 distinct frames).
+    `parity_windows_input.ps1` passed (40 frames).
+  - `windows_gpu_stress_pixels.ps1 -Frames 600`, BGRA and `-Rgb10`: both
+    600/600 matched, worst YUV error 1 (limit 3), 0 sequence gaps, arrival
+    p99 18.2-18.3 ms.
+  - The scripts need a standalone FrameLink preset build at the pin for
+    `-FrameLinkBuild` (`fl_produce.exe`, `gstframelink.dll`). Run each script
+    in its own PowerShell process: `parity_windows_input.ps1` sets
+    `VKR_INPUT_FORMATS=nv12`, and that setting breaks a later BGRA pixel run in
+    the same session.
 - Not re-run at this pin: the tablet UI/Binder/Surface lifecycle checks and the
-  emulator checks below (recorded at `b3b67a5f`), Linux compositor playback,
-  and Windows GPU qualification at 1080p60/4K30.
+  emulator checks below (recorded at `b3b67a5f`), and Linux compositor
+  playback. vkrender has no renderer-level 1080p60/4K30 rate harness. Those
+  cells exist only in FrameLink's transport harness, so the renderer is not
+  qualified at those targets.
 
 ## 2026-11-17: pin `b3b67a5f`
 
