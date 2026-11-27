@@ -68,7 +68,14 @@ int main(int argc,char** argv){
  std::vector<double> arrival[2];Clock::time_point previous[2]{};
  uint64_t received[2]{},sequenceGaps[2]{},lastSequence[2]{};
  const auto started=Clock::now();
- for(unsigned p=0;p<2;p++)if(flCreateChannelEx((prefix+(p?".nv12":".rgba")).c_str(),w,h,p?FL_FORMAT_NV12:rgbFormat,4,FL_MAP_CPU|((std::getenv("VKR_OUTPUT_MODE") && std::string(std::getenv("VKR_OUTPUT_MODE"))=="gpu")?FL_GPU_RENDER:0),&ch[p])!=FL_OK)return 2;
+ const bool gpuMode=std::getenv("VKR_OUTPUT_MODE") && std::string(std::getenv("VKR_OUTPUT_MODE"))=="gpu";
+ // A rate cell that only times GPU outputs (VKR_CHECK_VERIFY_EVERY=0) is a GPU
+ // consumer: a CPU-mappable ring would add a readback per frame on the checker's side.
+ const bool timingOnly=gpuMode && std::getenv("VKR_CHECK_SECONDS") && std::getenv("VKR_CHECK_VERIFY_EVERY") && std::string(std::getenv("VKR_CHECK_VERIFY_EVERY"))=="0";
+ // FL_VULKAN_IMPORT: the renderer writes these rings through Vulkan; without it NVIDIA
+ // Linux allocates a compressed layout that only EGL can import.
+ const uint32_t flags=(timingOnly?FL_VULKAN_IMPORT:FL_MAP_CPU)|(gpuMode?FL_GPU_RENDER:0u);
+ for(unsigned p=0;p<2;p++)if(flCreateChannelEx((prefix+(p?".nv12":".rgba")).c_str(),w,h,p?FL_FORMAT_NV12:rgbFormat,4,flags,&ch[p])!=FL_OK)return 2;
  if(std::getenv("VKR_CHECK_SECONDS"))return rateCell(prefix,ch,rgbFormat,w,h,target,timeout);
  std::map<int64_t,Image> saved[2];std::set<uint64_t> hashes;unsigned matched=0;int worst=0;
  auto deadline=Clock::now()+std::chrono::seconds(timeout);
@@ -125,17 +132,21 @@ static int rateCell(const std::string& prefix,flChannel** ch,flFormat rgbFormat,
   return (unsigned)n;
  };
  const unsigned seconds=number("VKR_CHECK_SECONDS",0),warmup=number("VKR_CHECK_WARMUP",0);
- const unsigned budgetMs=number("VKR_CHECK_BUDGET_MS",0),every=number("VKR_CHECK_VERIFY_EVERY",1); // 0: timing only, no pixel copies
+ // Budget: per-frame latency, arrival minus the frame's PTS (the renderer
+ // stamps scene outputs with steady_clock at record), as FrameLink's arrival
+ // gate. Stall: longest allowed gap between consecutive output frames.
+ const unsigned budgetMs=number("VKR_CHECK_BUDGET_MS",0),stallMs=number("VKR_CHECK_STALL_MS",0);
+ const unsigned every=number("VKR_CHECK_VERIFY_EVERY",1); // 0: timing only, no pixel copies
  if(!seconds){fprintf(stderr,"invalid VKR_CHECK_SECONDS\n");return 2;}
  std::atomic<int64_t> openNs{0};std::atomic<bool> stop{false};std::atomic<int> error{0};
  const auto startNs=Clock::now().time_since_epoch().count();
- struct Stats{std::vector<double> arrival;uint64_t received=0,gaps=0,misses=0,sampled=0;double max=0;};
+ struct Stats{std::vector<double> arrival,latency;uint64_t received=0,gaps=0,misses=0,stalls=0,sampled=0,unstamped=0;double max=0;};
  Stats stats[2];
  std::mutex lock;std::condition_variable wake;std::map<int64_t,Image> saved[2];
  std::deque<std::pair<Image,Image>> pairs;uint64_t droppedSamples=0;
  auto acquire=[&](unsigned p){
   Clock::time_point previous{};uint64_t lastSequence=0;bool first=true;auto& st=stats[p];
-  st.arrival.reserve(size_t(seconds)*64);
+  st.arrival.reserve(size_t(seconds)*64);st.latency.reserve(size_t(seconds)*64);
   while(!stop){
    flFrame f{};flResult r=flAcquireFrame(ch[p],&f,10);
    if(r==FL_TIMEOUT || r==FL_DISCONNECTED)continue;
@@ -147,9 +158,13 @@ static int rateCell(const std::string& prefix,flChannel** ch,flFormat rgbFormat,
    if(measured){
     if(!first){
      const double ms=std::chrono::duration<double,std::milli>(now-previous).count();
-     st.arrival.push_back(ms);st.max=std::max(st.max,ms);if(budgetMs && ms>budgetMs)st.misses++;
+     st.arrival.push_back(ms);st.max=std::max(st.max,ms);if(stallMs && ms>stallMs)st.stalls++;
      if(f.sequence>lastSequence+1)st.gaps+=f.sequence-lastSequence-1;
     }
+    if(f.ptsNs>0){
+     const double lat=double(now.time_since_epoch().count()-f.ptsNs)*1e-6;
+     st.latency.push_back(lat);if(budgetMs && lat>budgetMs)st.misses++;
+    } else st.unstamped++;
     st.received++;first=false;
    }
    previous=now;lastSequence=f.sequence;
@@ -195,18 +210,20 @@ static int rateCell(const std::string& prefix,flChannel** ch,flFormat rgbFormat,
  stop=true;wake.notify_all();a0.join();a1.join();verify.join();
  for(unsigned p=0;p<2;p++)flClose(ch[p]);
  printf("matched=%u distinct=%zu worst_YUV_error=%d (limit=3)\n",matched,hashes.size(),worst);
- printf("rate seconds=%u warmup=%u budget_ms=%u verify_every=%u complete=%d samples_dropped=%llu misses_rgb=%llu misses_nv12=%llu\n",
-  seconds,warmup,budgetMs,every,complete?1:0,(unsigned long long)droppedSamples,
-  (unsigned long long)stats[0].misses,(unsigned long long)stats[1].misses);
+ printf("rate seconds=%u warmup=%u budget_ms=%u stall_ms=%u verify_every=%u complete=%d samples_dropped=%llu misses_rgb=%llu misses_nv12=%llu stalls_rgb=%llu stalls_nv12=%llu unstamped=%llu\n",
+  seconds,warmup,budgetMs,stallMs,every,complete?1:0,(unsigned long long)droppedSamples,
+  (unsigned long long)stats[0].misses,(unsigned long long)stats[1].misses,(unsigned long long)stats[0].stalls,(unsigned long long)stats[1].stalls,
+  (unsigned long long)(stats[0].unstamped+stats[1].unstamped));
  const double elapsed=double(Clock::now().time_since_epoch().count()-startNs)*1e-9;
  for(unsigned p=0;p<2;p++){
-  auto& a=stats[p].arrival;std::sort(a.begin(),a.end());
-  auto percentile=[&](double q){return a.empty()?0.:a[(size_t)(q*(a.size()-1))];};
-  printf("channel=%s received=%llu sequence_gaps=%llu elapsed_s=%.3f arrival_ms_p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",p?"nv12":"rgb",
-   (unsigned long long)stats[p].received,(unsigned long long)stats[p].gaps,elapsed,percentile(.5),percentile(.95),percentile(.99),percentile(1));
+  auto& a=stats[p].arrival;auto& l=stats[p].latency;std::sort(a.begin(),a.end());std::sort(l.begin(),l.end());
+  auto pct=[](const std::vector<double>& v,double q){return v.empty()?0.:v[(size_t)(q*(v.size()-1))];};
+  printf("channel=%s received=%llu sequence_gaps=%llu elapsed_s=%.3f latency_ms_p50=%.3f p95=%.3f p99=%.3f max=%.3f interval_ms_p50=%.3f p99=%.3f max=%.3f\n",p?"nv12":"rgb",
+   (unsigned long long)stats[p].received,(unsigned long long)stats[p].gaps,elapsed,pct(l,.5),pct(l,.95),pct(l,.99),pct(l,1),pct(a,.5),pct(a,.99),pct(a,1));
  }
  if(error)return error;
  const bool pixels=!every || (matched>=target && hashes.size()>=std::min(target,10u) && worst<=3);
- const bool rate=complete && !stats[0].misses && !stats[1].misses && !stats[0].gaps && !stats[1].gaps && stats[0].received && stats[1].received;
+ const bool rate=complete && !stats[0].misses && !stats[1].misses && !stats[0].stalls && !stats[1].stalls && !stats[0].gaps && !stats[1].gaps
+  && !stats[0].unstamped && !stats[1].unstamped && stats[0].received && stats[1].received;
  return pixels && rate?0:1;
 }

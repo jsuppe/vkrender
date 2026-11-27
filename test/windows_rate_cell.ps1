@@ -32,7 +32,7 @@ $env:VKR_INPUT_FORMATS=$Format.ToLower()
 $env:VKR_OUTPUT_MODE=if($OutputMode -eq 'gpu'){'gpu'}else{''}
 $env:VKR_TRACE='';$env:FRAMELINK_TRACE=''
 $env:VKR_CHECK_WIDTH="$w";$env:VKR_CHECK_HEIGHT="$h"
-$env:VKR_CHECK_SECONDS="$Seconds";$env:VKR_CHECK_WARMUP="$Warmup";$env:VKR_CHECK_BUDGET_MS="$budget"
+$env:VKR_CHECK_SECONDS="$Seconds";$env:VKR_CHECK_WARMUP="$Warmup";$env:VKR_CHECK_BUDGET_MS="$budget";$env:VKR_CHECK_STALL_MS=[string](2*$budget)
 $env:VKR_CHECK_VERIFY_EVERY="$VerifyEvery";$env:VKR_CHECK_FRAMES=[string][math]::Max(1,[math]::Floor($Seconds/2))
 $env:VKR_CHECK_TIMEOUT=[string]($Seconds+$Warmup+120)
 $frames=($Seconds+$Warmup+60)*$fps

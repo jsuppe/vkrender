@@ -72,7 +72,7 @@ def main():
         env = dict(os.environ, XDG_RUNTIME_DIR=runtime, WAYLAND_DISPLAY=name, VKR_INPUT_FORMATS=a.format,
                    VKR_OUTPUT_MODE="gpu" if a.output_mode == "gpu" else "", VKR_TRACE="", FRAMELINK_TRACE="",
                    VKR_CHECK_WIDTH=str(w), VKR_CHECK_HEIGHT=str(h), VKR_CHECK_SECONDS=str(a.seconds),
-                   VKR_CHECK_WARMUP=str(a.warmup), VKR_CHECK_BUDGET_MS=str(budget),
+                   VKR_CHECK_WARMUP=str(a.warmup), VKR_CHECK_BUDGET_MS=str(budget), VKR_CHECK_STALL_MS=str(2 * budget),
                    VKR_CHECK_VERIFY_EVERY=str(every), VKR_CHECK_FRAMES=str(max(1, a.seconds // 2)),
                    VKR_CHECK_TIMEOUT=str(a.seconds + a.warmup + 120))
         procs = {}
