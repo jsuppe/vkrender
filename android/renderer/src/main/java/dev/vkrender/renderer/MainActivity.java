@@ -35,6 +35,25 @@ public class MainActivity extends NativeActivity {
             android.system.Os.setenv("VKR_SCENE_OUTPUTS", outputs == null ? "" : outputs, true);
             int frames = trace ? Math.max(0, getIntent().getIntExtra("traceFrames", 0)) : 0;
             android.system.Os.setenv("VKR_TRACE_FRAMES", Integer.toString(frames), true);
+            // FrameLink A/V input (6a, FrameLink decision 12; APKs built with
+            // VKR_GST_ANDROID_ROOT). The session directory is under files/.
+            String avSession = getIntent().getStringExtra("avSession");
+            android.system.Os.setenv("VKR_AV_SESSION", avSession == null ? "" : avSession, true);
+            String avFormat = getIntent().getStringExtra("avFormat");
+            android.system.Os.setenv("VKR_AV_FORMAT", avFormat == null ? "NV12" : avFormat, true);
+            android.system.Os.setenv("VKR_AV_WIDTH", Integer.toString(getIntent().getIntExtra("avWidth", 1920)), true);
+            android.system.Os.setenv("VKR_AV_HEIGHT", Integer.toString(getIntent().getIntExtra("avHeight", 1080)), true);
+            android.system.Os.setenv("VKR_AV_FPS", Integer.toString(getIntent().getIntExtra("avFps", 60)), true);
+            android.system.Os.setenv("VKR_AV_LATENCY_MS", Integer.toString(getIntent().getIntExtra("avLatencyMs", 0)), true);
+            android.system.Os.setenv("VKR_AV_MEDIA_RUN_MS", Integer.toString(getIntent().getIntExtra("avMediaRunMs", 0)), true);
+            android.system.Os.setenv("VKR_AV_EXIT_ON_END", getIntent().getBooleanExtra("avExitOnEnd", false) ? "1" : "0", true);
+            if (trace && avSession != null) {
+                String avPrefix = new java.io.File(getFilesDir(), avSession).getAbsolutePath();
+                android.system.Os.setenv("VKR_TRACE", avPrefix + "-renderer", true);
+                android.system.Os.setenv("FRAMELINK_TRACE", avPrefix + "-transport", true);
+                android.system.Os.setenv("VKR_TRACE_EVENTS", "524288", true);
+                android.system.Os.setenv("FRAMELINK_TRACE_EVENTS", "262144", true);
+            }
         } catch (android.system.ErrnoException e) {
             android.util.Log.e("vkrender", "Cannot configure performance capture", e);
         }

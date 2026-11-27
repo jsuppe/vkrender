@@ -127,10 +127,23 @@ Legacy `--av-clock audio` remains the default. Producer mode intentionally
 reports `audio_master=false`; it is not an absence of audio playback.
 See FrameLink `docs/M5_PLAYBACK_CLOCK_POLICY.md` for evidence and limitations.
 
-Scheduled input uses a one-attempt-per-iteration acquisition budget. A queue
-that starts full retains that budget until a due frame is popped, then refills
-in the same iteration. This avoids periodic latest-wins gaps without increasing
-queue depth or releasing future GPU buffers. `av_schedule_test` covers full,
-held, and already-attempted budgets; Windows throughput fixtures cover real
-source IDs. `--av-timeout-ms 100..60000` exposes the bounded whole-session deadline
+Scheduled input drains, without blocking, every frame already announced into
+the pending queue until it is full, before the scheduling decision and again
+after a due frame is popped, so a queue that starts full refills in the same
+iteration. This replaced a one-attempt-per-iteration budget (2026-11-27): a
+render loop paced by FIFO presentation at the display rate let FrameLink's
+one-frame mailbox replace a frame whenever two source frames arrived within one
+iteration (1 of 1200 frames on Linux at 1080p60; Windows's earlier evidence ran
+with the display off and a free-running loop). The pending cap is unchanged, so the
+timed buffering does not grow. Draining alone did not stop the loss (FrameLink's
+one-frame mailbox replaced the older frame before the poll), so the A/V channel's
+receive queue is two frames and its ring thirteen slots (`docs/m5/AV_BUFFER_BUDGET.md`).
+`av_schedule_test` covers full, refill-after-pop, burst and empty polls.
+
+At the producer's end, frames still pending are presented at their due times
+before the generation ends: the playback clock is kept until the render thread
+services the end, which waits while scheduled frames remain and for at least one
+input poll after it arrived (a final frame can still be unread in FrameLink's
+queue), bounded by the common latency, the pending budget and one frame. Before
+2026-11-27 the end discarded them (`av.frame_drop.generation_end`). `--av-timeout-ms 100..60000` exposes the bounded whole-session deadline
 for longer validation runs; it does not change frame acquisition timeouts.

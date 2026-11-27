@@ -22,6 +22,7 @@
 #include "wayland_compositor.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -803,12 +804,26 @@ struct FlSlotIn {
     uint64_t adopted=0;
     bool departing = false;
     int64_t departedNs = 0;
+    // Sampled identity per pool slot for frame accounting (VKR_TRACE), as on
+    // Windows: the scene host records render, GPU-complete and present-call
+    // events for the identities it actually samples.
+    SceneHost::TraceFrame traceSlots[FL_MAX_POOL_SIZE]{};
 };
 
 constexpr uint32_t kFlSlots = 12;
 
+// Identity-bearing input events, the Windows service's schema: channel id,
+// sequence, ready value, generation, PTS. Software events, never scanout.
+void flTraceFrame(const char* op, const FlSlotIn& s, const flFrame& f, int64_t result = 0) {
+    if (vkrtrace::enabled())
+        vkrtrace::record({op, vkrtrace::clockNs(), 0, vkrtrace::id(s.name.c_str()),
+                          f.sequence, f._readyValue, s.generation, f.ptsNs, result});
+}
+
 void flDropRing(Ctx& ctx, FlSlotIn& s) {
+    for (const auto& f : s.pending) flTraceFrame("av.frame_drop.generation_end", s, f);
     s.pending.clear();
+    for (auto& identity : s.traceSlots) identity = {};
     for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
         if (!s.imported[i]) continue;
         ctx.slotsToRemove.push_back(s.keys[i]);
@@ -844,7 +859,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
             auto acquirePending=[&]{
                 acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
                     flFrame next{};r=flAcquireFrame(s.channel,&next,0);
-                    if(r==FL_OK){s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                    if(r!=FL_OK)return false;s.pending.push_back(next);av.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);return true;
                 });
             };
             if(scheduled){
@@ -869,6 +884,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         flChannelInfo now{};
         flQuery(s.channel, &now);
         if (now.generation != s.generation || f.slot >= FL_MAX_POOL_SIZE) {
+            flTraceFrame("av.frame_drop.generation_changed", s, f);
             releaseFrame();
             continue;
         }
@@ -884,6 +900,7 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                 // capacity nor consumed-fence retirement is changed here.
                 acquirePending();
             if(decision!=AvSchedule::Decision::Present){
+                flTraceFrame(decision==AvSchedule::Decision::Drop ? "av.frame_drop.late" : "av.frame_drop.invalid", s, f);
                 // Stop sampling before retiring ALL values through the dropped
                 // frame. Existing frame fences still protect previous draws.
                 host.forgetStream(s.uid);s.currentSlot=-1;
@@ -891,7 +908,9 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
                 releaseFrame();continue;
             }
         }
+            flTraceFrame("av.frame_schedule", s, f);
             auto failedAdoption=[&]{
+                flTraceFrame("av.frame_drop.import_failed", s, f);
                 if(scheduled){
                     ++av.schedule.importFailures;
                     // Forget retained sampling before releasing through this
@@ -908,11 +927,18 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
             if(scheduled && failAdoption && av.schedule.presented>=20 && av.schedule.presented<60){
                 failedAdoption();continue;
             }
-        if (!ensurePool(ctx, s.width, s.height, /*nv12=*/false)) {
+        // BGRA and NV12 rings are imported on the GPU as dma-bufs; NV12 as two
+        // planes with the pool's YCbCr sampler, like a Wayland client's NV12
+        // buffer. Reading a linear GBM ring on the CPU instead cost 1.2-2.8 s per
+        // 1080p NV12 frame on a discrete GPU (FrameLink M6.8; 6a, 2026-11-27).
+        // Other formats keep the CPU conversion.
+        const bool nv12 = now.format == FL_FORMAT_NV12;
+        const bool gpuImport = now.format == FL_FORMAT_BGRA8 || nv12;
+        if (!ensurePool(ctx, s.width, s.height, nv12)) {
             failedAdoption();
             continue;
         }
-        if(now.format!=FL_FORMAT_BGRA8) {
+        if(!gpuImport) {
             if(!s.imported[f.slot])s.keys[f.slot]=ctx.nextSlotKey++;
             if(!uploadFrame(*ctx.vk,*ctx.pool,*ctx.pass,ctx.passBound,f.image,s.keys[f.slot],now)) {
                 failedAdoption();continue;
@@ -921,31 +947,47 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         }
         if (!s.imported[f.slot]) {
             flDmabuf db{};
-            if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < 1) {
+            const uint32_t planes = nv12 ? 2u : 1u;
+            if (flImageDmabuf(f.image, &db) != FL_OK || db.planes < planes) {
                 failedAdoption();
                 continue;
             }
             proto::SurfaceDescMsg desc{};
             desc.slotKey = ctx.nextSlotKey++;
-            desc.numPlanes = 1;
-            desc.numObjects = 1;
+            desc.numPlanes = planes;
             desc.drmModifier = db.modifier;
-            desc.plane[0].offset = db.offset[0];
-            desc.plane[0].pitch = (uint32_t)db.stride[0];
-            desc.planeObject[0] = 0;
-            const off_t size = lseek(db.fd[0], 0, SEEK_END);
-            desc.objectSize[0] = size > 0 ? (uint64_t)size : 0;
-            // Dup: framelink's fds die with the channel, and Vulkan needs the
-            // buffer to outlive any reallocation that races an in-flight frame.
-            int dupFd = fcntl(db.fd[0], F_DUPFD_CLOEXEC, 0);
-            const bool ok = dupFd >= 0 &&
-                            ctx.pool->addSurface(*ctx.vk, desc, &dupFd, 1) &&
+            // One memory object when every plane is the same buffer (FrameLink's
+            // GBM rings), as for a single-object Wayland NV12 buffer.
+            struct stat first{};
+            bool shared = fstat(db.fd[0], &first) == 0;
+            for (uint32_t i = 1; shared && i < planes; ++i) {
+                struct stat other{};
+                shared = fstat(db.fd[i], &other) == 0 && other.st_dev == first.st_dev && other.st_ino == first.st_ino;
+            }
+            desc.numObjects = shared ? 1u : planes;
+            int dupFds[4] = {-1, -1, -1, -1};
+            bool dupped = true;
+            for (uint32_t i = 0; i < planes; ++i) {
+                desc.plane[i].offset = db.offset[i];
+                desc.plane[i].pitch = (uint32_t)db.stride[i];
+                desc.planeObject[i] = shared ? 0u : i;
+                if (i < desc.numObjects) {
+                    const off_t size = lseek(db.fd[i], 0, SEEK_END);
+                    desc.objectSize[i] = size > 0 ? (uint64_t)size : 0;
+                    // Dup: framelink's fds die with the channel, and Vulkan needs the
+                    // buffer to outlive any reallocation that races an in-flight frame.
+                    dupFds[i] = fcntl(db.fd[i], F_DUPFD_CLOEXEC, 0);
+                    dupped = dupped && dupFds[i] >= 0;
+                }
+            }
+            const bool ok = dupped &&
+                            ctx.pool->addSurface(*ctx.vk, desc, dupFds, desc.numObjects) &&
                             bindSlot(ctx, desc.slotKey);
             if (!ok) {
-                VKR_ERR("compositor: framelink dmabuf import failed ('%s' slot %u, "
+                VKR_ERR("compositor: framelink dmabuf import failed ('%s' slot %u, %s, "
                         "mod 0x%llx)",
-                        s.name.c_str(), f.slot, (unsigned long long)db.modifier);
-                if (dupFd >= 0) close(dupFd);
+                        s.name.c_str(), f.slot, nv12 ? "NV12" : "BGRA", (unsigned long long)db.modifier);
+                for (int fd : dupFds) if (fd >= 0) close(fd);
                 failedAdoption();
                 continue;
             }
@@ -966,6 +1008,11 @@ void flPollSlots(Ctx& ctx, std::vector<FlSlotIn>& slots, AvInput& av, SceneHost&
         releaseFrame(); // bookkeeping only; storage stays pinned
         s.departing = false;
         s.currentSlot = (int64_t)s.keys[f.slot];
+        if (vkrtrace::enabled()) {
+            s.traceSlots[f.slot] = {int64_t(s.keys[f.slot]), vkrtrace::id(s.name.c_str()),
+                s.generation, f.sequence, f._readyValue, f.ptsNs};
+            flTraceFrame("av.frame_adopt", s, f);
+        }
         s.lastAdoptNs=nowNs();if(!s.firstAdoptNs)s.firstAdoptNs=s.lastAdoptNs;++s.adopted;
         ++ctx.adoptions;
         ++ctx.videoFramesSeen;
@@ -1128,8 +1175,11 @@ int runWaylandCompositor(const WaylandOptions& options) {
                 if(flCreateChannelEx(s.name.c_str(),request.config.video.width,request.config.video.height,
                     (flFormat)request.config.video.format,avInput.ringSlots(),FL_MAP_CPU|FL_DEFER_RELEASE,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
+                // Two unread frames (AvRingBudget::mailboxSlots): see av_schedule.h.
+                if(flSetReceiveQueue(s.channel,AvRingBudget::mailboxSlots)!=FL_OK)
+                    throw std::runtime_error("A/V receive queue configuration failed");
             }
-        });
+        },!flSlots.front().pending.empty()); // a session end waits for frames still pending
         flPollSlots(ctx, flSlots, avInput, host, &hopSamples, &hopTotalUs, &hopMaxUs);
         // Stable slots while each Wayland surface lives; FrameLink owns 0..11.
         for(size_t i=kFlSlots;i<controlSlots;i++)if(owners[i]) {
@@ -1220,6 +1270,11 @@ int runWaylandCompositor(const WaylandOptions& options) {
         streams=std::move(filtered);
         if(controlUp && control.previewDue())host.requestPreview();
         SceneHost::Extras extras; // wayland sync is CPU-side (sync-file polls)
+        if (vkrtrace::enabled()) {
+            for (const auto& s : flSlots)
+                for (const auto& identity : s.traceSlots)
+                    if (identity.key >= 0) extras.traceFrames.push_back(identity);
+        }
         if (!host.frame(vk, pool, pass, ctx.passBound, streams, extras, &quit)) {
             exitCode = 1;
             break;

@@ -37,9 +37,15 @@ function(vkr_add_framelink renderer_root)
     message(STATUS "vkrender FrameLink pin: ${actual_revision} (protocol 6)")
     set(FRAMELINK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     if(ANDROID)
-        # Native renderer has no GStreamer dependency. Keep desktop playback
-        # targets enabled under the existing desktop dependency configuration.
-        set(FRAMELINK_BUILD_GST OFF CACHE BOOL "" FORCE)
+        # The native renderer has no GStreamer dependency unless the A/V input
+        # is enabled (VKR_GST_ANDROID_ROOT, FrameLink decision 12): then
+        # FrameLink's static GStreamer element is built for the A/V session.
+        if(VKR_GST_ANDROID_ROOT)
+            set(FRAMELINK_BUILD_GST ON CACHE BOOL "" FORCE)
+            set(FRAMELINK_GST_ANDROID_ROOT "${VKR_GST_ANDROID_ROOT}" CACHE PATH "" FORCE)
+        else()
+            set(FRAMELINK_BUILD_GST OFF CACHE BOOL "" FORCE)
+        endif()
     endif()
     if(NOT TARGET framelink)
         add_subdirectory("${FRAMELINK_DIR}" "${CMAKE_BINARY_DIR}/framelink")

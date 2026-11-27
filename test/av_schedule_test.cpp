@@ -5,7 +5,10 @@
 int main(){
  // Storage headroom does not silently expand the timed queue or shift A/V PTS.
  CHECK(vkr::AvRingBudget::pendingSlots==6);
- CHECK(vkr::AvRingBudget::testRingSlots(nullptr)==12);
+ // Thirteen: the IPC mailbox holds two unread frames (6a, 2026-11-27).
+ CHECK(vkr::AvRingBudget::mailboxSlots==2 && vkr::AvRingBudget::ringSlots==13);
+ CHECK(vkr::AvRingBudget::testRingSlots(nullptr)==13);
+ CHECK(vkr::AvRingBudget::testRingSlots("13")==13);
  CHECK(vkr::AvRingBudget::testRingSlots("8")==8);
  CHECK(vkr::AvRingBudget::testRingSlots("12")==12);
  bool rejected=false;try{vkr::AvRingBudget::testRingSlots("12junk");}
@@ -40,20 +43,25 @@ int main(){
  unsigned depth=6, acquired=0, oldDepth=6, oldAcquired=0;
  for(unsigned i=0;i<120;++i){
    vkr::AvAcquireBudget budget;
-   auto acquire=[&]{++depth;++acquired;};
-   budget.poll(depth,6,acquire);
+   unsigned available=1;
+   auto acquire=[&]{if(!available)return false;--available;++depth;++acquired;return true;};
+   CHECK(budget.poll(depth,6,acquire)==0);
    CHECK(depth>0);--depth;
-   budget.poll(depth,6,acquire);
+   CHECK(budget.poll(depth,6,acquire)==1);
    CHECK(depth==6);
    if(oldDepth<6){++oldDepth;++oldAcquired;}
    --oldDepth;
  }
  CHECK(acquired==120 && oldAcquired<120);
- // Held full queue does not poll, and a successful or failed nonfull attempt
- // never consumes a second budget after the scheduling decision.
- vkr::AvAcquireBudget held;unsigned calls=0;
- held.poll(6,6,[&]{++calls;});CHECK(calls==0 && !held.attempted);
- vkr::AvAcquireBudget nonfull;
- nonfull.poll(5,6,[&]{++calls;});nonfull.poll(4,6,[&]{++calls;});CHECK(calls==1);
+ // A vsync-paced iteration that finds several announced frames takes them all,
+ // up to the pending cap; one attempt per iteration let the IPC mailbox
+ // replace the older one (6a, Linux FIFO at 60 Hz).
+ {vkr::AvAcquireBudget b;unsigned d=2,avail=3,calls=0;
+  CHECK(b.poll(d,6,[&]{++calls;if(!avail)return false;--avail;++d;return true;})==3 && d==5 && calls==4);}
+ {vkr::AvAcquireBudget b;unsigned d=2,avail=9,calls=0;
+  CHECK(b.poll(d,6,[&]{++calls;if(!avail)return false;--avail;++d;return true;})==4 && d==6 && calls==4 && avail==5);}
+ // An empty channel costs one nonblocking attempt; a full queue costs none.
+ {vkr::AvAcquireBudget b;unsigned calls=0;CHECK(b.poll(5,6,[&]{++calls;return false;})==0 && calls==1);}
+ {vkr::AvAcquireBudget b;unsigned calls=0;CHECK(b.poll(6,6,[&]{++calls;return true;})==0 && calls==0);}
  return 0;
 }

@@ -34,8 +34,16 @@ wait or extra GPU copy would change the performance path.
 
 ## Controlled comparison
 
-`VKR_TEST_AV_POOL_SLOTS=8` selects the former capacity; `12` or unset selects the
-new budget. Other values are rejected. This test-only override changes storage
+`VKR_TEST_AV_POOL_SLOTS=8` selects the original capacity and `12` the one-frame
+mailbox budget; `13` or unset selects the current budget. Other values are rejected.
+
+**2026-11-27 (6a): thirteen slots.** The IPC mailbox now holds two unread frames
+(`flSetReceiveQueue(channel, 2)`), so the ring grows by one slot. With one, a
+render loop paced by FIFO presentation at the display rate lost a frame whenever
+two 60 Hz source frames arrived within one iteration (Linux, BGRA 1080p60: 5 of 8
+captures lost 1-17 frames even with the per-iteration drain). That is one more
+shared image per A/V session: about 7.9 MiB for BGRA or 3.0 MiB for NV12 at 1080p,
+excluding driver alignment. This test-only override changes storage
 only; `AV_RING_CONFIG` records pool, pending limit and common latency.
 
 Compare both capacities with the same executable/plugin, source identities,

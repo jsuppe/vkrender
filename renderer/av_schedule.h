@@ -6,25 +6,33 @@
 namespace vkr {
 // Only negotiated A/V tracks use running PTS. Legacy inputs keep their existing
 // latest-frame policy; their PTS may be an unrelated absolute monotonic epoch.
-// One nonblocking acquisition attempt per render iteration. If the queue starts
-// full, its budget remains available after a due frame is removed.
+// Each poll drains every frame already announced, without blocking, into the
+// pending queue until it is full or the channel has none (6a, 2026-11-27). A
+// vsync-paced render loop runs at the display rate, so a single attempt per
+// iteration let FrameLink's one-frame mailbox replace a frame whenever two
+// source frames arrived within one iteration. The pending queue's cap is
+// unchanged, so neither the timed buffering nor ring ownership grows.
 // Timed buffering and transport ownership are different bounds. Six future
 // frames at 60fps represent 100ms; increasing storage must NOT increase that
 // queue or change either A/V deadline. Extra slots cover retained current,
 // older GPU reads, ordered retirement lag, the IPC mailbox and producer writer.
-// Twelve is a conservative normal-cadence operating envelope, not a guarantee
+// Thirteen is a conservative normal-cadence operating envelope, not a guarantee
 // against arbitrary GPU stalls or latest-wins replacement during catch-up bursts.
+// The IPC mailbox holds two unread frames (flSetReceiveQueue): with one, a render
+// loop paced at the display rate lost a frame whenever two source frames arrived
+// within one iteration (6a, 2026-11-27: Linux FIFO at 60 Hz, 5 of 8 runs).
 struct AvRingBudget {
     static constexpr unsigned pendingSlots=6;
     static constexpr unsigned currentSlots=1, priorGpuSlots=2,
-                              retirementSlots=1, mailboxSlots=1, writerSlots=1;
+                              retirementSlots=1, mailboxSlots=2, writerSlots=1;
     static constexpr unsigned ringSlots=pendingSlots+currentSlots+priorGpuSlots+
                                         retirementSlots+mailboxSlots+writerSlots;
     // Controlled same-binary capacity experiment; not a lossless-delivery mode.
     static unsigned testRingSlots(const char* value) {
-        if(!value || !*value || std::strcmp(value,"12")==0)return ringSlots;
+        if(!value || !*value || std::strcmp(value,"13")==0)return ringSlots;
+        if(std::strcmp(value,"12")==0)return 12; // the one-frame-mailbox budget, before 2026-11-27
         if(std::strcmp(value,"8")==0)return 8;
-        throw std::invalid_argument("VKR_TEST_AV_POOL_SLOTS must be 8 or 12");
+        throw std::invalid_argument("VKR_TEST_AV_POOL_SLOTS must be 8, 12 or 13");
     }
     static uint64_t maxLatencyNs(uint32_t fpsNum,uint32_t fpsDen) {
         if(!fpsNum || !fpsDen)return 0;
@@ -36,9 +44,12 @@ struct AvRingBudget {
     }
 };
 struct AvAcquireBudget {
-    bool attempted=false;
-    template<class Acquire> void poll(unsigned depth, unsigned capacity, Acquire acquire) {
-        if(!attempted && depth<capacity){attempted=true;acquire();}
+    // acquire() takes one frame into the queue and returns true, or returns
+    // false when none is available (or the channel failed).
+    template<class Acquire> unsigned poll(unsigned depth, unsigned capacity, Acquire acquire) {
+        unsigned taken=0;
+        while(depth+taken<capacity && acquire())++taken;
+        return taken;
     }
 };
 struct AvSchedule {

@@ -494,9 +494,12 @@ int runWinService(const WinServeOptions& options) {
                     FL_GPU_SYNC,
                     vk.luidValid?vk.deviceLUID:nullptr,&s.channel)!=FL_OK)
                     throw std::runtime_error("A/V video channel creation failed");
+                // Two unread frames (AvRingBudget::mailboxSlots): see av_schedule.h.
+                if(flSetReceiveQueue(s.channel,AvRingBudget::mailboxSlots)!=FL_OK)
+                    throw std::runtime_error("A/V receive queue configuration failed");
             }
             updatePower(!request.end); // completes before onSession is acknowledged
-        });
+        },!inSlots.front().pending.empty()); // a session end waits for frames still pending
         for (SlotIn& s : inSlots) {
             if (!s.channel) continue;
 
@@ -523,7 +526,7 @@ int runWinService(const WinServeOptions& options) {
             auto acquirePending=[&]{
                 acquireBudget.poll(unsigned(s.pending.size()),AvRingBudget::pendingSlots,[&]{
                     flFrame next{};r=flAcquireFrame(s.channel,&next,0);
-                    if(r==FL_OK){s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);}
+                    if(r!=FL_OK)return false;s.pending.push_back(next);avInput.schedule.enqueue(next.sequence,s.pending.size());flRelease(s.channel,&next);return true;
                 });
             };
             if(scheduled){

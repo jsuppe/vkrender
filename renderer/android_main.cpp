@@ -50,6 +50,11 @@
 #include "scene_layout.h"
 #include "video_pass.h"
 #include "vk_context.h"
+#include "av_schedule.h"
+#ifdef VKR_ANDROID_AV
+#include "av_input.h"
+#endif
+#include <deque>
 
 using vkr::cubeMvp;
 using vkr::Mat4;
@@ -121,8 +126,20 @@ bool extractShaders(android_app* app, const std::string& outDir) {
     return true;
 }
 
+// Sampled identity of an adopted FrameLink frame (6a, FrameLink decision 12):
+// the desktop scene host's TraceFrame. key is the sampled pool slot.
+struct AvTraceFrame {
+    int64_t key = -1;
+    uint64_t channel = 0, generation = 0, sequence = 0, ready = 0;
+    int64_t pts = 0;
+};
+
 struct FrameSync {
     FrameGpuTrace gpuTrace;
+    // Identities this frame's submission sampled; GPU completion is recorded
+    // when its fence is next waited.
+    std::vector<AvTraceFrame> traceFrames;
+    uint64_t traceSubmission = 0;
     VkSemaphore acquireSem = VK_NULL_HANDLE;
     VkSemaphore renderDoneSem = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
@@ -166,9 +183,29 @@ struct FlSlotIn {
     bool imported[FL_MAX_POOL_SIZE] = {}; // FrameLink capacity, not legacy wire pool
     uint32_t keys[FL_MAX_POOL_SIZE] = {};
     int64_t currentSlot = -1;
+    // A/V input on slot 0 (VKR_ANDROID_AV): the scheduled frames, and each pool
+    // slot's sampled identity for frame accounting.
+    std::deque<flFrame> pending;
+    AvTraceFrame traceSlots[FL_MAX_POOL_SIZE]{};
 };
 
 constexpr uint32_t kFlSlots = 12;
+
+// The Windows service's and the Linux compositor's 6a input events.
+void flTraceFrame(const char* op, const FlSlotIn& s, const flFrame& f, int64_t result = 0) {
+    if (vkrtrace::enabled())
+        vkrtrace::record({op, vkrtrace::clockNs(), 0, vkrtrace::id(s.name.c_str()),
+                          f.sequence, f._readyValue, s.generation, f.ptsNs, result});
+}
+void traceFrames(const char* op, const std::vector<AvTraceFrame>& identities, int64_t result, uint64_t submission) {
+    if (!vkrtrace::enabled()) return;
+    for (const auto& i : identities)
+        vkrtrace::record({op, vkrtrace::clockNs(), submission, i.channel, i.sequence, i.ready, i.generation, i.pts, result});
+}
+std::string envOr(const char* name, const char* fallback) {
+    const char* v = std::getenv(name);
+    return v && *v ? v : fallback;
+}
 
 int32_t onInput(android_app* app,AInputEvent* event) {
     if(AInputEvent_getType(event)!=AINPUT_EVENT_TYPE_KEY || AKeyEvent_getAction(event)!=AKEY_EVENT_ACTION_DOWN)return 0;
@@ -370,6 +407,37 @@ void android_main(android_app* app) {
     VKR_LOG("renderer: %u framelink input slots ready ('vkrender.in.0' .. 'vkrender.in.%u')",
             kFlSlots, kFlSlots - 1);
 
+#ifdef VKR_ANDROID_AV
+    // FrameLink A/V input (6a, FrameLink decision 12): the desktop AvInput over
+    // av::runPlayback, on slot 0, from the Activity's avSession extras. PCM goes
+    // to fakesink: received, counted and timed, no audio output. The playback's
+    // records (AV_RING_CONFIG, playback-*) go to files/<session>-renderer.log.
+    std::unique_ptr<vkr::AvInput> avInput;
+    const bool avExitOnEnd = envOr("VKR_AV_EXIT_ON_END", "0") == "1";
+    if (const char* session = std::getenv("VKR_AV_SESSION"); session && *session) {
+        const std::string base = filesDir + "/" + session;
+        if (!freopen((base + "-renderer.log").c_str(), "w", stderr))
+            VKR_WARN("renderer: cannot redirect stderr for the A/V session");
+        setvbuf(stderr, nullptr, _IOLBF, 0);
+        // FrameLink's playback prints its records (playback-clock, -complete,
+        // -metrics) to stdout: the same file, as the desktop captures collect both.
+        fflush(stdout); dup2(fileno(stderr), fileno(stdout)); setvbuf(stdout, nullptr, _IOLBF, 0);
+        av::PlaybackOptions o;
+        o.externalVideo = true; o.session = base; o.plugin = "static"; o.audioSink = "fakesink";
+        o.format = envOr("VKR_AV_FORMAT", "NV12");
+        o.width = (unsigned)std::stoul(envOr("VKR_AV_WIDTH", "1920"));
+        o.height = (unsigned)std::stoul(envOr("VKR_AV_HEIGHT", "1080"));
+        o.fps = (unsigned)std::stoul(envOr("VKR_AV_FPS", "60"));
+        o.latencyMs = (unsigned)std::stoul(envOr("VKR_AV_LATENCY_MS", "0"));
+        o.mediaRunMs = (unsigned)std::stoul(envOr("VKR_AV_MEDIA_RUN_MS", "0"));
+        o.timeoutMs = 15000;
+        o.clockPolicy = av::PlaybackClockPolicy::ProducerMapped;
+        avInput = std::make_unique<vkr::AvInput>(o);
+        VKR_LOG("renderer: A/V input on '%s' (%s %ux%u@%u, latency %u ms)", base.c_str(), o.format.c_str(),
+                o.width, o.height, o.fps, o.latencyMs);
+    }
+#endif
+
     vkr::ModerationPolicy<24> moderation;
     uint64_t controlApplied=0;
     uint64_t controlGenerations[24]{};
@@ -395,6 +463,9 @@ void android_main(android_app* app) {
                         s.imported[i] = false;
                     }
                 }
+                for (const auto& p : s.pending) flTraceFrame("av.frame_drop.generation_end", s, p);
+                s.pending.clear();
+                for (auto& identity : s.traceSlots) identity = {};
                 s.currentSlot = -1;
                 s.generation = info.generation;
                 s.retire.clear();s.lastReady=0;s.departing=false;
@@ -402,7 +473,30 @@ void android_main(android_app* app) {
                 s.height = info.height;
             }
             flFrame fr{};
-            const flResult r = flAcquireFrame(s.channel, &fr, 0);
+            flResult r = FL_TIMEOUT;
+#ifdef VKR_ANDROID_AV
+            // Scheduled A/V input, as on the desktop: drain every announced frame
+            // into the pending queue (bookkeeping release; storage stays deferred),
+            // and adopt the front one only when the playback clock says it is due.
+            const bool scheduled = avInput && &s == &flSlots.front() && avInput->active();
+            vkr::AvAcquireBudget acquireBudget;
+            auto acquirePending = [&] {
+                acquireBudget.poll(unsigned(s.pending.size()), vkr::AvRingBudget::pendingSlots, [&] {
+                    flFrame next{}; r = flAcquireFrame(s.channel, &next, 0);
+                    if (r != FL_OK) return false;
+                    s.pending.push_back(next); avInput->schedule.enqueue(next.sequence, s.pending.size());
+                    flRelease(s.channel, &next); return true;
+                });
+            };
+            if (scheduled) {
+                acquirePending();
+                if (!s.pending.empty()) { fr = s.pending.front(); r = FL_OK; }
+            } else
+#else
+            const bool scheduled = false;
+#endif
+            r = flAcquireFrame(s.channel, &fr, 0);
+            auto releaseFrame = [&] { if (!scheduled) flRelease(s.channel, &fr); };
             if (r == FL_DISCONNECTED) {
                 if(s.currentSlot>=0)s.departing=true; // retain image through presentation exit
                 continue;
@@ -411,12 +505,39 @@ void android_main(android_app* app) {
             flChannelInfo now{};
             flQuery(s.channel, &now);
             if (now.generation != s.generation || fr.slot >= FL_MAX_POOL_SIZE) {
-                flRelease(s.channel, &fr);
+                flTraceFrame("av.frame_drop.generation_changed", s, fr);
+                releaseFrame();
                 continue;
             }
+#ifdef VKR_ANDROID_AV
+            if (scheduled) {
+                const auto decision = avInput->decide(fr.ptsNs);
+                if (decision == vkr::AvSchedule::Decision::Hold) continue;
+                s.pending.pop_front(); avInput->schedule.queued = s.pending.size();
+                acquirePending();
+                if (decision != vkr::AvSchedule::Decision::Present) {
+                    flTraceFrame(decision == vkr::AvSchedule::Decision::Drop ? "av.frame_drop.late" : "av.frame_drop.invalid", s, fr);
+                    s.currentSlot = -1;
+                    s.retire.push_back({frameIndex + 2, fr._readyValue});
+                    continue;
+                }
+            }
+#endif
+            flTraceFrame("av.frame_schedule", s, fr);
+            auto failedAdoption = [&] {
+                flTraceFrame("av.frame_drop.import_failed", s, fr);
+#ifdef VKR_ANDROID_AV
+                if (scheduled) {
+                    ++avInput->schedule.importFailures;
+                    s.currentSlot = -1;
+                    s.retire.push_back({frameIndex + 2, fr._readyValue});
+                }
+#endif
+                releaseFrame();
+            };
             AHardwareBuffer* ahb = flImageAHardwareBuffer(fr.image);
             if (!ahb) {
-                flRelease(s.channel, &fr);
+                failedAdoption();
                 continue;
             }
             if (!pool.headerValid) {
@@ -428,7 +549,7 @@ void android_main(android_app* app) {
                 header.range = vkr::proto::Range::Full;
                 header.planeCount = 1;
                 if (!pool.create(vk, header)) {
-                    flRelease(s.channel, &fr);
+                    failedAdoption();
                     continue;
                 }
             }
@@ -444,7 +565,7 @@ void android_main(android_app* app) {
                 if (!ok) {
                     VKR_ERR("renderer: framelink AHB import failed ('%s' slot %u)",
                             s.name.c_str(), fr.slot);
-                    flRelease(s.channel, &fr);
+                    failedAdoption();
                     continue;
                 }
                 s.imported[fr.slot] = true;
@@ -454,8 +575,13 @@ void android_main(android_app* app) {
             s.departing=false;
             s.lastReady=fr._readyValue;
             if(fr._readyValue>1)s.retire.push_back({frameIndex+2,fr._readyValue-1});
-            flRelease(s.channel,&fr); // bookkeeping; retire after the existing GPU fence
+            releaseFrame(); // bookkeeping; retire after the existing GPU fence
             s.currentSlot = (int64_t)s.keys[fr.slot];
+            if (vkrtrace::enabled()) {
+                s.traceSlots[fr.slot] = {int64_t(s.keys[fr.slot]), vkrtrace::id(s.name.c_str()),
+                                         s.generation, fr.sequence, fr._readyValue, fr.ptsNs};
+                flTraceFrame("av.frame_adopt", s, fr);
+            }
             ++adoptions;
             if (fr.ptsNs > 0) {
                 const int64_t d = nowNs() - fr.ptsNs;
@@ -512,6 +638,39 @@ void android_main(android_app* app) {
         displayOutputs.update(vk);
         if (!state.windowReady) continue;
 
+#ifdef VKR_ANDROID_AV
+        if (avInput) {
+            if (avExitOnEnd && avInput->done()) { state.destroyed = true; break; }
+            // A session start or end, on the render thread (the desktop shape):
+            // slot 0's ring is replaced by the session's channel, with a two-frame
+            // receive queue (AvRingBudget). An end waits for frames still pending.
+            avInput->service([&](const vkr::AvInput::Request& request) {
+                FlSlotIn& s = flSlots.front();
+                vkDeviceWaitIdle(vk.device); // session boundary only, never per frame
+                for (const auto& p : s.pending) flTraceFrame("av.frame_drop.generation_end", s, p);
+                s.pending.clear();
+                for (auto& identity : s.traceSlots) identity = {};
+                for (uint32_t i = 0; i < FL_MAX_POOL_SIZE; ++i) {
+                    if (!s.imported[i]) continue;
+                    pass.removeSlot(vk, s.keys[i]);
+                    pool.removeSlot(vk, s.keys[i]);
+                    s.imported[i] = false;
+                }
+                if (s.channel) flClose(s.channel);
+                s.channel = nullptr; s.generation = 0; s.retire.clear(); s.lastReady = 0;
+                s.currentSlot = -1; s.departing = false;
+                if (!request.end) {
+                    s.name = request.name;
+                    if (flCreateChannelEx(s.name.c_str(), request.config.video.width, request.config.video.height,
+                                          (flFormat)request.config.video.format, avInput->ringSlots(),
+                                          FL_MAP_CPU | FL_DEFER_RELEASE, &s.channel) != FL_OK)
+                        throw std::runtime_error("A/V video channel creation failed");
+                    if (flSetReceiveQueue(s.channel, vkr::AvRingBudget::mailboxSlots) != FL_OK)
+                        throw std::runtime_error("A/V receive queue configuration failed");
+                }
+            }, !flSlots.front().pending.empty());
+        }
+#endif
         int64_t faceSlots[12];
         for (int fi = 0; fi < 12; ++fi) faceSlots[fi] = -1;
         size_t streamCount = 0;
@@ -669,7 +828,9 @@ void android_main(android_app* app) {
 
         FrameSync& f = frames[frameIndex % kFramesInFlight];
         ++frameIndex;
-        vkrtrace::call("scene.wait_inflight_fence",[&]{return vkWaitForFences(vk.device,1,&f.inFlight,VK_TRUE,UINT64_MAX);});
+        if (vkrtrace::call("scene.wait_inflight_fence",[&]{return vkWaitForFences(vk.device,1,&f.inFlight,VK_TRUE,UINT64_MAX);}) == VK_SUCCESS)
+            traceFrames("av.frame_gpu_complete", f.traceFrames, 0, f.traceSubmission);
+        f.traceFrames.clear();
         f.gpuTrace.prepare(vk);
         portableOutput.retire(vk,(frameIndex-1)%2);
         preview.retire((frameIndex-1)%2);
@@ -702,6 +863,7 @@ void android_main(android_app* app) {
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) continue;
         vkResetFences(vk.device, 1, &f.inFlight);
 
+        std::vector<AvTraceFrame> sampledTraceFrames; // identities this submission samples
         std::vector<VkSemaphore> submitWaits{f.acquireSem},submitSignals{f.renderDoneSem};
         std::vector<VkPipelineStageFlags> submitStages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -732,6 +894,11 @@ void android_main(android_app* app) {
         std::vector<int64_t> faces;
         float aspect=(float)vk.swapExtent.width/vk.swapExtent.height;
         vkr::buildScene(state.layout,tSec,aspect,dt,sceneSlots,sceneIds,pool,motion,tileSlots,models,faces);
+        if (vkrtrace::enabled() && passBound)
+            for (const auto& slot : flSlots)
+                for (const auto& identity : slot.traceSlots)
+                    if (identity.key >= 0 && std::find(faces.begin(), faces.end(), identity.key) != faces.end())
+                        sampledTraceFrames.push_back(identity);
         for(size_t i=0;i<flSlots.size();++i) {
             auto& slot=flSlots[i];
             if(slot.departing && !motion.has((1ull<<63)|i)) {
@@ -790,6 +957,9 @@ void android_main(android_app* app) {
         // retirement after a successful submit, never behind an older fence.
         f.retiring.swap(newlyRetiring);
         f.retiringStreams.swap(newlyRetiringStreams);
+        f.traceFrames = sampledTraceFrames;
+        f.traceSubmission = frameIndex - 1;
+        traceFrames("av.frame_render_submit", sampledTraceFrames, 0, f.traceSubmission);
         f.gpuTrace.submitted(frameIndex-1);
         portableOutput.submitted((frameIndex-1)%2);
         preview.submitted((frameIndex-1)%2);
@@ -801,6 +971,8 @@ void android_main(android_app* app) {
         pi.pSwapchains = &vk.swapchain;
         pi.pImageIndices = &imageIndex;
         VkResult pr = vkrtrace::call("scene.present_call_cpu",[&]{return vkQueuePresentKHR(vk.queue,&pi);});
+        // A successful present call is not evidence of scanout.
+        traceFrames("av.frame_present_submit", sampledTraceFrames, pr, f.traceSubmission);
         displayOutputs.present(vk);
         if(traceLimit && frameIndex>=traceLimit)state.destroyed=true;
         if (pr == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -834,7 +1006,11 @@ void android_main(android_app* app) {
         g_rendererReady = false;
         g_control.setReady(false);g_preview.ready(false);
     }
-    vkDeviceWaitIdle(vk.device);
+    if (vkDeviceWaitIdle(vk.device) == VK_SUCCESS)
+        for (auto& f : frames) { traceFrames("av.frame_gpu_complete", f.traceFrames, 0, f.traceSubmission); f.traceFrames.clear(); }
+#ifdef VKR_ANDROID_AV
+    avInput.reset(); // joins the playback; prints AV_RENDER to the session log
+#endif
     displayOutputs.destroy(vk);
     portableOutput.destroy(vk);
     preview.destroy(vk);
@@ -874,7 +1050,11 @@ void android_main(android_app* app) {
     vk.destroy();
     vkrtrace::flush();
     flTraceFlush();
+    fflush(stderr);
     if(traceLimit)ANativeActivity_finish(app->activity);
+#ifdef VKR_ANDROID_AV
+    else if(avExitOnEnd)ANativeActivity_finish(app->activity);
+#endif
 }
 
 #endif // __ANDROID__

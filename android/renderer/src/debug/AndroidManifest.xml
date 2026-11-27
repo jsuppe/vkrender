@@ -1,8 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The FrameLink A/V session carries PCM over loopback TCP (GIO/GDP), which
+         Android allows only with INTERNET. Debug-only with the A/V input for now;
+         a release APK enabling it needs this too. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application>
         <!-- Debug-only, separate process for genuine Binder death testing. -->
         <service android:name=".SurfaceLifecycleTestService"
                  android:process=":surface_lifecycle_test" android:exported="true" />
         <service android:name=".ControlTestService" android:process=":control_test" android:exported="true" />
+        <!-- Debug-only: FrameLink's A/V producer for the 6a identity captures
+             (FrameLink decision 12); needs an APK built with VKR_GST_ANDROID_ROOT. -->
+        <service android:name=".AvProducerService" android:process=":avproducer" android:exported="true" />
     </application>
 </manifest>

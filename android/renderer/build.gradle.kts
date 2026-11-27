@@ -34,6 +34,11 @@ android {
             providers.gradleProperty("framelinkDir").orNull?.let {
                 arguments += "-DFRAMELINK_DIR=$it"
             }
+            // FrameLink A/V input (FrameLink decision 12): the GStreamer
+            // Android universal SDK (arm64/, x86_64/, ...); CMake picks the ABI.
+            providers.gradleProperty("gstAndroidRoot").orNull?.let {
+                arguments += "-DVKR_GST_ANDROID_UNIVERSAL=$it"
+            }
         }
     }
 
